@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>A股当日走势与仓位</title>
+  <style>
+    [v-cloak] { display: none; }
+  </style>
+  <!-- Use local libraries -->
+  <link href="./libs/tailwind.min.css" rel="stylesheet">
+  <script src="./libs/vue.js"></script>
+  <script src="./libs/echarts.min.js"></script>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📈</text></svg>">
+</head>
+<body class="bg-gray-50 min-h-screen text-gray-800">
+  <div id="app" class="max-w-7xl mx-auto p-4" v-cloak>
+    <div class="flex items-center justify-between mb-4">
+      <h1 class="text-2xl font-bold">快捷看盘 + AI 分析</h1>
+      <div class="flex items-center gap-2">
+        <div class="text-xs text-gray-500 mr-2" v-if="dataTs">更新: {{ fmtTime(dataTs) }}</div>
+        <button @click="refreshAll" class="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition">刷新</button>
+      </div>
+    </div>
+    <div class="flex items-center gap-2 mb-4">
+      <button @click="activeTab='overview'" class="px-3 py-2 rounded" :class="activeTab==='overview' ? 'bg-blue-600 text-white' : 'bg-white border text-gray-600'">概览</button>
+      <button @click="activeTab='market'" class="px-3 py-2 rounded" :class="activeTab==='market' ? 'bg-blue-600 text-white' : 'bg-white border text-gray-600'">行情</button>
+      <button @click="activeTab='watch'" class="px-3 py-2 rounded" :class="activeTab==='watch' ? 'bg-blue-600 text-white' : 'bg-white border text-gray-600'">关注</button>
+    </div>
+    <div v-if="activeTab==='overview'" class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div class="lg:col-span-1 space-y-4">
+        <div class="bg-white rounded-xl shadow p-4 min-h-[320px]">
+          <div class="flex items-center justify-between mb-2">
+            <div class="text-sm text-gray-500">AI 今日解读</div>
+            <button @click="refreshAi(true)" class="text-gray-400 hover:text-gray-600 transition" title="刷新AI">⟳</button>
+          </div>
+          <div class="space-y-2">
+            <div class="rounded-lg bg-gray-50 p-2" v-for="(item, i) in aiSections" :key="i">
+              <div class="text-sm font-semibold text-gray-700">{{ item.title }}</div>
+              <div class="text-sm text-gray-700 mt-1">{{ item.content }}</div>
+            </div>
+          </div>
+          <div class="text-xs text-gray-400 mt-2">开盘时段30分钟更新一次</div>
+          <div class="text-xs text-gray-400">规则版将先行上线，AI版第3步加入</div>
+        </div>
+        <div class="bg-white rounded-xl shadow p-4">
+          <div class="text-sm text-gray-500 mb-2">Prompt 调试</div>
+          <div class="text-xs text-gray-400 mb-2">模型：deepseek-v3.2</div>
+          <textarea v-model="promptText" class="w-full border rounded p-2 text-xs h-40"></textarea>
+          <div class="flex items-center gap-2 mt-2">
+            <button @click="runPromptDebug" class="px-3 py-2 bg-gray-800 text-white rounded hover:bg-gray-900 transition" :disabled="promptLoading">生成解读</button>
+            <div class="text-xs text-gray-400" v-if="promptLoading">生成中...</div>
+            <div class="text-xs text-red-500" v-if="promptError">{{ promptError }}</div>
+          </div>
+          <div class="text-sm text-gray-600 mt-3 whitespace-pre-wrap" v-if="promptOutput">{{ promptOutput }}</div>
+        </div>
+      </div>
+      <div class="lg:col-span-2 space-y-4">
+        <div class="bg-white rounded-xl shadow p-4">
+          <div class="text-sm text-gray-500 mb-2 font-semibold">大盘情绪（量能=沪深主板成交额）</div>
+          <div class="grid grid-cols-1 gap-3">
+            <!-- Market Breadth -->
+            <div id="market-breadth" class="border rounded-lg p-3 hidden">
+              <div class="flex justify-between text-sm mb-1">
+                <span>涨跌家数</span>
+                <span id="breadth-ratio" class="font-bold"></span>
+              </div>
+              <div class="w-full bg-gray-200 rounded-full h-2.5 flex overflow-hidden">
+                <div id="breadth-up" class="bg-red-500 h-2.5" style="width: 50%"></div>
+                <div id="breadth-down" class="bg-green-500 h-2.5" style="width: 50%"></div>
+              </div>
+              <div class="flex justify-between text-xs text-gray-500 mt-1">
+                <span id="breadth-up-count" class="text-red-500"></span>
+                <span id="breadth-down-count" class="text-green-500"></span>
+              </div>
+            </div>
+            
+            <div class="border rounded-lg p-3">
+              <div class="flex items-center justify-between text-sm">
+                <span>成交额</span>
+                <span class="text-xs" v-if="sentiment.volumeCmp && sentiment.volumeCmp.pct!=null && sentiment.volumeCmp.delta!=null" :class="pctColor(sentiment.volumeCmp?.pct)">{{ fmtVolumeCmp(sentiment.volumeCmp) }}</span>
+                <span class="text-xs text-gray-400" v-else>昨日缺失</span>
+              </div>
+              <div class="text-gray-800 font-bold mt-1">{{ sentiment.volumeStr || '-' }}</div>
+              <div id="spark-volume" class="mt-2" style="height:60px;"></div>
+            </div>
+          </div>
+        </div>
+        <div class="bg-white rounded-xl shadow p-4">
+          <div class="text-sm text-gray-500 mb-2">国债与指数</div>
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div class="border rounded-lg p-3">
+              <div class="flex justify-between text-sm"><span>30Y TL2603</span><span :class="pctColor(bonds.tl.pct)">{{ fmtPct(bonds.tl.pct) }}</span></div>
+              <div class="text-xs text-gray-500 mt-1">价 {{ bonds.tl.price || '-' }}</div>
+              <div id="spark-tl" class="mt-2" style="height:60px;"></div>
+            </div>
+            <div class="border rounded-lg p-3">
+              <div class="flex justify-between text-sm"><span>10Y T2603</span><span :class="pctColor(bonds.t.pct)">{{ fmtPct(bonds.t.pct) }}</span></div>
+              <div class="text-xs text-gray-500 mt-1">价 {{ bonds.t.price || '-' }}</div>
+              <div id="spark-t" class="mt-2" style="height:60px;"></div>
+            </div>
+            <div class="border rounded-lg p-3">
+              <div class="flex justify-between text-sm"><span>沪深300</span><span :class="pctColor(extra.hs300.pct)">{{ fmtPct(extra.hs300.pct) }}</span></div>
+              <div class="text-xs text-gray-500 mt-1">价 {{ extra.hs300.price || '-' }}</div>
+              <div id="spark-hs300" class="mt-2" style="height:60px;"></div>
+            </div>
+            <div class="border rounded-lg p-3">
+              <div class="flex justify-between text-sm"><span>中证2000</span><span :class="pctColor(extra.csi2000.pct)">{{ fmtPct(extra.csi2000.pct) }}</span></div>
+              <div class="text-xs text-gray-500 mt-1">价 {{ extra.csi2000.price || '-' }}</div>
+              <div id="spark-csi2000" class="mt-2" style="height:60px;"></div>
+            </div>
+          </div>
+        </div>
+        <div class="bg-white rounded-xl shadow p-4">
+          <div class="text-sm text-gray-500 mb-2">金融指数</div>
+          <div class="grid grid-cols-3 gap-3">
+            <div class="border rounded-lg p-3">
+              <div class="flex justify-between text-sm"><span>银行 881155</span><span :class="pctColor(sectors.bank?.pct)">{{ fmtPct(sectors.bank?.pct) }}</span></div>
+              <div id="spark-bank" class="mt-2" style="height:60px;"></div>
+            </div>
+            <div class="border rounded-lg p-3">
+              <div class="flex justify-between text-sm"><span>证券 881157</span><span :class="pctColor(sectors.broker?.pct)">{{ fmtPct(sectors.broker?.pct) }}</span></div>
+              <div id="spark-broker" class="mt-2" style="height:60px;"></div>
+            </div>
+            <div class="border rounded-lg p-3">
+              <div class="flex justify-between text-sm"><span>保险 881156</span><span :class="pctColor(sectors.insure?.pct)">{{ fmtPct(sectors.insure?.pct) }}</span></div>
+              <div id="spark-insure" class="mt-2" style="height:60px;"></div>
+            </div>
+          </div>
+        </div>
+        <div class="bg-white rounded-xl shadow p-4">
+          <div class="text-sm text-gray-500 mb-2">大盘走势（腾讯源）</div>
+          <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <div class="border rounded-lg p-3">
+              <div class="flex justify-between text-sm"><span>上证</span><span :class="pctColor(market.sse.pct)">{{ fmtPct(market.sse.pct) }}</span></div>
+              <div class="text-xs text-gray-500 mt-1">价 {{ market.sse.price || '-' }}</div>
+              <div id="spark-sse" class="mt-2" style="height:60px;"></div>
+            </div>
+            <div class="border rounded-lg p-3">
+              <div class="flex justify-between text-sm"><span>深证</span><span :class="pctColor(market.szi.pct)">{{ fmtPct(market.szi.pct) }}</span></div>
+              <div class="text-xs text-gray-500 mt-1">价 {{ market.szi.price || '-' }}</div>
+              <div id="spark-szi" class="mt-2" style="height:60px;"></div>
+            </div>
+            <div class="border rounded-lg p-3">
+              <div class="flex justify-between text-sm"><span>创业板</span><span :class="pctColor(market.chinaext.pct)">{{ fmtPct(market.chinaext.pct) }}</span></div>
+              <div class="text-xs text-gray-500 mt-1">价 {{ market.chinaext.price || '-' }}</div>
+              <div id="spark-gem" class="mt-2" style="height:60px;"></div>
+            </div>
+            <div class="border rounded-lg p-3">
+              <div class="flex justify-between text-sm"><span>科创50</span><span :class="pctColor(market.star.pct)">{{ fmtPct(market.star.pct) }}</span></div>
+              <div class="text-xs text-gray-500 mt-1">价 {{ market.star.price || '-' }}</div>
+              <div id="spark-star" class="mt-2" style="height:60px;"></div>
+            </div>
+            <div class="border rounded-lg p-3">
+              <div class="flex justify-between text-sm"><span>平均股价</span><span :class="pctColor(extra.avg.pct)">{{ fmtPct(extra.avg.pct) }}</span></div>
+              <div class="text-xs text-gray-500 mt-1">价 {{ extra.avg.price || '-' }}</div>
+              <div id="spark-avg" class="mt-2" style="height:60px;"></div>
+            </div>
+          </div>
+        </div>
+        <div class="text-center text-xs text-gray-400">数据源：腾讯财经 (Real-time)</div>
+      </div>
+    </div>
+    <div v-if="activeTab==='market'" class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div class="lg:col-span-1 space-y-4">
+        <div class="bg-white rounded-xl shadow p-4">
+          <div class="text-sm text-gray-500 mb-2">板块跷跷板/同涨同跌</div>
+          <div class="text-sm text-gray-700 leading-6 whitespace-pre-wrap">{{ marketAi.seesaw }}</div>
+        </div>
+        <div class="bg-white rounded-xl shadow p-4">
+          <div class="text-sm text-gray-500 mb-2">涨跌幅榜趋势判断</div>
+          <div class="text-sm text-gray-700 leading-6 whitespace-pre-wrap">{{ marketAi.streak }}</div>
+        </div>
+        <div class="bg-white rounded-xl shadow p-4">
+          <div class="text-sm text-gray-500 mb-2">板块 Prompt 调试</div>
+          <div class="text-xs text-gray-400 mb-2">模型：deepseek-v3.2</div>
+          <textarea v-model="sectorPromptText" class="w-full border rounded p-2 text-xs h-40"></textarea>
+          <div class="flex items-center gap-2 mt-2">
+            <button @click="runSectorPromptDebug" class="px-3 py-2 bg-gray-800 text-white rounded hover:bg-gray-900 transition" :disabled="sectorPromptLoading">生成解读</button>
+            <div class="text-xs text-gray-400" v-if="sectorPromptLoading">生成中...</div>
+            <div class="text-xs text-red-500" v-if="sectorPromptError">{{ sectorPromptError }}</div>
+          </div>
+          <div class="text-sm text-gray-600 mt-3 whitespace-pre-wrap" v-if="sectorPromptOutput">{{ sectorPromptOutput }}</div>
+        </div>
+      </div>
+      <div class="lg:col-span-2 space-y-4">
+        <div class="bg-white rounded-xl shadow p-4">
+          <div class="text-sm text-gray-500 mb-2 font-semibold">板块行情与关联分析</div>
+          <div id="sector-analysis">
+            <div class="flex items-center gap-2 mb-2">
+              <input v-model="sectorInput" class="flex-1 border rounded px-2 py-1 text-xs" placeholder="输入关注板块，逗号分隔">
+              <button @click="updateSectorWatch" class="px-2 py-1 text-xs bg-gray-800 text-white rounded">更新</button>
+            </div>
+            <div class="text-xs text-gray-400 mb-2">示例：半导体,云计算 或 BK_半导体</div>
+            <div id="sector-info" class="mb-2 text-sm"></div>
+            <div class="h-72 border rounded-lg p-2 mb-4">
+              <div id="sector-trend-chart" class="w-full h-full"></div>
+            </div>
+            <div class="border rounded-lg p-2">
+              <div class="flex items-center justify-between text-xs text-gray-500 px-1 mb-1">
+                <span class="text-green-600">跌幅前十</span>
+                <span class="text-red-600">涨幅前十</span>
+              </div>
+              <div class="grid grid-cols-2 gap-0 h-80">
+                <div id="sector-rank-down-chart" class="w-full h-full"></div>
+                <div id="sector-rank-up-chart" class="w-full h-full border-l border-gray-200"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="text-center text-xs text-gray-400">数据源：腾讯财经 (Real-time)</div>
+      </div>
+    </div>
+    <div v-if="activeTab==='watch'" class="grid grid-cols-1 gap-4">
+      <div class="bg-white rounded-xl shadow p-4">
+        <div class="text-sm text-gray-500 mb-2 font-semibold">关注板块列表</div>
+        <div v-if="!watchList.length" class="text-sm text-gray-400">暂无关注板块</div>
+        <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div v-for="item in watchList" :key="item" class="border rounded-lg p-3">
+            <div class="flex items-center justify-between mb-2">
+              <div class="text-sm font-semibold">{{ item }}</div>
+              <div class="text-xs text-gray-500">近20日 {{ (watchIndicators[item] || []).length }} 条</div>
+            </div>
+            <div class="text-xs text-gray-500 mb-2">
+              <span>Alpha {{ lastIndicator(item).alpha ?? '-' }}</span>
+              <span class="mx-2">Amount_Share_Pct {{ lastIndicator(item).amount_share_pct ?? '-' }}</span>
+              <span>Price {{ lastIndicator(item).price ?? '-' }}</span>
+            </div>
+            <svg class="w-full h-20 bg-gray-50 rounded" viewBox="0 0 200 60">
+              <polyline points="0,40 20,30 40,35 60,20 80,28 100,18 120,26 140,12 160,20 180,10 200,14" fill="none" stroke="#60a5fa" stroke-width="2"></polyline>
+              <polyline points="0,50 20,45 40,48 60,38 80,42 100,34 120,40 140,30 160,36 180,28 200,32" fill="none" stroke="#34d399" stroke-width="2"></polyline>
+            </svg>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="./ui.js"></script>
+</body>
+</html>
