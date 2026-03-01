@@ -58,12 +58,19 @@ if ! command -v pm2 &> /dev/null; then
     sudo npm install -g pm2
 fi
 
-# 5. 配置环境与启动
-echo "[5/5] 启动服务..."
+# 5. 数据预热 (关键：防止启动后页面空白)
+echo "[5/6] 执行数据预热 (抓取初始数据)..."
+# 确保使用虚拟环境的 python
+$PWD/venv/bin/python3 fetch_sector_data.py history_dynamic "半导体,云计算,有色金属,煤炭" 20 || echo "预热 history 失败 (非致命)"
+$PWD/venv/bin/python3 fetch_sector_data.py rank || echo "预热 rank 失败 (非致命)"
+$PWD/venv/bin/python3 fetch_sector_data.py rotation || echo "预热 rotation 失败 (非致命)"
+
+# 6. 配置环境与启动
+echo "[6/6] 启动服务..."
 if [ ! -f ".env" ]; then
     echo "检测到缺少 .env 文件，从 .env.example 复制..."
     cp .env.example .env
-    echo "请后续编辑 .env 文件填入 API Key (可选)"
+    echo "警告：请务必编辑 .env 文件填入 DEEPSEEK_API_KEY，否则 AI 功能不可用！"
 fi
 
 # 安装项目 Node 依赖
@@ -72,10 +79,10 @@ npm install --production
 # 使用 PM2 启动
 pm2 start ecosystem.config.js
 pm2 save
-# 设置开机自启 (根据系统不同可能需要手动运行输出的命令)
+# 设置开机自启
 pm2 startup | grep "sudo" | bash || true
 
 echo "=== 部署完成！ ==="
-echo "服务已在后台运行，使用 'pm2 status' 查看状态。"
-echo "日志查看: 'pm2 logs'"
-echo "如需修改配置，请编辑 .env 文件后运行 'pm2 restart all'"
+echo "1. 请确保在 .env 中填入了 Key: vim .env"
+echo "2. 服务端口: 8787 (请在阿里云安全组放行此端口)"
+echo "3. 查看日志: pm2 logs"
