@@ -95,7 +95,17 @@ echo "虚拟环境 Python 版本: $VENV_VER"
 echo "[3/5] 安装 Python 依赖 (可能需要几分钟)..."
 pip install --upgrade pip
 if [ -f "requirements.txt" ]; then
-    pip install -r requirements.txt
+    # 尝试安装，如果失败则尝试安装基础编译工具再重试
+    if ! pip install -r requirements.txt; then
+        echo "依赖安装失败，尝试安装编译工具..."
+        if [ -f /etc/redhat-release ]; then
+            sudo yum install -y gcc gcc-c++ python3-devel || true
+        elif [ -f /etc/debian_version ]; then
+            sudo apt-get install -y build-essential python3-dev || true
+        fi
+        echo "重试安装依赖..."
+        pip install -r requirements.txt
+    fi
 else
     echo "错误：找不到 requirements.txt 文件！"
     exit 1
