@@ -2071,6 +2071,30 @@ async function buildSnapshotPayload() {
 }
 
 async function callBailian(prompt, data) {
+  // 1. 优先支持 DeepSeek 官方 API (如果配置了 DEEPSEEK_API_KEY)
+  if (process.env.DEEPSEEK_API_KEY) {
+    const apiKey = process.env.DEEPSEEK_API_KEY;
+    const model = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
+    const baseUrl = process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com';
+    const url = `${baseUrl}/chat/completions`;
+    
+    const body = {
+      model,
+      messages: [
+        { role: 'system', content: prompt },
+        { role: 'user', content: `输入数据：\n${JSON.stringify(data)}` }
+      ],
+      temperature: 0.2,
+      stream: false
+    };
+    
+    const { status, data: text } = await postJson(url, { Authorization: `Bearer ${apiKey}` }, body);
+    if (status !== 200) throw new Error(`deepseek_api_error_${status}`);
+    const json = text ? JSON.parse(text) : {};
+    return json?.choices?.[0]?.message?.content || '';
+  }
+
+  // 2. 降级使用阿里云百炼 (DashScope)
   const apiKey = process.env.DASHSCOPE_API_KEY || process.env.BAILIAN_API_KEY || '';
   if (!apiKey) throw new Error('missing_key');
   const model = process.env.BAILIAN_MODEL || 'deepseek-v3.2';
