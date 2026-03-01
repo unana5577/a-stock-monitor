@@ -1,0 +1,1 @@
+35 15 * * 1-5 cd /Users/una5577/Documents/trae_projects/a-stock-monitor && /bin/bash scripts/fetch_rotation_job.sh >> /Users/una5577/Documents/trae_projects/a-stock-monitor/runtime/rotation-cron.log 2>&1

@@ -1,0 +1,43 @@
+{
+  "sector_lifecycle_response": {
+    "板块名称": "string",
+    "基准指数": "string",
+    "相关性": "number",
+    "板块位置": "string (高位区/中高位区/中位区/低位区/冰点区)",
+    "动能": "string (强势向上/强势向下/偏强向上/偏强向下/中性震荡/弱势向下/弱势反弹)",
+    "资金行为": "string (恐慌出逃/放量启动/资金撤退/加速赶顶/超跌反弹/横盘整理)",
+    "位置区域": "string (异常区/低位区/中位区/高位区)",
+    "位置名称": "string (过热期/强势期/热门期/活跃期/中性期/磨底期/补涨期/弱势期/冰点期/背离期/异常期)",
+    "阶段信号": "string (衰退期/背离期A/背离期B/加速期/震荡期/启动期/潜伏期)",
+    "显示名称": "string",
+    "含义": "string",
+    "操作建议": "string",
+    "归因说明": "string",
+    "乖离对比": "string",
+    "指标数据": {
+      "Alpha_5": "number",
+      "Alpha_20": "number",
+      "Amount_Share": "number",
+      "Amount_Share_MA5": "number",
+      "Amount_Share_Change": "number",
+      "MA5": "number",
+      "MA20": "number",
+      "MA60": "number",
+      "MA5_Slope": "number",
+      "MA60_Slope": "number",
+      "Bias_20": "number",
+      "Bias_20_History_Max": "number",
+      "Bias_20_History_Min": "number",
+      "Pct": "number",
+      "alpha_5": "number",
+      "alpha_20": "number",
+      "amount_share": "number",
+      "amount_share_ma5": "number",
+      "ma20": "number",
+      "ma60": "number",
+      "bias_20": "number",
+      "close": "number",
+      "pct": "number"
+    }
+  }
+}

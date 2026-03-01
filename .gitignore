@@ -9,3 +9,6 @@ yarn-error.log
 
 # Data
 data/
+
+# Local ops notes (keep private)
+README.ops.md

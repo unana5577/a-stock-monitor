@@ -1,0 +1,4 @@
+# a-stock-monitor news jobs
+# 08:00 and 15:30 every day
+0 8 * * * cd /Users/una5577/Documents/trae_projects/a-stock-monitor && /bin/bash scripts/fetch_news_job.sh >> /Users/una5577/Documents/trae_projects/a-stock-monitor/runtime/news-cron.log 2>&1
+30 15 * * * cd /Users/una5577/Documents/trae_projects/a-stock-monitor && /bin/bash scripts/fetch_news_job.sh >> /Users/una5577/Documents/trae_projects/a-stock-monitor/runtime/news-cron.log 2>&1

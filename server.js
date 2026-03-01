@@ -3,6 +3,7 @@ const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const { execFile } = require('child_process');
+const crypto = require('crypto');
 
 // Try to load .env file
 const envPath = path.join(__dirname, '.env');
@@ -24,6 +25,7 @@ const ai = require('./ai');
 
 const PORT = process.env.PORT || 8787;
 const CACHE_TTL_MS = 60_000;
+const OVERVIEW_CACHE_REV = 2;
 
 const cache = new Map();
 const now = () => Date.now();
@@ -31,6 +33,10 @@ let lastAiText = '';
 const lastGoodSnapshot = { payload: null, ts: 0 };
 const lastGoodMinute = new Map();
 let lastWarmupDay = '';
+const lastIntradayRotation = { payload: null, ts: 0, day: '', leader: '', signal: '', reason: [], signalTs: 0 };
+const INTRADAY_DEBOUNCE_MS = 10 * 60 * 1000;
+const INTRADAY_CACHE_TTL_MS = 2 * 60 * 1000;
+let lastDailyBackfillDay = '';
 
 function isNum(v) {
   return typeof v === 'number' && !Number.isNaN(v);
@@ -56,6 +62,27 @@ function minuteToNumber(t) {
   const [h, m] = t.split(':').map(n => parseInt(n, 10));
   if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
   return h * 60 + m;
+}
+
+function timeToMinuteKey(t) {
+  if (!t) return null;
+  const s = String(t);
+  if (s.includes(' ')) {
+    const parts = s.split(' ');
+    return parts[1] || null;
+  }
+  if (s.includes('T')) {
+    const parts = s.split('T');
+    return (parts[1] || '').slice(0, 5) || null;
+  }
+  if (s.length >= 5 && s[2] === ':') return s.slice(0, 5);
+  return s;
+}
+
+function isTradingMinute(t) {
+  const n = minuteToNumber(t);
+  if (n == null) return false;
+  return (n >= 570 && n <= 690) || (n >= 780 && n <= 900);
 }
 
 function ensureBondMirror(bonds) {
@@ -213,6 +240,39 @@ function runPython(code, args = []) {
   });
 }
 
+function execPythonJson(args, timeout = 8000) {
+  return new Promise((resolve) => {
+    execFile('python3', args, { timeout, cwd: __dirname, maxBuffer: 10 * 1024 * 1024 }, (err, stdout) => {
+      if (err) return resolve(null);
+      const out = (stdout || '').toString().trim();
+      if (!out) return resolve(null);
+      try {
+        if (isJsonText(out)) return resolve(JSON.parse(out));
+        const idx = out.indexOf('{');
+        const alt = idx >= 0 ? out.slice(idx) : out;
+        if (!isJsonText(alt)) return resolve(null);
+        return resolve(JSON.parse(alt));
+      } catch (e) {
+        return resolve(null);
+      }
+    });
+  });
+}
+
+async function withTimeout(promise, ms) {
+  let timer = null;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((resolve) => {
+        timer = setTimeout(() => resolve(null), ms);
+      })
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 async function ensureAshareFile() {
   if (fs.existsSync(ASHARE_PATH)) return ASHARE_PATH;
   const dir = path.dirname(ASHARE_PATH);
@@ -288,9 +348,21 @@ print(json.dumps({"series": res, "prevClose": prev_close}, ensure_ascii=False))
     const payload = output ? JSON.parse(output) : { series: [], prevClose: null };
     const rawArr = Array.isArray(payload) ? payload : (payload.series || []);
     const prevClose = payload && !Array.isArray(payload) ? payload.prevClose : null;
-    const today = (new Date()).toISOString().split('T')[0];
-    const arr = rawArr.filter(p => p?.time && String(p.time).startsWith(today));
-    const day = today;
+    
+    // Determine date from data or default to today
+    let arr = rawArr;
+    let day = (new Date()).toISOString().split('T')[0];
+    
+    if (rawArr.length > 0 && rawArr[0]?.time) {
+      // Extract date from the first data point (format: YYYY-MM-DD HH:MM)
+      const datePart = rawArr[0].time.split(' ')[0];
+      if (datePart && /^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
+        day = datePart;
+        // Filter to ensure data consistency (all points from same day)
+        arr = rawArr.filter(p => p?.time && String(p.time).startsWith(day));
+      }
+    }
+
     const res = { date: day, data: arr, prevClose: prevClose ?? null };
     cache.set(key, { t: now(), v: res });
     return res;
@@ -309,6 +381,26 @@ async function fetchSnapshot(codes) {
     const parts = data.split(';').filter(Boolean);
     const result = {};
     
+    const parseAmount = (vals) => {
+      const raw = Number(vals[37]);
+      const rawOk = Number.isFinite(raw) && raw > 0;
+      let alt = null;
+      const mixed = vals[35] || '';
+      if (mixed && mixed.includes('/')) {
+        const seg = mixed.split('/');
+        const maybe = Number(seg[2]);
+        if (Number.isFinite(maybe) && maybe > 0) {
+          alt = maybe > 1e10 ? maybe / 10000 : maybe;
+        }
+      }
+      if (Number.isFinite(alt) && alt > 0) {
+        if (!rawOk) return alt;
+        const ratio = alt / raw;
+        if (!Number.isFinite(ratio) || ratio < 0.5 || ratio > 2) return alt;
+      }
+      return rawOk ? raw : null;
+    };
+
     parts.forEach(line => {
       if (!line.includes('=')) return;
       const [left, right] = line.split('=');
@@ -321,7 +413,7 @@ async function fetchSnapshot(codes) {
           price: parseFloat(vals[3]),
           pct: parseFloat(vals[32]), 
           vol: parseFloat(vals[6]), 
-          amount: parseFloat(vals[37])
+          amount: parseAmount(vals)
         };
       }
     });
@@ -376,6 +468,47 @@ async function fetchEastmoneyMinute(secid) {
   }
 }
 
+async function fetchEastmoneyBreadth() {
+  const url = 'https://push2.eastmoney.com/api/qt/stock/get?secid=1.000001&fields=f104,f105,f106';
+  try {
+    const { status, data } = await get(url);
+    if (status !== 200) return null;
+    const json = JSON.parse(data);
+    const up = Number(json?.data?.f104);
+    const down = Number(json?.data?.f105);
+    const flat = Number(json?.data?.f106);
+    if (!isNum(up) || !isNum(down)) return null;
+    const total = Number.isFinite(flat) ? up + down + flat : up + down;
+    return { up, down, flat: Number.isFinite(flat) ? flat : 0, total };
+  } catch (e) {
+    return null;
+  }
+}
+
+async function fetchBreadthViaPython() {
+  return new Promise((resolve) => {
+    execFile('python3', ['fetch_sector_data.py', 'breadth'], { timeout: 5000 }, (err, stdout) => {
+      if (err) return resolve(null);
+      const out = (stdout || '').trim();
+      if (!out || !isJsonText(out)) return resolve(null);
+      try {
+        const obj = JSON.parse(out);
+        if (!isNum(obj?.up) || !isNum(obj?.down)) return resolve(null);
+        if (!isNum(obj.total)) obj.total = Number(obj.up || 0) + Number(obj.down || 0) + Number(obj.flat || 0);
+        resolve(obj);
+      } catch (e) {
+        resolve(null);
+      }
+    });
+  });
+}
+
+async function fetchBreadthRealtime() {
+  const em = await fetchEastmoneyBreadth();
+  if (em) return em;
+  return await fetchBreadthViaPython();
+}
+
 async function fetchEastmoneyDaily(secid, limit = 180) {
   const key = `em1d:${secid}:${limit}`;
   const hit = cache.get(key);
@@ -399,6 +532,39 @@ async function fetchEastmoneyDaily(secid, limit = 180) {
         pct: Number(parts[8])
       };
     }).filter(p => p.date);
+    const res = { date: arr.length ? arr[arr.length - 1]?.date : null, data: arr };
+    cache.set(key, { t: now(), v: res });
+    return res;
+  } catch (e) {
+    return { date: null, data: [] };
+  }
+}
+
+async function fetchTencentDaily(code, limit = 180) {
+  const key = `tx1d:${code}:${limit}`;
+  const hit = cache.get(key);
+  if (hit && now() - hit.t < CACHE_TTL_MS) return hit.v;
+  const url = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${code},day,,,${limit},qfq`;
+  try {
+    const { status, data } = await get(url);
+    if (status !== 200) throw new Error('status ' + status);
+    const json = JSON.parse(data);
+    const klines = json?.data?.[code]?.day || [];
+    const arr = klines.map((row) => {
+      const open = Number(row[1]);
+      const close = Number(row[2]);
+      const pct = open ? +(((close - open) / open) * 100).toFixed(2) : null;
+      return {
+        date: row[0],
+        open,
+        close,
+        high: Number(row[3]),
+        low: Number(row[4]),
+        volume: Number(row[5]),
+        amount: null,
+        pct
+      };
+    });
     const res = { date: arr.length ? arr[arr.length - 1]?.date : null, data: arr };
     cache.set(key, { t: now(), v: res });
     return res;
@@ -470,6 +636,22 @@ function minuteFilePath(day, code) {
   return path.join(dir, `minute-${d}-${code}.jsonl`);
 }
 
+function runtimeMinuteFilePath(day, code) {
+  const d = day.replace(/-/g, '');
+  const dir = path.join(__dirname, 'runtime', 'minute');
+  fs.mkdirSync(dir, { recursive: true });
+  return path.join(dir, `minute-${d}-${code}.jsonl`);
+}
+
+function findLatestRuntimeMinuteFile(code) {
+  const dir = path.join(__dirname, 'runtime', 'minute');
+  if (!fs.existsSync(dir)) return null;
+  const files = fs.readdirSync(dir).filter(f => f.startsWith('minute-') && f.endsWith(`-${code}.jsonl`));
+  if (!files.length) return null;
+  files.sort();
+  return path.join(dir, files[files.length - 1]);
+}
+
 function volumeFilePath(day) {
   const d = day.replace(/-/g, '');
   const dir = path.join(__dirname, 'data');
@@ -478,11 +660,46 @@ function volumeFilePath(day) {
 }
 
 function latestTradingDay() {
-  const d = new Date();
-  const day = d.getDay();
-  if (day === 0) d.setDate(d.getDate() - 2);
-  if (day === 6) d.setDate(d.getDate() - 1);
-  return d.toISOString().slice(0, 10);
+  const parts = getBeijingParts();
+  if (!parts) return new Date().toISOString().slice(0, 10);
+  if (parts.weekday === 0) return shiftBeijingDate(parts.date, -2);
+  if (parts.weekday === 6) return shiftBeijingDate(parts.date, -1);
+  return parts.date;
+}
+
+function getBeijingParts() {
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    weekday: 'short',
+    hour12: false
+  });
+  const parts = fmt.formatToParts(new Date());
+  const map = {};
+  parts.forEach((p) => {
+    if (p.type !== 'literal') map[p.type] = p.value;
+  });
+  const date = `${map.year}-${map.month}-${map.day}`;
+  const minutes = Number(map.hour) * 60 + Number(map.minute);
+  const weekMap = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  const weekday = weekMap[map.weekday] ?? null;
+  return { date, minutes, weekday };
+}
+
+function shiftBeijingDate(dateStr, days) {
+  const d = new Date(`${dateStr}T00:00:00+08:00`);
+  d.setDate(d.getDate() + days);
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+  return fmt.format(d);
 }
 
 function cacheJsonPath(prefix, day) {
@@ -490,6 +707,80 @@ function cacheJsonPath(prefix, day) {
   const dir = path.join(__dirname, 'data');
   fs.mkdirSync(dir, { recursive: true });
   return path.join(dir, `${prefix}-${d}.json`);
+}
+
+function normalizeSectorKey(list) {
+  const arr = Array.isArray(list) ? list : String(list || '').split(',');
+  const uniq = Array.from(new Set(arr.map(s => String(s || '').trim()).filter(Boolean)));
+  uniq.sort();
+  return uniq.join(',');
+}
+
+function sectorCacheFile(prefix, day, list, days) {
+  const key = normalizeSectorKey(list);
+  const hash = crypto.createHash('md5').update(key).digest('hex').slice(0, 10);
+  return cacheJsonPath(`${prefix}-${days}-${hash}`, day);
+}
+
+function rotationSnapshotPath(day) {
+  const d = day.replace(/-/g, '');
+  return path.join(__dirname, 'data', `sector-rotation-${d}.json`);
+}
+
+function readRotationSnapshot(day) {
+  const file = rotationSnapshotPath(day);
+  if (!fs.existsSync(file)) return null;
+  const txt = fs.readFileSync(file, 'utf-8').trim();
+  return txt || null;
+}
+
+function findLatestRotationSnapshot() {
+  const dir = path.join(__dirname, 'data');
+  if (!fs.existsSync(dir)) return null;
+  const files = fs.readdirSync(dir).filter(f => /^sector-rotation-\d{8}\.json$/.test(f));
+  if (!files.length) return null;
+  files.sort();
+  return path.join(dir, files[files.length - 1]);
+}
+
+function rotationSequencePath(day) {
+  const d = day.replace(/-/g, '');
+  return path.join(__dirname, 'data', `rotation-sequence-${d}.json`);
+}
+
+function readRotationSequence(day) {
+  const file = rotationSequencePath(day);
+  if (!fs.existsSync(file)) return null;
+  const txt = fs.readFileSync(file, 'utf-8').trim();
+  return txt || null;
+}
+
+function readLatestRotationSequence() {
+  const dir = path.join(__dirname, 'data');
+  if (!fs.existsSync(dir)) return null;
+  const files = fs.readdirSync(dir).filter(f => /^rotation-sequence-\d{8}\.json$/.test(f));
+  if (!files.length) return null;
+  files.sort();
+  const file = path.join(dir, files[files.length - 1]);
+  const txt = fs.readFileSync(file, 'utf-8').trim();
+  return txt || null;
+}
+
+function intradayRotationPath(day, view) {
+  const d = day.replace(/-/g, '');
+  const tag = view === 'detail' ? 'detail' : 'summary';
+  return path.join(__dirname, 'data', `intraday-rotation-${tag}-${d}.json`);
+}
+
+function findLatestSectorHistoryCache(day) {
+  const d = day.replace(/-/g, '');
+  const dir = path.join(__dirname, 'data');
+  if (!fs.existsSync(dir)) return null;
+  const files = fs.readdirSync(dir).filter(f => f.startsWith('sector-history-') && f.endsWith(`-${d}.json`));
+  if (!files.length) return null;
+  files.sort();
+  const file = path.join(dir, files[files.length - 1]);
+  return readJsonCache(file);
 }
 
 function readJsonCache(file) {
@@ -503,6 +794,26 @@ function writeJsonCache(file, jsonText) {
   fs.writeFileSync(file, jsonText);
 }
 
+function findLatestCacheFile(prefix) {
+  const dir = path.join(__dirname, 'data');
+  if (!fs.existsSync(dir)) return null;
+  const files = fs.readdirSync(dir).filter(f => f.startsWith(`${prefix}-`) && f.endsWith('.json'));
+  if (!files.length) return null;
+  files.sort();
+  return path.join(dir, files[files.length - 1]);
+}
+
+function warmupSectorCache(cmd, list, days, cacheFile) {
+  const cached = readJsonCache(cacheFile);
+  if (cached) return 'cached';
+  execFile('python3', ['fetch_sector_data.py', cmd, list, String(days)], (err, stdout) => {
+    if (err) return;
+    const out = (stdout || '').trim();
+    if (out && isJsonText(out)) writeJsonCache(cacheFile, out);
+  });
+  return 'queued';
+}
+
 function isJsonText(text) {
   try {
     JSON.parse(text);
@@ -512,8 +823,211 @@ function isJsonText(text) {
   }
 }
 
+function readJsonFileSafe(file) {
+  if (!file || !fs.existsSync(file)) return null;
+  try {
+    const txt = fs.readFileSync(file, 'utf-8').trim();
+    if (!txt) return null;
+    return JSON.parse(txt);
+  } catch (e) {
+    return null;
+  }
+}
+
+function todayStr() {
+  return (new Date()).toISOString().slice(0, 10);
+}
+
+function normalizeDateParam(raw) {
+  const date = String(raw || '').trim();
+  if (!date) return todayStr();
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null;
+}
+
+function normalizeMonthParam(raw) {
+  const month = String(raw || '').trim();
+  if (!month) return null;
+  return /^\d{4}-\d{2}$/.test(month) ? month : null;
+}
+
+function newsFilePath(day) {
+  // 新闻数据路径已迁移到 data/news/
+  return path.join(__dirname, 'data/news', `${day}.json`);
+}
+
+function toSentimentLabel(v) {
+  if (v === 1 || v === '1') return '利好';
+  if (v === -1 || v === '-1') return '利空';
+  return '中性';
+}
+
+function normalizeNewsItem(item, idx) {
+  const classify = item?.classify && typeof item.classify === 'object' ? item.classify : {};
+  const sentiment = Number(classify.sentiment);
+  const sentimentVal = Number.isFinite(sentiment) ? sentiment : 0;
+  const relatedStocksRaw = Array.isArray(item?.related_stocks) ? item.related_stocks : [];
+  const relatedStocks = [];
+  const stockSeen = new Set();
+  relatedStocksRaw.forEach((stock) => {
+    const val = String(stock || '').trim();
+    if (!val || stockSeen.has(val)) return;
+    stockSeen.add(val);
+    relatedStocks.push(val);
+  });
+  const combinedText = `${item?.title || ''} ${item?.content || item?.summary || ''}`;
+  let country = String(item?.country || '').trim();
+  if (!country) {
+    if (combinedText.includes('美国') || combinedText.includes('美联储') || combinedText.includes('美股')) country = '美国';
+    else if (combinedText.includes('日本') || combinedText.includes('日经') || combinedText.includes('日本央行')) country = '日本';
+    else country = '中国';
+  }
+  const out = {
+    news_id: item?.news_id || item?.id || `news-${idx + 1}`,
+    title: item?.title || '',
+    content: item?.content || item?.summary || '',
+    source: item?.source || '',
+    url: item?.url || item?.source_url || '',
+    publish_time: item?.publish_time || item?.crawl_time || item?.fetch_time || '',
+    related_stocks: relatedStocks,
+    country,
+    classify: {
+      type: classify?.type ?? null,
+      sector: classify?.sector ?? null,
+      sentiment: sentimentVal,
+      level: classify?.level ?? null
+    }
+  };
+  return out;
+}
+
+function readNewsByDate(day) {
+  const file = newsFilePath(day);
+  const json = readJsonFileSafe(file);
+  let list = [];
+  if (Array.isArray(json)) {
+    list = json;
+  } else if (json && typeof json === 'object' && Array.isArray(json.news)) {
+    list = json.news;
+  }
+  if (!Array.isArray(list)) return [];
+  return list.map((item, idx) => normalizeNewsItem(item, idx));
+}
+
+function buildNewsHeat(items) {
+  const byType = {};
+  const bySector = {};
+  const bySentiment = { '利好': 0, '中性': 0, '利空': 0 };
+  const byLevel = {};
+  // 按类型分组的情绪统计
+  const byTypeSentiment = {};
+  // 按行业分组的情绪统计
+  const bySectorSentiment = {};
+  (items || []).forEach((item) => {
+    const type = item?.classify?.type;
+    const sector = item?.classify?.sector;
+    const level = item?.classify?.level;
+    const sentimentLabel = toSentimentLabel(item?.classify?.sentiment);
+    if (type) {
+      byType[type] = (byType[type] || 0) + 1;
+      // 按类型统计情绪
+      if (!byTypeSentiment[type]) {
+        byTypeSentiment[type] = { '利好': 0, '中性': 0, '利空': 0 };
+      }
+      byTypeSentiment[type][sentimentLabel] = (byTypeSentiment[type][sentimentLabel] || 0) + 1;
+    }
+    if (sector) {
+      bySector[sector] = (bySector[sector] || 0) + 1;
+      // 按行业统计情绪
+      if (!bySectorSentiment[sector]) {
+        bySectorSentiment[sector] = { '利好': 0, '中性': 0, '利空': 0 };
+      }
+      bySectorSentiment[sector][sentimentLabel] = (bySectorSentiment[sector][sentimentLabel] || 0) + 1;
+    }
+    bySentiment[sentimentLabel] = (bySentiment[sentimentLabel] || 0) + 1;
+    if (level) byLevel[level] = (byLevel[level] || 0) + 1;
+  });
+  return { byType, bySector, bySentiment, byLevel, byTypeSentiment, bySectorSentiment };
+}
+
+function buildSignalsFromBacktest() {
+  const file = path.join(__dirname, 'data', 'backtest_false_kill.json');
+  const json = readJsonFileSafe(file);
+  const sectors = json?.sectors;
+  if (!sectors || typeof sectors !== 'object') return [];
+
+  return Object.entries(sectors).map(([sector, sectorStats]) => {
+    const actionStats = sectorStats?.action_stats || {};
+    const longCount = Number(actionStats?.long?.count || 0);
+    const falseKillCount = Number(actionStats?.false_kill?.count || 0);
+    const neutralCount = Number(actionStats?.neutral?.count || 0);
+    const avoidCount = Number(actionStats?.avoid?.count || 0);
+
+    // Keep API output in required domain: long / false_kill / neutral
+    const candidates = [
+      { signal: 'long', count: longCount },
+      { signal: 'false_kill', count: falseKillCount },
+      { signal: 'neutral', count: neutralCount + avoidCount }
+    ];
+    candidates.sort((a, b) => b.count - a.count);
+
+    return {
+      sector,
+      signal: candidates[0]?.signal || 'neutral'
+    };
+  });
+}
+
+function loadLatestBreadthRecord() {
+  const dir = path.join(__dirname, 'data');
+  const directCandidates = [
+    path.join(dir, 'market-breadth.json'),
+    path.join(dir, 'market_breadth.json')
+  ];
+
+  for (const file of directCandidates) {
+    const json = readJsonFileSafe(file);
+    if (!json) continue;
+    if (Array.isArray(json.records) && json.records.length > 0) {
+      return json.records[json.records.length - 1];
+    }
+    if (typeof json.up === 'number' || typeof json.down === 'number' || typeof json.total === 'number') {
+      return json;
+    }
+  }
+
+  if (!fs.existsSync(dir)) return null;
+  const files = fs.readdirSync(dir)
+    .filter(f => f.startsWith('market-breadth-') && f.endsWith('.json'))
+    .sort();
+  if (!files.length) return null;
+  const latest = readJsonFileSafe(path.join(dir, files[files.length - 1]));
+  return latest || null;
+}
+
+function loadBreadthFromArchive(day) {
+  if (!day) return null;
+  const file = path.join(__dirname, 'data', `archive-${day.replace(/-/g, '')}.jsonl`);
+  if (!fs.existsSync(file)) return null;
+  const txt = fs.readFileSync(file, 'utf-8').trim();
+  if (!txt) return null;
+  const line = txt.split('\n').slice(-1)[0];
+  if (!line) return null;
+  try {
+    const row = JSON.parse(line);
+    if (!Array.isArray(row) || row.length < 24) return null;
+    const up = Number(row[22] || 0);
+    const down = Number(row[23] || 0);
+    if (!Number.isFinite(up) || !Number.isFinite(down)) return null;
+    return { day, up, down, flat: 0, total: up + down };
+  } catch (e) {
+    return null;
+  }
+}
+
 const WATCH_FILE = path.join(__dirname, 'data', 'sector-watch.json');
+const PROFILE_FILE = path.join(__dirname, 'data', 'sector-profile.json');
 const DEFAULT_WATCH_LIST = ['云计算', '半导体', '有色金属'];
+const GROUP_OPTIONS = ['资源', '硬件', '软件'];
 
 function normalizeWatchList(list) {
   if (!Array.isArray(list)) return [];
@@ -552,6 +1066,184 @@ function readWatchList() {
   }
 }
 
+function normalizeProfileGroups(groups) {
+  const out = {};
+  if (!groups || typeof groups !== 'object') return out;
+  Object.entries(groups).forEach(([k, v]) => {
+    const name = String(k || '').trim();
+    const group = String(v || '').trim();
+    if (!name || !group) return;
+    if (!GROUP_OPTIONS.includes(group)) return;
+    out[name] = group;
+  });
+  return out;
+}
+
+function writeSectorProfile(groups) {
+  const dir = path.join(__dirname, 'data');
+  fs.mkdirSync(dir, { recursive: true });
+  const normalized = normalizeProfileGroups(groups);
+  const payload = { groups: normalized, updated_at: new Date().toISOString() };
+  fs.writeFileSync(PROFILE_FILE, JSON.stringify(payload, null, 2));
+  return payload;
+}
+
+function readSectorProfile() {
+  const dir = path.join(__dirname, 'data');
+  fs.mkdirSync(dir, { recursive: true });
+  if (!fs.existsSync(PROFILE_FILE)) return writeSectorProfile({});
+  const json = readJsonFileSafe(PROFILE_FILE);
+  if (!json || typeof json !== 'object') return writeSectorProfile({});
+  const groups = normalizeProfileGroups(json.groups || json);
+  const updated = json.updated_at || new Date().toISOString();
+  return { groups, updated_at: updated };
+}
+
+function pickMinutePct(series) {
+  if (!Array.isArray(series) || !series.length) return null;
+  const first = series[0];
+  const last = series[series.length - 1];
+  const base = Number(first?.open ?? first?.close);
+  const end = Number(last?.close ?? last?.open);
+  if (!isNum(base) || !isNum(end) || base === 0) return null;
+  return +(((end - base) / base) * 100).toFixed(2);
+}
+
+function buildIntradayBars(histPayload, lifePayload, profileGroups, view) {
+  const rawWatch = Array.isArray(histPayload?.watch) ? histPayload.watch : [];
+  const fallbackWatch = Array.isArray(lifePayload?.watch) ? lifePayload.watch : readWatchList();
+  const watch = rawWatch.length ? rawWatch : fallbackWatch;
+  const minutes = histPayload?.minute || {};
+  const history = histPayload?.history || {};
+  const items = Array.isArray(lifePayload?.items) ? lifePayload.items : [];
+  const heatMap = new Map();
+  items.forEach((it) => {
+    const name = String(it?.['板块名称'] || '').trim();
+    const ch = it?.['指标数据']?.['Amount_Share_Change'];
+    if (name && isNum(Number(ch))) heatMap.set(name, Number(ch));
+  });
+  const groupMap = profileGroups || {};
+  const rows = [];
+  watch.forEach((name) => {
+    const series = minutes?.[name]?.series || [];
+    const todayPct = pickMinutePct(series);
+    const hist = history?.[name] || [];
+    const latestPct = hist.length ? Number(hist[hist.length - 1]?.pct) : null;
+    const pct = isNum(todayPct) ? todayPct : (isNum(latestPct) ? latestPct : null);
+    const heat = heatMap.has(name) ? heatMap.get(name) : null;
+    let group = String(groupMap[name] || '').trim();
+    // 视图与缺省分组处理：未分类也纳入展示，避免空图
+    if (view === 'detail') {
+      if (!GROUP_OPTIONS.includes(group)) group = '未分类';
+    } else {
+      if (group === '资源') group = '资源';
+      else if (group === '硬件' || group === '软件') group = '科技';
+      else {
+        // 简单启发式：根据名称猜测分组，否则归入未分类
+        if (/有色|煤炭|电力|钢铁|稀土|石油|化工/.test(name)) group = '资源';
+        else if (/半导体|芯片|硬件|设备|通讯设备/.test(name)) group = '科技';
+        else if (/云计算|软件|AI|人工智能|数字化|数据/.test(name)) group = '科技';
+        else group = '未分类';
+      }
+    }
+    rows.push({ name, group, pct, heat });
+  });
+  const groups = {};
+  rows.forEach((r) => {
+    groups[r.group] = groups[r.group] || [];
+    groups[r.group].push(r);
+  });
+  const bars = Object.entries(groups).map(([group, list]) => {
+    const pctVals = list.map(i => i.pct).filter(v => isNum(v));
+    const heatVals = list.map(i => i.heat).filter(v => isNum(v));
+    const pct = pctVals.length ? +(pctVals.reduce((a, b) => a + b, 0) / pctVals.length).toFixed(2) : null;
+    const heat = heatVals.length ? +(heatVals.reduce((a, b) => a + b, 0) / heatVals.length).toFixed(3) : null;
+    const top = list
+      .filter(i => isNum(i.pct))
+      .sort((a, b) => b.pct - a.pct)
+      .slice(0, 3)
+      .map(i => ({ name: i.name, pct: i.pct }));
+    return { group, today_pct: pct, heat_change: heat, top };
+  });
+  bars.sort((a, b) => {
+    if (!isNum(a.today_pct) && !isNum(b.today_pct)) return 0;
+    if (!isNum(a.today_pct)) return 1;
+    if (!isNum(b.today_pct)) return -1;
+    const diff = b.today_pct - a.today_pct;
+    if (Math.abs(diff) > 0.2) return diff;
+    if (!isNum(a.heat_change) && !isNum(b.heat_change)) return 0;
+    if (!isNum(a.heat_change)) return 1;
+    if (!isNum(b.heat_change)) return -1;
+    return b.heat_change - a.heat_change;
+  });
+  const leader = bars.length ? bars[0] : null;
+  const signal = leader ? `${leader.group}偏强` : '盘中结构暂无结论';
+  const reason = [];
+  if (leader && isNum(leader.today_pct)) reason.push(`均值涨跌 ${leader.today_pct}%`);
+  if (leader && isNum(leader.heat_change)) reason.push(`热度变化 ${leader.heat_change}`);
+  return { bars, signal, reason };
+}
+
+const WATCH_STOCKS_FILE = path.join(__dirname, 'data', 'watch_stocks.json');
+const CALENDAR_FILE = path.join(__dirname, 'data', 'calendar.json');
+
+function normalizeStockCode(code) {
+  const v = String(code || '').trim();
+  if (!v) return '';
+  return v.toUpperCase();
+}
+
+function readWatchStocks() {
+  const dir = path.join(__dirname, 'data');
+  fs.mkdirSync(dir, { recursive: true });
+  if (!fs.existsSync(WATCH_STOCKS_FILE)) {
+    fs.writeFileSync(WATCH_STOCKS_FILE, JSON.stringify({ watch_stocks: [] }, null, 2));
+    return [];
+  }
+  const json = readJsonFileSafe(WATCH_STOCKS_FILE);
+  const list = Array.isArray(json?.watch_stocks) ? json.watch_stocks : (Array.isArray(json) ? json : []);
+  const out = [];
+  const seen = new Set();
+  list.forEach((item) => {
+    const code = normalizeStockCode(item);
+    if (!code || seen.has(code)) return;
+    seen.add(code);
+    out.push(code);
+  });
+  return out;
+}
+
+function writeWatchStocks(list) {
+  const dir = path.join(__dirname, 'data');
+  fs.mkdirSync(dir, { recursive: true });
+  const out = [];
+  const seen = new Set();
+  (Array.isArray(list) ? list : []).forEach((item) => {
+    const code = normalizeStockCode(item);
+    if (!code || seen.has(code)) return;
+    seen.add(code);
+    out.push(code);
+  });
+  fs.writeFileSync(
+    WATCH_STOCKS_FILE,
+    JSON.stringify({ watch_stocks: out, updated_at: new Date().toISOString() }, null, 2)
+  );
+  return out;
+}
+
+function readCalendarEvents() {
+  const dir = path.join(__dirname, 'data');
+  fs.mkdirSync(dir, { recursive: true });
+  if (!fs.existsSync(CALENDAR_FILE)) {
+    fs.writeFileSync(CALENDAR_FILE, JSON.stringify({ events: [] }, null, 2));
+    return [];
+  }
+  const json = readJsonFileSafe(CALENDAR_FILE);
+  if (Array.isArray(json)) return json;
+  if (Array.isArray(json?.events)) return json.events;
+  return [];
+}
+
 function readMinuteFile(file) {
   if (!fs.existsSync(file)) return { arr: [], lastTime: null };
   const txt = fs.readFileSync(file, 'utf-8').trim();
@@ -563,6 +1255,19 @@ function readMinuteFile(file) {
   });
   const lastTime = arr.length ? arr[arr.length - 1].time : null;
   return { arr, lastTime };
+}
+
+function mergeMinuteSeries(...seriesList) {
+  const map = new Map();
+  seriesList.forEach((series) => {
+    (series || []).forEach((p) => {
+      if (!p?.time) return;
+      map.set(p.time, p);
+    });
+  });
+  return Array.from(map.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([, p]) => p);
 }
 
 function readVolumeFile(file) {
@@ -590,7 +1295,12 @@ function readArchiveVolumeSeries(day) {
     const ts = row[0];
     const vol = row[21];
     if (!isNum(ts) || !isNum(vol)) continue;
-    const key = minuteKey(new Date(ts));
+    let key = minuteKey(new Date(ts));
+    if (!isTradingMinute(key)) {
+      const n = minuteToNumber(key);
+      if (n != null && n > 900) key = '15:00';
+      else continue;
+    }
     map.set(key, vol);
   }
   if (!map.size) return [];
@@ -602,14 +1312,16 @@ function readArchiveVolumeSeries(day) {
 function readVolumeSeries(day) {
   if (!day) return [];
   const file = volumeFilePath(day);
-  const series = readVolumeFile(file);
+  const series = readVolumeFile(file).filter(p => isTradingMinute(p?.time));
   const arch = readArchiveVolumeSeries(day);
+  const isToday = day === latestTradingDay();
+  if (isToday && series.length) return series;
   if (!arch.length) return series;
   const map = new Map();
-  arch.forEach((p) => {
+  series.forEach((p) => {
     if (p?.time && isNum(p.volume)) map.set(p.time, p.volume);
   });
-  series.forEach((p) => {
+  arch.forEach((p) => {
     if (p?.time && isNum(p.volume)) map.set(p.time, p.volume);
   });
   const out = Array.from(map.entries())
@@ -639,21 +1351,32 @@ function appendVolumePoint(file, time, volume) {
   fs.appendFileSync(file, JSON.stringify([time, volume]) + '\n');
 }
 
-function prevDay(day) {
-  const d = new Date(day);
-  if (Number.isNaN(d.getTime())) return null;
-  d.setDate(d.getDate() - 1);
-  return d.toISOString().slice(0, 10);
-}
-
 function hasTradingPoint(arr) {
   if (!arr || !arr.length) return false;
   for (const p of arr) {
-    const t = minuteToNumber(p.time);
-    if (t == null) continue;
-    if ((t >= 570 && t <= 690) || (t >= 780 && t <= 900)) return true;
+    if (isTradingMinute(timeToMinuteKey(p.time))) return true;
   }
   return false;
+}
+
+function isMarketOpenNow() {
+  const parts = getBeijingParts();
+  if (!parts) return false;
+  const day = parts.weekday;
+  if (day === 0 || day === 6) return false;
+  const minutes = parts.minutes;
+  const morning = minutes >= 570 && minutes <= 690;
+  const afternoon = minutes >= 780 && minutes <= 900;
+  return morning || afternoon;
+}
+
+function isAfterCloseNow() {
+  const parts = getBeijingParts();
+  if (!parts) return false;
+  const day = parts.weekday;
+  if (day === 0 || day === 6) return false;
+  const minutes = parts.minutes;
+  return minutes >= 930;
 }
 
 function findVolumeAtOrBefore(arr, time) {
@@ -766,10 +1489,54 @@ function ensureVolumeFile(day) {
   return buildVolumeFromArchive(day);
 }
 
-function buildVolumeCompare(day, volume) {
+function findPreviousTradingDay(day) {
+  if (!day) return null;
+  const currentDayStr = day.replace(/-/g, '');
+  const dir = path.join(__dirname, 'data');
+  if (!fs.existsSync(dir)) return null;
+  
+  // Look for volume-*.jsonl files first
+  const files = fs.readdirSync(dir)
+    .filter(f => f.startsWith('volume-') && f.endsWith('.jsonl'))
+    .map(f => {
+      const m = f.match(/volume-(\d{8})\.jsonl/);
+      return m ? m[1] : null;
+    })
+    .filter(d => d && d < currentDayStr)
+    .sort()
+    .reverse();
+    
+  if (files.length > 0) {
+    const d = files[0];
+    return `${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}`;
+  }
+  
+  // Fallback to archive-*.jsonl if no volume files found
+  const archives = fs.readdirSync(dir)
+    .filter(f => f.startsWith('archive-') && f.endsWith('.jsonl'))
+    .map(f => {
+      const m = f.match(/archive-(\d{8})\.jsonl/);
+      return m ? m[1] : null;
+    })
+    .filter(d => d && d < currentDayStr)
+    .sort()
+    .reverse();
+
+  if (archives.length > 0) {
+    const d = archives[0];
+    return `${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}`;
+  }
+
+  return null;
+}
+
+function buildVolumeCompare(day, volume, manualYVol) {
   const nowTime = minuteKey(new Date());
-  if (day) appendVolumePoint(volumeFilePath(day), nowTime, volume);
-  const yday = day ? prevDay(day) : null;
+  if (day && isMarketOpenNow()) appendVolumePoint(volumeFilePath(day), nowTime, volume);
+  
+  // Use findPreviousTradingDay instead of simple day-1
+  const yday = day ? findPreviousTradingDay(day) : null;
+  
   if (yday) ensureVolumeFile(yday);
   const yArr = yday ? readVolumeSeries(yday) : [];
   const yPoint = findVolumeAtOrBefore(yArr, nowTime);
@@ -780,6 +1547,12 @@ function buildVolumeCompare(day, volume) {
   if (!isNum(yVol) || yVol === 0) {
     yVol = findLastNonZeroVolume(yArr) ?? (yday ? findArchiveLastNonZeroVolume(yday) : null);
   }
+  
+  // Fallback to manualYVol if local file lookup failed
+  if ((!isNum(yVol) || yVol === 0) && isNum(manualYVol)) {
+    yVol = manualYVol;
+  }
+
   const volumeDelta = (isNum(volume) && isNum(yVol)) ? volume - yVol : null;
   const volumePct = (isNum(volumeDelta) && isNum(yVol) && yVol !== 0) ? +((volumeDelta / yVol) * 100).toFixed(2) : null;
   const volumeDir = volumeDelta == null ? null : (volumeDelta >= 0 ? '增量' : '缩量');
@@ -810,14 +1583,22 @@ function writeMinuteFile(file, data) {
 }
 
 async function loadMinuteSeries(day, code, secid) {
-  const file = minuteFilePath(day, code);
-  let series = readMinuteFile(file).arr;
+  const dataFile = minuteFilePath(day, code);
+  const runtimeFile = runtimeMinuteFilePath(day, code);
+  const dataArr = readMinuteFile(dataFile).arr;
+  let runtimeArr = readMinuteFile(runtimeFile).arr;
+  let series = mergeMinuteSeries(dataArr, runtimeArr);
   if (!series.length && secid) {
     const emMinute = await fetchEastmoneyMinute(secid);
     if (emMinute?.data?.length) {
-      series = emMinute.data;
-      writeMinuteFile(file, series);
+      writeMinuteFile(runtimeFile, emMinute.data);
+      runtimeArr = readMinuteFile(runtimeFile).arr;
+      series = mergeMinuteSeries(dataArr, runtimeArr);
     }
+  }
+  if (!series.length) {
+    const latestRuntime = findLatestRuntimeMinuteFile(code);
+    if (latestRuntime) series = readMinuteFile(latestRuntime).arr;
   }
   if (!series.length) {
     const latestFile = findLatestMinuteFile(code);
@@ -862,6 +1643,18 @@ function minuteCodeMap(code) {
   return map[code] || null;
 }
 
+function minuteTxMap(code) {
+  const map = {
+    sse: 'sh000001',
+    szi: 'sz399001',
+    gem: 'sz399006',
+      star: 'sh000688',
+      hs300: 'sh000300',
+      csi2000: 'sz399303'
+    };
+  return map[code] || null;
+}
+
 function minuteEmMap(code) {
   const map = {
     sse: '1.000001',
@@ -886,13 +1679,143 @@ function mergeDailyVolume(sse, szi) {
   const add = (series) => {
     (series || []).forEach((p) => {
       if (!p?.date || !isNum(p.amount)) return;
+      if (p.amount <= 0) return;
       const v = map.get(p.date) || 0;
+      if (v > 0) {
+        const ratio = p.amount / v;
+        if (ratio < 0.1 || ratio > 10) return;
+      }
       map.set(p.date, v + p.amount);
     });
   };
   add(sse);
   add(szi);
   return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0])).map(([date, amount]) => ({ date, amount }));
+}
+
+function lastDateInSeries(arr) {
+  if (!arr || !arr.length) return null;
+  return arr[arr.length - 1]?.date || null;
+}
+
+function trimDailyOutlier(arr) {
+  if (!arr || arr.length < 2) return arr || [];
+  const prev = arr[arr.length - 2];
+  const last = arr[arr.length - 1];
+  const prevClose = toNumber(prev?.close);
+  const lastClose = toNumber(last?.close);
+  if (!isNum(prevClose) || !isNum(lastClose) || prevClose <= 0) return arr;
+  const ratio = lastClose / prevClose;
+  if (ratio < 0.6 || ratio > 1.6) return arr.slice(0, -1);
+  return arr;
+}
+
+function buildDailyFromMinuteSeries(series, day, prevClose) {
+  if (!series || !series.length) return null;
+  const filtered = day ? series.filter(p => p?.time && String(p.time).startsWith(day)) : series;
+  if (!filtered.length) return null;
+  const sorted = filtered.slice().sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+  const first = sorted[0];
+  const last = sorted[sorted.length - 1];
+  const vals = [];
+  sorted.forEach((p) => {
+    if (isNum(p.open)) vals.push(p.open);
+    if (isNum(p.close)) vals.push(p.close);
+  });
+  if (!vals.length) return null;
+  const open = isNum(first.open) ? first.open : first.close;
+  const close = isNum(last.close) ? last.close : last.open;
+  if (!isNum(open) || !isNum(close)) return null;
+  const date = day || String(last.time || '').split(' ')[0];
+  let pct = null;
+  if (isNum(prevClose) && prevClose !== 0) {
+    pct = +(((close - prevClose) / prevClose) * 100).toFixed(2);
+  } else if (open !== 0) {
+    pct = +(((close - open) / open) * 100).toFixed(2);
+  }
+  return { date, open, high: Math.max(...vals), low: Math.min(...vals), close, pct, volume: null, amount: null };
+}
+
+async function buildOverviewHistoryPayload(day) {
+  const keys = ['sse', 'szi', 'gem', 'star', 'hs300', 'csi2000', 'avg', 't', 'tl', 'bank', 'broker', 'insure'];
+  const pairs = await Promise.all(keys.map(async (k) => {
+    const secid = minuteEmMap(k);
+    if (secid) {
+      const daily = await fetchEastmoneyDaily(secid, 180);
+      if (daily?.data?.length) return [k, daily.data];
+    }
+    const txCode = minuteTxMap(k);
+    if (txCode) {
+      const daily = await fetchTencentDaily(txCode, 180);
+      if (daily?.data?.length) return [k, daily.data];
+    }
+    return [k, []];
+  }));
+  const series = {};
+  pairs.forEach(([k, v]) => { series[k] = trimDailyOutlier(v || []); });
+  const minutePairs = await Promise.all(keys.map(async (k) => {
+    const secid = minuteEmMap(k);
+    const minuteSeries = await loadMinuteSeries(day, k, secid);
+    return [k, minuteSeries];
+  }));
+  const minuteMap = {};
+  minutePairs.forEach(([k, v]) => { minuteMap[k] = v || []; });
+  Object.entries(minuteMap).forEach(([k, v]) => {
+    const arr = series[k] || [];
+    const last = lastDateInSeries(arr);
+    const lastClose = arr.length ? toNumber(arr[arr.length - 1]?.close) : null;
+    const prevClose = (() => {
+      if (!arr.length) return null;
+      if (last === day) return toNumber(arr[arr.length - 2]?.close);
+      return toNumber(arr[arr.length - 1]?.close);
+    })();
+    const todayDaily = buildDailyFromMinuteSeries(v, day, prevClose);
+    if (!todayDaily) return;
+    const todayClose = toNumber(todayDaily.close);
+    if (isNum(lastClose) && lastClose > 0 && isNum(todayClose)) {
+      const ratio = todayClose / lastClose;
+      if (ratio < 0.6 || ratio > 1.6) return;
+    }
+    if (!last || last < day) {
+      series[k] = arr.concat([todayDaily]);
+    } else if (last === day) {
+      arr[arr.length - 1] = todayDaily;
+      series[k] = arr;
+    }
+  });
+  const volume = mergeDailyVolume(series.sse, series.szi).filter(p => p?.date && p.date < day);
+  return JSON.stringify({ day, series, volume, rev: OVERVIEW_CACHE_REV });
+}
+
+async function backfillOverviewHistoryIfNeeded() {
+  if (!isAfterCloseNow()) return;
+  const day = latestTradingDay();
+  if (lastDailyBackfillDay === day) return;
+  const cacheFile = cacheJsonPath('overview-history', day);
+  const cached = readJsonCache(cacheFile);
+  if (cached) {
+    try {
+      const p = JSON.parse(cached);
+      const last = lastDateInSeries(p?.series?.sse);
+      if (p?.rev === OVERVIEW_CACHE_REV && last === day) {
+        lastDailyBackfillDay = day;
+        return;
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }
+  const payload = await buildOverviewHistoryPayload(day);
+  if (!payload) return;
+  try {
+    const p = JSON.parse(payload);
+    if (p?.series?.sse?.length) {
+      writeJsonCache(cacheFile, payload);
+      lastDailyBackfillDay = day;
+    }
+  } catch (e) {
+    console.error(e);
+  }
 }
 
 function readLatestArchivePayload() {
@@ -927,7 +1850,7 @@ function readLatestArchivePayload() {
   ensureVolumeFile(day);
   const volumeSeries = readVolumeSeries(day);
   const volumeSeriesYday = (() => {
-    const yday = prevDay(day);
+    const yday = findPreviousTradingDay(day);
     if (yday) ensureVolumeFile(yday);
     return yday ? readVolumeSeries(yday) : [];
   })();
@@ -994,11 +1917,55 @@ async function buildSnapshotPayload() {
 
   const snaps = await fetchSnapshot('sh000001,sz399001,sz399006,sh000688,sh000300,sh000012,sz399106');
   const em = await fetchEastmoneySnapshot(['90.BK0475', '90.BK0473', '90.BK0474', '2.932000', '8.110130', '8.140130', '2.830000', '1.000012']);
-  const marketDate = sse.date || (new Date()).toISOString().split('T')[0];
+  
+  // Determine market date: prefer fresh API date, fallback to latest local file, then current trading day
+  const todayTradingDay = latestTradingDay();
+  let marketDate = sse.date;
+  if (!marketDate) {
+    const latestFile = findLatestMinuteFile('sse');
+    if (latestFile) {
+      marketDate = dayFromMinuteFile(latestFile);
+    } else {
+      marketDate = todayTradingDay;
+    }
+  }
+  // Guard against stale upstream minute dates dragging snapshot back to old days.
+  if (marketDate < todayTradingDay) {
+    marketDate = todayTradingDay;
+  }
+
+  const [sseSeries, sziSeries, gemSeries, starSeries, hs300Series] = await Promise.all([
+    (sse.date === marketDate && sse.data?.length) ? sse.data : loadMinuteSeries(marketDate, 'sse', '1.000001'),
+    (szi.date === marketDate && szi.data?.length) ? szi.data : loadMinuteSeries(marketDate, 'szi', '0.399001'),
+    (gem.date === marketDate && gem.data?.length) ? gem.data : loadMinuteSeries(marketDate, 'gem', '0.399006'),
+    (star.date === marketDate && star.data?.length) ? star.data : loadMinuteSeries(marketDate, 'star', '1.000688'),
+    (hs300.date === marketDate && hs300.data?.length) ? hs300.data : loadMinuteSeries(marketDate, 'hs300', '1.000300')
+  ]);
+
+  // Get previous trading day volume via Tencent API as fallback
+  let prevVolume = null;
+  try {
+    const sseDaily = await fetchTencentDaily('sh000001', 5);
+    if (sseDaily?.data?.length >= 2) {
+      // Find the day before marketDate
+      const prevData = sseDaily.data.filter(d => d.date < marketDate).sort((a, b) => b.date.localeCompare(a.date))[0];
+      if (prevData?.amount) {
+        prevVolume = prevData.amount;
+      }
+    }
+  } catch (e) {
+    console.error(e);
+  }
+
   const tPrev = normalizeBondPrice(em['8.110130']?.prevClose ?? null);
   const tlPrev = normalizeBondPrice(em['8.140130']?.prevClose ?? null);
-  const tSeries = readMinuteFile(minuteFilePath(marketDate, 't')).arr;
-  const tlSeries = readMinuteFile(minuteFilePath(marketDate, 'tl')).arr;
+  
+  // Use loadMinuteSeries for consistent fallback to local files
+  const tSeries = await loadMinuteSeries(marketDate, 't', '8.110130');
+  const tlSeries = await loadMinuteSeries(marketDate, 'tl', '8.140130');
+  const avgSeries = await loadMinuteSeries(marketDate, 'avg', '2.830000');
+  const csi2000Series = await loadMinuteSeries(marketDate, 'csi2000', '2.932000');
+
   const tDerived = deriveFromSeries(tSeries, tPrev);
   const tlDerived = deriveFromSeries(tlSeries, tlPrev);
   const tSnapPrice = normalizeBondPrice(em['8.110130']?.price ?? null);
@@ -1007,7 +1974,8 @@ async function buildSnapshotPayload() {
   const tlSnapPct = em['8.140130']?.pct ?? null;
   const tFinal = { price: tDerived.price ?? tSnapPrice ?? null, pct: tDerived.pct ?? tSnapPct ?? null };
   const tlFinal = { price: tlDerived.price ?? tlSnapPrice ?? null, pct: tlDerived.pct ?? tlSnapPct ?? null };
-  const amountList = [snaps['sh000001']?.amount, snaps['sz399106']?.amount];
+  const szAmount = pickNum(snaps['sz399001']?.amount, snaps['sz399106']?.amount);
+  const amountList = [snaps['sh000001']?.amount, szAmount];
   const totalAmountRaw = amountList.reduce((sum, v) => sum + (isNum(v) ? v : 0), 0);
   let totalAmount = isNum(totalAmountRaw) ? totalAmountRaw : 0;
   if (!isNum(totalAmount) || totalAmount <= 0) {
@@ -1016,14 +1984,30 @@ async function buildSnapshotPayload() {
   }
   const avgPrice = em['2.830000']?.price ?? null;
   const avgPct = em['2.830000']?.pct ?? null;
+  
+  // Recalculate avg price/pct from series if snapshot is missing
+  const avgDerived = deriveFromSeries(avgSeries, em['2.830000']?.prevClose ?? null);
+  const avgPriceFinal = avgPrice ?? avgDerived.price ?? null;
+  const avgPctFinal = avgPct ?? avgDerived.pct ?? null;
+  
+  const csi2000Derived = deriveFromSeries(csi2000Series, em['2.932000']?.prevClose ?? null);
+  const csi2000PriceFinal = em['2.932000']?.price ?? csi2000Derived.price ?? null;
+  const csi2000PctFinal = em['2.932000']?.pct ?? csi2000Derived.pct ?? null;
 
-  const volumeCmp = buildVolumeCompare(marketDate, totalAmount);
   const volumeSeries = readVolumeSeries(marketDate);
   const volumeSeriesYday = (() => {
-    const yday = prevDay(marketDate);
+    const yday = findPreviousTradingDay(marketDate);
     if (yday) ensureVolumeFile(yday);
     return yday ? readVolumeSeries(yday) : [];
   })();
+  const breadth = await fetchBreadthRealtime();
+  const upCount = isNum(breadth?.up) ? breadth.up : null;
+  const downCount = isNum(breadth?.down) ? breadth.down : null;
+  if (isAfterCloseNow() && volumeSeries.length) {
+    const lastVol = volumeSeries[volumeSeries.length - 1]?.volume;
+    if (isNum(lastVol) && lastVol > 0) totalAmount = lastVol;
+  }
+  const volumeCmp = buildVolumeCompare(marketDate, totalAmount, prevVolume);
 
   const bankSeries = await loadMinuteSeries(marketDate, 'bank', '90.BK0475');
   const brokerSeries = await loadMinuteSeries(marketDate, 'broker', '90.BK0473');
@@ -1036,36 +2020,41 @@ async function buildSnapshotPayload() {
   const bankPctFinal = pickNum(em['90.BK0475']?.pct, bankDerived.pct);
   const brokerPctFinal = pickNum(em['90.BK0473']?.pct, brokerDerived.pct);
   const insurePctFinal = pickNum(em['90.BK0474']?.pct, insureDerived.pct);
+  const bankPriceFinal = pickNum(em['90.BK0475']?.price, bankDerived.price);
+  const brokerPriceFinal = pickNum(em['90.BK0473']?.price, brokerDerived.price);
+  const insurePriceFinal = pickNum(em['90.BK0474']?.price, insureDerived.price);
   const govPctFinal = pickNum(snaps['sh000012']?.pct, govDerived.pct);
   const payload = {
     day: marketDate,
     indices: {
-      sse: { price: snaps['sh000001']?.price || sse.data.at(-1)?.close, pct: snaps['sh000001']?.pct || pctOfDay(sse.data), series: sse.data },
-      szi: { price: snaps['sz399001']?.price || szi.data.at(-1)?.close, pct: snaps['sz399001']?.pct || pctOfDay(szi.data), series: szi.data },
-      gem: { price: snaps['sz399006']?.price || gem.data.at(-1)?.close, pct: snaps['sz399006']?.pct || pctOfDay(gem.data), series: gem.data },
-      star: { price: snaps['sh000688']?.price || star.data.at(-1)?.close, pct: snaps['sh000688']?.pct || pctOfDay(star.data), series: star.data },
-      hs300: { price: snaps['sh000300']?.price || hs300.data.at(-1)?.close, pct: snaps['sh000300']?.pct || pctOfDay(hs300.data), series: hs300.data },
-      csi2000: { price: em['2.932000']?.price ?? null, pct: em['2.932000']?.pct ?? null, series: [] },
-      avg: { price: avgPrice ?? null, pct: avgPct ?? null, series: [] }
+      sse: { price: snaps['sh000001']?.price || sseSeries.at(-1)?.close, pct: snaps['sh000001']?.pct || pctOfDay(sseSeries), series: sseSeries },
+      szi: { price: snaps['sz399001']?.price || sziSeries.at(-1)?.close, pct: snaps['sz399001']?.pct || pctOfDay(sziSeries), series: sziSeries },
+      gem: { price: snaps['sz399006']?.price || gemSeries.at(-1)?.close, pct: snaps['sz399006']?.pct || pctOfDay(gemSeries), series: gemSeries },
+      star: { price: snaps['sh000688']?.price || starSeries.at(-1)?.close, pct: snaps['sh000688']?.pct || pctOfDay(starSeries), series: starSeries },
+      hs300: { price: snaps['sh000300']?.price || hs300Series.at(-1)?.close, pct: snaps['sh000300']?.pct || pctOfDay(hs300Series), series: hs300Series },
+      csi2000: { price: csi2000PriceFinal, pct: csi2000PctFinal, series: csi2000Series },
+      avg: { price: avgPriceFinal, pct: avgPctFinal, series: avgSeries }
     },
     bonds: {
-      gov: { pct: govPctFinal, series: [] },
-      tl2603: { price: tlFinal.price, pct: tlFinal.pct, series: [] },
-      t2603: { price: tFinal.price, pct: tFinal.pct, series: [] },
+      gov: { pct: govPctFinal, series: govSeries },
+      tl2603: { price: tlFinal.price, pct: tlFinal.pct, series: tlSeries },
+      t2603: { price: tFinal.price, pct: tFinal.pct, series: tSeries },
       tl: { price: tlFinal.price, pct: tlFinal.pct },
       t: { price: tFinal.price, pct: tFinal.pct }
     },
     sectors: {
-      bank: { pct: bankPctFinal, series: [] },
-      broker: { pct: brokerPctFinal, series: [] },
-      insure: { pct: insurePctFinal, series: [] }
+      bank: { price: bankPriceFinal, pct: bankPctFinal, series: bankSeries },
+      broker: { price: brokerPriceFinal, pct: brokerPctFinal, series: brokerSeries },
+      insure: { price: insurePriceFinal, pct: insurePctFinal, series: insureSeries }
     },
     sentiment: {
       volume: totalAmount || 0,
       volumeStr: totalAmount ? (totalAmount / 10000).toFixed(1) + '亿' : '-',
       volumeCmp,
       volumeSeries,
-      volumeSeriesYday
+      volumeSeriesYday,
+      upCount: upCount ?? '-',
+      downCount: downCount ?? '-'
     },
     ts: Date.now()
   };
@@ -1121,6 +2110,14 @@ async function ensureAiText(snap) {
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Max-Age', '86400');
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
   
   if (url.pathname === '/api/prompt/stock-daily') {
     try {
@@ -1224,43 +2221,71 @@ const server = http.createServer(async (req, res) => {
       res.end('not found');
       return;
     }
-    let data = emMapped ? await fetchEastmoneyMinute(emMapped) : await fetchAshareMinute(mapped);
-    if (emMapped && (!data?.data || !data.data.length)) {
-      const alt = await fetchAshareMinute(mapped);
-      if (alt?.data && alt.data.length) data = alt;
+
+    let data = { data: [], prevClose: null };
+    try {
+      if (emMapped) {
+        data = await fetchEastmoneyMinute(emMapped);
+      } else {
+        data = await fetchAshareMinute(mapped);
+      }
+      
+      if (emMapped && (!data?.data || !data.data.length)) {
+        const alt = await fetchAshareMinute(mapped);
+        if (alt?.data && alt.data.length) data = alt;
+      }
+    } catch (e) {
+      console.error(`Error fetching minute data for ${code}:`, e.message);
     }
+
     let prevClose = data.prevClose ?? null;
     if (prevClose == null && emMapped) {
-      const snap = await fetchEastmoneySnapshot([emMapped]);
-      prevClose = snap[emMapped]?.prevClose ?? null;
-    }
-    const today = (new Date()).toISOString().split('T')[0];
-    let day = today;
-    const file = minuteFilePath(today, code);
-    const { arr, lastTime } = readMinuteFile(file);
-    let merged = arr;
-    if (data.data && data.data.length) {
-      if (!arr.length || (arr[0]?.time && data.data[0]?.time && data.data[0].time < arr[0].time)) {
-        writeMinuteFile(file, data.data);
-        merged = data.data;
-      } else {
-        appendMinuteFile(file, data.data, lastTime);
-        merged = arr.concat((data.data || []).filter(p => !lastTime || p.time > lastTime));
+      try {
+        const snap = await fetchEastmoneySnapshot([emMapped]);
+        prevClose = snap[emMapped]?.prevClose ?? null;
+      } catch (e) {
+        console.error(e);
       }
     }
-    if (!merged.length && fs.existsSync(file)) {
-      merged = readMinuteFile(file).arr;
+    const today = latestTradingDay();
+    const marketOpen = isMarketOpenNow();
+    let day = today;
+    const dataFile = minuteFilePath(today, code);
+    const runtimeFile = runtimeMinuteFilePath(today, code);
+    const { arr: dataArr } = readMinuteFile(dataFile);
+    const runtimeRead = readMinuteFile(runtimeFile);
+    let merged = mergeMinuteSeries(dataArr, runtimeRead.arr);
+    if (data.data && data.data.length) {
+      if (!runtimeRead.arr.length || (runtimeRead.arr[0]?.time && data.data[0]?.time && data.data[0].time < runtimeRead.arr[0].time)) {
+        writeMinuteFile(runtimeFile, data.data);
+      } else {
+        appendMinuteFile(runtimeFile, data.data, runtimeRead.lastTime);
+      }
+      merged = mergeMinuteSeries(dataArr, readMinuteFile(runtimeFile).arr);
     }
-    const todayFiltered = merged.filter(p => p?.time && String(p.time).startsWith(today));
+    merged = merged.filter(p => isTradingMinute(timeToMinuteKey(p?.time)));
+    const todayFiltered = merged.filter(p => p?.time && String(p.time).startsWith(today) && isTradingMinute(timeToMinuteKey(p?.time)));
     if (todayFiltered.length) {
       merged = todayFiltered;
     } else {
-      const latestFile = findLatestMinuteFile(code);
-      if (latestFile) {
-        const { arr: fallbackArr } = readMinuteFile(latestFile);
-        if (fallbackArr.length) {
-          merged = fallbackArr;
-          day = dayFromMinuteFile(latestFile) || day;
+      if (!marketOpen) {
+        const latestRuntime = findLatestRuntimeMinuteFile(code);
+        if (latestRuntime) {
+          const { arr: fallbackArr } = readMinuteFile(latestRuntime);
+          if (fallbackArr.length) {
+            merged = fallbackArr;
+            day = dayFromMinuteFile(latestRuntime) || day;
+          }
+        }
+        if (!merged.length) {
+          const latestFile = findLatestMinuteFile(code);
+          if (latestFile) {
+            const { arr: fallbackArr } = readMinuteFile(latestFile);
+            if (fallbackArr.length) {
+              merged = fallbackArr;
+              day = dayFromMinuteFile(latestFile) || day;
+            }
+          }
         }
       }
     }
@@ -1273,7 +2298,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (!merged.length) {
       const cached = lastGoodMinute.get(code);
-      if (cached?.series?.length) {
+      if (cached?.series?.length && (!marketOpen || cached.day === today)) {
         merged = cached.series;
         day = cached.day;
         prevClose = cached.prevClose ?? prevClose;
@@ -1281,7 +2306,16 @@ const server = http.createServer(async (req, res) => {
     } else {
       lastGoodMinute.set(code, { day, series: merged, prevClose });
     }
-    merged.sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+    merged.sort((a, b) => {
+      const ta = String(a.time || '');
+      const tb = String(b.time || '');
+      const da = ta.includes(' ') ? ta.split(' ')[0] : (ta.includes('T') ? ta.split('T')[0] : day);
+      const db = tb.includes(' ') ? tb.split(' ')[0] : (tb.includes('T') ? tb.split('T')[0] : day);
+      if (da !== db) return da.localeCompare(db);
+      const ma = timeToMinuteKey(ta) || ta;
+      const mb = timeToMinuteKey(tb) || tb;
+      return ma.localeCompare(mb);
+    });
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.end(JSON.stringify({ day, series: merged, latest: merged[merged.length - 1] || null, prevClose }));
     return;
@@ -1289,26 +2323,41 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/api/overview/history') {
     const day = latestTradingDay();
     const cacheFile = cacheJsonPath('overview-history', day);
-    const cached = readJsonCache(cacheFile);
+    let cached = readJsonCache(cacheFile);
+    if (!cached) {
+      const latestCache = findLatestCacheFile('overview-history');
+      if (latestCache) cached = readJsonCache(latestCache);
+    }
     if (cached) {
+      try {
+        const p = JSON.parse(cached);
+        if (p?.rev === OVERVIEW_CACHE_REV) {
+          const last = lastDateInSeries(p?.series?.sse);
+          const volLast = lastDateInSeries(p?.volume);
+          if (last && last >= day && volLast !== day && p?.series?.sse?.length && p.series.sse.some(x => x.amount > 0)) {
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.end(cached);
+            return;
+          }
+        }
+      } catch (e) {
+        console.error(e);
+      }
+  }
+    const payload = await buildOverviewHistoryPayload(day);
+    if (payload) {
+      try {
+        const p = JSON.parse(payload);
+        if (p?.series?.sse?.length) writeJsonCache(cacheFile, payload);
+      } catch (e) {
+        console.error(e);
+      }
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
-      res.end(cached);
+      res.end(payload);
       return;
     }
-    const keys = ['sse', 'szi', 'gem', 'star', 'hs300', 'csi2000', 'avg', 't', 'tl', 'bank', 'broker', 'insure'];
-    const pairs = await Promise.all(keys.map(async (k) => {
-      const secid = minuteEmMap(k);
-      if (!secid) return [k, []];
-      const daily = await fetchEastmoneyDaily(secid, 180);
-      return [k, daily?.data || []];
-    }));
-    const series = {};
-    pairs.forEach(([k, v]) => { series[k] = v || []; });
-    const volume = mergeDailyVolume(series.sse, series.szi);
-    const payload = JSON.stringify({ day, series, volume });
-    writeJsonCache(cacheFile, payload);
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
-    res.end(payload);
+    res.end(JSON.stringify({ day, series: {}, volume: [], rev: OVERVIEW_CACHE_REV }));
     return;
   }
   if (url.pathname === '/api/snapshot') {
@@ -1325,13 +2374,35 @@ const server = http.createServer(async (req, res) => {
     const missing = !snap || !isNum(snap.bonds?.gov?.pct) || !isNum(snap.sectors?.bank?.pct) || !isNum(snap.sectors?.broker?.pct) || !isNum(snap.sectors?.insure?.pct);
     const stale = !snap || !isNum(snap.ts) || (now() - snap.ts > CACHE_TTL_MS);
     if (stale || missing) {
-      const fresh = await buildSnapshotPayload();
-      warmupDay(fresh.day || (new Date()).toISOString().split('T')[0]);
-      const needAi = url.searchParams.get('ai') !== '0';
-      fresh.aiText = needAi ? await ensureAiText(fresh) : (lastAiText || '');
-      res.setHeader('Content-Type', 'application/json; charset=utf-8');
-      res.end(JSON.stringify(fresh));
-      return;
+      let fresh = null;
+      try {
+        fresh = await withTimeout(buildSnapshotPayload(), 6000);
+      } catch (e) {
+        fresh = null;
+      }
+      if (fresh) {
+        warmupDay(fresh.day || (new Date()).toISOString().split('T')[0]);
+        const needAi = url.searchParams.get('ai') !== '0';
+        fresh.aiText = needAi ? await ensureAiText(fresh) : (lastAiText || '');
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.end(JSON.stringify(fresh));
+        return;
+      }
+      const fallback = lastGoodSnapshot.payload || snap;
+      if (fallback) {
+        const fixed = repairSnapshot(fallback);
+        const needAi = url.searchParams.get('ai') !== '0';
+        fixed.aiText = needAi ? await ensureAiText(fixed) : (lastAiText || '');
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.end(JSON.stringify(fixed));
+        buildSnapshotPayload().then((v) => {
+          if (!v) return;
+          lastGoodSnapshot.payload = v;
+          lastGoodSnapshot.ts = v.ts || now();
+          archiveSnapshot(v);
+        }).catch(() => {});
+        return;
+      }
     }
     snap = repairSnapshot(snap);
     if (snap?.sentiment) {
@@ -1339,10 +2410,10 @@ const server = http.createServer(async (req, res) => {
       warmupDay(day);
       snap.sentiment.volumeCmp = buildVolumeCompare(day, snap.sentiment.volume ?? null);
       ensureVolumeFile(day);
-      snap.sentiment.volumeSeries = readVolumeFile(volumeFilePath(day));
-      const yday = prevDay(day);
+      snap.sentiment.volumeSeries = readVolumeSeries(day);
+      const yday = findPreviousTradingDay(day);
       if (yday) ensureVolumeFile(yday);
-      snap.sentiment.volumeSeriesYday = yday ? readVolumeFile(volumeFilePath(yday)) : [];
+      snap.sentiment.volumeSeriesYday = yday ? readVolumeSeries(yday) : [];
     }
     if (isNum(snap.bonds?.t2603?.price) && isNum(snap.bonds?.tl2603?.price)) {
       lastGoodSnapshot.payload = snap;
@@ -1369,6 +2440,103 @@ const server = http.createServer(async (req, res) => {
         lastMinuteTl: mtl?.series?.length || 0
       }
     }));
+    return;
+  }
+
+  if (url.pathname === '/api/news') {
+    const day = normalizeDateParam(url.searchParams.get('date'));
+    if (!day) {
+      res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ error: 'invalid date, expected YYYY-MM-DD' }));
+      return;
+    }
+    const sector = String(url.searchParams.get('sector') || '').trim();
+    const level = String(url.searchParams.get('level') || '').trim();
+    const rawLimit = Number(url.searchParams.get('limit'));
+    const limit = Number.isFinite(rawLimit) ? Math.min(500, Math.max(1, Math.floor(rawLimit))) : 50;
+
+    const allNews = readNewsByDate(day);
+    const filteredNews = allNews.filter((item) => {
+      if (sector && item?.classify?.sector !== sector) return false;
+      if (level && item?.classify?.level !== level) return false;
+      return true;
+    });
+
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.end(JSON.stringify({
+      date: day,
+      total: allNews.length,
+      filtered: filteredNews.length,
+      news: filteredNews.slice(0, limit)
+    }));
+    return;
+  }
+
+  if (url.pathname === '/api/news/heat') {
+    const day = normalizeDateParam(url.searchParams.get('date'));
+    if (!day) {
+      res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ error: 'invalid date, expected YYYY-MM-DD' }));
+      return;
+    }
+    const allNews = readNewsByDate(day);
+    const heat = buildNewsHeat(allNews);
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.end(JSON.stringify({
+      date: day,
+      total_news: allNews.length,
+      by_type: heat.byType,
+      by_sector: heat.bySector,
+      by_sentiment: heat.bySentiment,
+      by_level: heat.byLevel,
+      by_type_sentiment: heat.byTypeSentiment,
+      by_sector_sentiment: heat.bySectorSentiment
+    }));
+    return;
+  }
+
+  if (url.pathname === '/api/watch-stocks') {
+    if (req.method === 'POST') {
+      try {
+        const raw = await readBody(req);
+        const body = raw ? JSON.parse(raw) : {};
+        const incoming = body?.stock || body?.code || body?.symbol || '';
+        const code = normalizeStockCode(incoming);
+        if (!code) {
+          res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify({ error: 'stock code is required' }));
+          return;
+        }
+        const list = readWatchStocks();
+        if (!list.includes(code)) list.push(code);
+        const saved = writeWatchStocks(list);
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.end(JSON.stringify({ total: saved.length, watch_stocks: saved }));
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: 'bad request' }));
+      }
+      return;
+    }
+    const list = readWatchStocks();
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.end(JSON.stringify({ total: list.length, watch_stocks: list }));
+    return;
+  }
+
+  if (url.pathname === '/api/calendar') {
+    const month = normalizeMonthParam(url.searchParams.get('date'));
+    if (!month) {
+      res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ error: 'invalid date, expected YYYY-MM' }));
+      return;
+    }
+    const events = readCalendarEvents().filter((item) => {
+      const day = String(item?.date || '').trim();
+      return day.startsWith(`${month}-`);
+    });
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.end(JSON.stringify({ month, total: events.length, events }));
     return;
   }
 
@@ -1402,8 +2570,259 @@ const server = http.createServer(async (req, res) => {
     const daysParam = url.searchParams.get('days');
     const days = Number.isFinite(Number(daysParam)) ? Math.max(1, Number(daysParam)) : 20;
     const list = sectorsParam && sectorsParam.trim() ? sectorsParam.trim() : readWatchList().join(',');
+    const day = latestTradingDay();
+    const cacheFile = !realtime ? sectorCacheFile('sector-history', day, list, days) : null;
+    let staleCached = null;
+    if (cacheFile) {
+      const cached = readJsonCache(cacheFile);
+      if (cached) {
+        try {
+          const p = JSON.parse(cached);
+          const history = p?.history || {};
+          let latest = null;
+          Object.values(history).forEach((arr) => {
+            if (!Array.isArray(arr) || !arr.length) return;
+            const d = arr[arr.length - 1]?.date;
+            if (d && (!latest || d > latest)) latest = d;
+          });
+          if (latest && String(latest).localeCompare(day) >= 0) {
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.end(cached);
+            return;
+          }
+          if (!realtime && isAfterCloseNow()) {
+            staleCached = cached;
+          } else {
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.end(cached);
+            warmupSectorCache('history_dynamic', list, days, cacheFile);
+            return;
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      }
+    }
+    const fallbackFile = findLatestCacheFile('sector-history');
+    if (fallbackFile) {
+      const cached = readJsonCache(fallbackFile);
+      if (cached) {
+        if (!realtime && isAfterCloseNow()) {
+          staleCached = cached;
+        } else {
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          res.end(cached);
+          if (cacheFile) warmupSectorCache('history_dynamic', list, days, cacheFile);
+          return;
+        }
+      }
+    }
     const useDynamic = list && list.trim();
     const args = ['fetch_sector_data.py', useDynamic ? 'history_dynamic' : 'history'];
+    if (useDynamic) {
+      args.push(list);
+      args.push(String(days));
+    } else {
+      args.push(String(days));
+    }
+    execFile('python3', args, { timeout: 180000, maxBuffer: 20 * 1024 * 1024, cwd: __dirname }, (err, stdout) => {
+      if (err) {
+        console.error(err);
+        if (staleCached) {
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          res.end(staleCached);
+          if (cacheFile) warmupSectorCache('history_dynamic', list, days, cacheFile);
+          return;
+        }
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: "Failed to fetch sector history" }));
+        return;
+      }
+      const out = (stdout || '').trim();
+      if (cacheFile && out && isJsonText(out)) writeJsonCache(cacheFile, out);
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.end(out || '{}');
+    });
+    return;
+  }
+
+  if (url.pathname === '/api/sector/warmup') {
+    const sectorsParam = url.searchParams.get('sectors');
+    const daysParam = url.searchParams.get('days');
+    const days = Number.isFinite(Number(daysParam)) ? Math.max(10, Number(daysParam)) : 60;
+    const list = sectorsParam && sectorsParam.trim() ? sectorsParam.trim() : readWatchList().join(',');
+    const day = latestTradingDay();
+    const historyCache = sectorCacheFile('sector-history', day, list, days);
+    const lifecycleCache = sectorCacheFile('sector-lifecycle', day, list, days);
+    const rotationCache = sectorCacheFile('sector-rotation', day, list, Math.max(90, days));
+    const status = {
+      history: warmupSectorCache('history_dynamic', list, days, historyCache),
+      lifecycle: warmupSectorCache('lifecycle_dynamic', list, days, lifecycleCache),
+      rotation: warmupSectorCache('rotation_dynamic', list, Math.max(90, days), rotationCache)
+    };
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.end(JSON.stringify({ day, status }));
+    return;
+  }
+
+  if (url.pathname === '/api/sector/rotation/intraday') {
+    const view = (url.searchParams.get('view') || '').trim() === 'detail' ? 'detail' : 'summary';
+    const sectorsParam = url.searchParams.get('sectors');
+    const daysParam = url.searchParams.get('days');
+    const days = Number.isFinite(Number(daysParam)) ? Math.max(1, Number(daysParam)) : 20;
+    const list = sectorsParam && sectorsParam.trim() ? sectorsParam.trim() : readWatchList().join(',');
+    const day = latestTradingDay();
+    const marketOpen = isMarketOpenNow();
+    const intradayFile = intradayRotationPath(day, view);
+    const cachedText = readJsonCache(intradayFile);
+    if (cachedText) {
+      try {
+        const age = now() - fs.statSync(intradayFile).mtimeMs;
+        if (!marketOpen || age < INTRADAY_CACHE_TTL_MS) {
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          res.end(cachedText);
+          return;
+        }
+      } catch (e) {
+        void e;
+      }
+    }
+    const profile = readSectorProfile();
+    const groups = profile.groups || {};
+    if (!marketOpen && lastIntradayRotation.payload && lastIntradayRotation.day === day) {
+      const bars = lastIntradayRotation.payload?.bars || [];
+      if (Array.isArray(bars) && bars.length) {
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.end(JSON.stringify({ day, ts: lastIntradayRotation.ts, intraday: lastIntradayRotation.payload }));
+      return;
+      }
+    }
+    try {
+      const historyCache = sectorCacheFile('sector-history', day, list, days);
+      const lifecycleCache = sectorCacheFile('sector-lifecycle', day, list, Math.max(20, days));
+      let hist = null;
+      let life = null;
+      const cachedHistory = readJsonCache(historyCache);
+      if (cachedHistory) {
+        try { hist = JSON.parse(cachedHistory); } catch (e) { hist = null; }
+      }
+      if (!hist) {
+        const alt = findLatestSectorHistoryCache(day);
+        if (alt) {
+          try { hist = JSON.parse(alt); } catch (e) { hist = null; }
+        }
+      }
+      const cachedLifecycle = readJsonCache(lifecycleCache);
+      if (cachedLifecycle) {
+        try { life = JSON.parse(cachedLifecycle); } catch (e) { life = null; }
+      }
+      if (!hist) {
+        hist = await execPythonJson(['fetch_sector_data.py', 'history_dynamic', list, String(days)], 90000);
+        if (hist) writeJsonCache(historyCache, JSON.stringify(hist));
+      }
+      if (!life) {
+        life = await execPythonJson(['fetch_sector_data.py', 'lifecycle_dynamic', list, String(Math.max(20, days))], 90000);
+        if (life) writeJsonCache(lifecycleCache, JSON.stringify(life));
+      }
+      const payload = buildIntradayBars(hist || {}, life || {}, groups, view);
+      const leader = payload?.bars?.[0]?.group || '';
+      let signal = payload.signal;
+      let reason = payload.reason;
+      const nowTs = now();
+      if (leader && lastIntradayRotation.leader && leader !== lastIntradayRotation.leader) {
+        if (nowTs - lastIntradayRotation.signalTs < INTRADAY_DEBOUNCE_MS) {
+          signal = lastIntradayRotation.signal;
+          reason = lastIntradayRotation.reason;
+        } else {
+          signal = `${leader}转强`;
+          reason = payload.reason;
+        }
+      }
+      payload.signal = signal;
+      payload.reason = reason;
+      lastIntradayRotation.payload = payload;
+      lastIntradayRotation.ts = nowTs;
+      lastIntradayRotation.day = day;
+      lastIntradayRotation.leader = leader;
+      lastIntradayRotation.signal = signal;
+      lastIntradayRotation.reason = reason;
+      lastIntradayRotation.signalTs = nowTs;
+      const response = { day, ts: lastIntradayRotation.ts, intraday: payload };
+      const responseText = JSON.stringify(response);
+      writeJsonCache(intradayFile, responseText);
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.end(responseText);
+    } catch (e) {
+      if (cachedText) {
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.end(cachedText);
+        return;
+      }
+      const fallback = lastIntradayRotation.payload ? { day: lastIntradayRotation.day || day, ts: lastIntradayRotation.ts || now(), intraday: lastIntradayRotation.payload } : { day, ts: now(), intraday: { bars: [], signal: '数据缺失', reason: [] } };
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.end(JSON.stringify(fallback));
+    }
+    return;
+  }
+
+  if (url.pathname === '/api/sector/rotation/sequence') {
+    const rt = url.searchParams.get('rt') === '1';
+    const sectorsParam = url.searchParams.get('sectors');
+    const daysParam = url.searchParams.get('days');
+    const days = Number.isFinite(Number(daysParam)) ? Math.max(10, Number(daysParam)) : 60;
+    const list = sectorsParam && sectorsParam.trim() ? sectorsParam.trim() : readWatchList().join(',');
+    const day = latestTradingDay();
+    if (!rt) {
+      const cached = readRotationSequence(day);
+      if (cached) {
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.end(cached);
+        return;
+      }
+      const latest = readLatestRotationSequence();
+      if (latest) {
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.end(latest);
+        return;
+      }
+    }
+    const file = rotationSequencePath(day);
+    const payload = await execPythonJson(['fetch_sector_data.py', 'rotation_sequence', list, String(days)], 90000);
+    if (payload) {
+      const txt = JSON.stringify(payload);
+      writeJsonCache(file, txt);
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.end(txt);
+      return;
+    }
+    const latest = readLatestRotationSequence();
+    if (latest) {
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.end(latest);
+      return;
+    }
+    res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ error: 'sequence_failed' }));
+    return;
+  }
+  if (url.pathname === '/api/sector/lifecycle') {
+    const realtime = url.searchParams.get('rt') === '1';
+    const sectorsParam = url.searchParams.get('sectors');
+    const daysParam = url.searchParams.get('days');
+    const days = Number.isFinite(Number(daysParam)) ? Math.max(1, Number(daysParam)) : 60;
+    const list = sectorsParam && sectorsParam.trim() ? sectorsParam.trim() : readWatchList().join(',');
+    const day = latestTradingDay();
+    const cacheFile = !realtime ? sectorCacheFile('sector-lifecycle', day, list, days) : null;
+    if (cacheFile) {
+      const cached = readJsonCache(cacheFile);
+      if (cached) {
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.end(cached);
+        return;
+      }
+    }
+    const useDynamic = list && list.trim();
+    const args = ['fetch_sector_data.py', useDynamic ? 'lifecycle_dynamic' : 'lifecycle'];
     if (useDynamic) {
       args.push(list);
       args.push(String(days));
@@ -1414,14 +2833,97 @@ const server = http.createServer(async (req, res) => {
       if (err) {
         console.error(err);
         res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: "Failed to fetch sector history" }));
+        res.end(JSON.stringify({ error: "Failed to fetch sector lifecycle" }));
         return;
       }
       const out = (stdout || '').trim();
-      if (!realtime && out && isJsonText(out)) writeJsonCache(cacheJsonPath('sector-history', latestTradingDay()), out);
+      if (cacheFile && out && isJsonText(out)) writeJsonCache(cacheFile, out);
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.end(out || '{}');
     });
+    return;
+  }
+
+  if (url.pathname === '/api/sector/rotation') {
+    const realtime = url.searchParams.get('rt') === '1';
+    const sectorsParam = url.searchParams.get('sectors');
+    const daysParam = url.searchParams.get('days');
+    const days = Number.isFinite(Number(daysParam)) ? Math.max(1, Number(daysParam)) : 90;
+    const list = sectorsParam && sectorsParam.trim() ? sectorsParam.trim() : readWatchList().join(',');
+    const day = latestTradingDay();
+    if (!realtime) {
+      const snap = readRotationSnapshot(day);
+      if (snap) {
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.end(snap);
+        return;
+      }
+      const latestFile = findLatestRotationSnapshot();
+      if (latestFile) {
+        const txt = fs.readFileSync(latestFile, 'utf-8').trim();
+        if (txt) {
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          res.end(txt);
+          return;
+        }
+      }
+    }
+    const cacheFile = !realtime ? sectorCacheFile('sector-rotation', day, list, days) : null;
+    if (cacheFile) {
+      const cached = readJsonCache(cacheFile);
+      if (cached) {
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.end(cached);
+        return;
+      }
+    }
+    const useDynamic = list && list.trim();
+    const args = ['fetch_sector_data.py', useDynamic ? 'rotation_dynamic' : 'rotation'];
+    if (useDynamic) {
+      args.push(list);
+      args.push(String(days));
+    } else {
+      args.push(String(days));
+    }
+    execFile('python3', args, (err, stdout) => {
+      if (err) {
+        console.error(err);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: "Failed to fetch sector rotation" }));
+        return;
+      }
+      const out = (stdout || '').trim();
+      if (cacheFile && out && isJsonText(out)) writeJsonCache(cacheFile, out);
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.end(out || '{}');
+    });
+    return;
+  }
+
+  if (url.pathname === '/api/sector/profile') {
+    if (req.method === 'POST') {
+      try {
+        const raw = await readBody(req);
+        const body = raw ? JSON.parse(raw) : {};
+        const groups = body?.groups || {};
+        const invalid = Object.values(groups || {}).some((g) => g && !GROUP_OPTIONS.includes(String(g).trim()));
+        if (invalid) {
+          res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify({ error: 'invalid group' }));
+          return;
+        }
+        const payload = writeSectorProfile(groups);
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.end(JSON.stringify(payload));
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: 'bad request' }));
+      }
+      return;
+    }
+    const payload = readSectorProfile();
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.end(JSON.stringify(payload));
     return;
   }
 
@@ -1449,25 +2951,109 @@ const server = http.createServer(async (req, res) => {
 
   if (url.pathname === '/api/market/breadth') {
     const day = latestTradingDay();
+    const snap = readLatestArchivePayload();
+    const snapUp = Number(snap?.sentiment?.upCount);
+    const snapDown = Number(snap?.sentiment?.downCount);
+    if (isNum(snapUp) && isNum(snapDown) && (snap?.day || day) === day) {
+      const total = Number(snapUp || 0) + Number(snapDown || 0);
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.end(JSON.stringify({ up: snapUp, down: snapDown, flat: 0, total, day }));
+      return;
+    }
+    if (isMarketOpenNow()) {
+      const rt = await fetchBreadthRealtime();
+      if (rt && isNum(rt.up) && isNum(rt.down)) {
+        const total = Number(rt.total || (rt.up + rt.down + (rt.flat || 0)) || 0);
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.end(JSON.stringify({ up: rt.up, down: rt.down, flat: rt.flat || 0, total, day }));
+        return;
+      }
+    }
     const cacheFile = cacheJsonPath('market-breadth', day);
     const cached = readJsonCache(cacheFile);
     if (cached) {
-      res.setHeader('Content-Type', 'application/json; charset=utf-8');
-      res.end(cached);
-      return;
-    }
-    execFile('python3', ['fetch_sector_data.py', 'breadth'], (err, stdout) => {
-      if (err) {
-        console.error(err);
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: "Failed to fetch market breadth" }));
-        return;
+      try {
+        const obj = JSON.parse(cached);
+        if (isNum(obj?.up) && isNum(obj?.down)) {
+          if (!obj.day && !obj.date) obj.day = day;
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          res.end(JSON.stringify(obj));
+          return;
+        }
+      } catch (e) {
+        console.error(e);
       }
-      const out = (stdout || '').trim();
-      if (out && isJsonText(out)) writeJsonCache(cacheFile, out);
+    }
+    execFile('python3', ['fetch_sector_data.py', 'breadth'], { timeout: 5000 }, (err, stdout) => {
+      if (!err) {
+        const out = (stdout || '').trim();
+        if (out && isJsonText(out)) {
+          const obj = JSON.parse(out);
+          if (isNum(obj?.up) && isNum(obj?.down)) {
+            if (!obj.day && !obj.date) obj.day = day;
+            if (!isNum(obj.total)) obj.total = Number(obj.up || 0) + Number(obj.down || 0) + Number(obj.flat || 0);
+            const payload = JSON.stringify(obj);
+            writeJsonCache(cacheFile, payload);
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.end(payload);
+            return;
+          }
+        }
+      } else {
+        console.error(err);
+      }
+      const row = loadLatestBreadthRecord() || loadBreadthFromArchive(day);
+      const rowDay = row?.day || row?.date || null;
+      const up = Number(row?.up || 0);
+      const down = Number(row?.down || 0);
+      const flat = Number(row?.flat || 0);
+      const total = Number(row?.total || (up + down + flat) || 0);
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
-      res.end(out || '{}');
+      res.end(JSON.stringify({ up, down, flat, total, day: rowDay || day }));
     });
+    return;
+  }
+
+  if (url.pathname === '/api/signals') {
+    const signals = buildSignalsFromBacktest();
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.end(JSON.stringify({
+      generated_at: new Date().toISOString(),
+      source: 'data/backtest_false_kill.json',
+      count: signals.length,
+      signals
+    }));
+    return;
+  }
+
+  if (url.pathname === '/api/panic') {
+    const day = latestTradingDay();
+    let row = null;
+    const snap = readLatestArchivePayload();
+    const snapUp = Number(snap?.sentiment?.upCount);
+    const snapDown = Number(snap?.sentiment?.downCount);
+    if (isNum(snapUp) && isNum(snapDown) && (snap?.day || day) === day) {
+      row = { up: snapUp, down: snapDown, total: snapUp + snapDown, day: snap?.day || day };
+    } else if (isMarketOpenNow()) {
+      row = await fetchBreadthRealtime();
+      if (row && !row.day) row.day = day;
+    }
+    if (!row) {
+      row = loadLatestBreadthRecord() || loadBreadthFromArchive(day);
+    }
+    const up = Number(row?.up || 0);
+    const down = Number(row?.down || 0);
+    const total = Number(row?.total || 0);
+    const ratio = total > 0 ? down / total : 0;
+    const isPanic = ratio > 0.65;
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.end(JSON.stringify({
+      ratio,
+      is_panic: isPanic,
+      up,
+      down,
+      total
+    }));
     return;
   }
 
@@ -1503,3 +3089,6 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, () => {
   console.log(`proxy server on http://localhost:${PORT} [Ashare+Tencent]`);
 });
+
+setTimeout(() => { backfillOverviewHistoryIfNeeded(); }, 3000);
+setInterval(() => { backfillOverviewHistoryIfNeeded(); }, 60 * 1000);
