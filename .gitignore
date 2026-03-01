@@ -12,3 +12,18 @@ data/
 
 # Local ops notes (keep private)
 README.ops.md
+
+# Python
+__pycache__/
+*.pyc
+
+# Runtime/logs
+runtime/
+server.log
+
+# Local tool folders
+.openclaw/
+openclaw_workspace/
+
+# Optional local ops folder
+cron/
