@@ -188,19 +188,22 @@ def _apply_news_gate(position, news_view):
     return position
 
 def _load_quant_modules():
-    root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    base = os.path.join(root_dir, ".trae", "skills", "Quant_Sector_Analysis")
-    if not os.path.exists(base):
-        return None, None
-    def load(name, filename):
-        path = os.path.join(base, filename)
-        if not os.path.exists(path):
-            return None
-        spec = importlib.util.spec_from_file_location(name, path)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        return module
-    return load("clean_local", "clean.py"), load("features_local", "features.py")
+    # 改为直接从本地 lib/quant 目录加载，不再依赖外部 skill 路径
+    try:
+        from lib.quant import clean as clean_mod
+        from lib.quant import features as features_mod
+        return clean_mod, features_mod
+    except ImportError:
+        # Fallback for direct execution if paths are different
+        try:
+            import sys
+            sys.path.append(os.path.join(os.path.dirname(__file__), "lib"))
+            from quant import clean as clean_mod
+            from quant import features as features_mod
+            return clean_mod, features_mod
+        except Exception as e:
+            print(f"Error loading quant modules: {e}", file=sys.stderr)
+            return None, None
 
 def _date_days_ago(n):
     return (datetime.now(ZoneInfo("Asia/Shanghai")) - pd.Timedelta(days=n)).strftime("%Y%m%d")
