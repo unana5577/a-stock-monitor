@@ -48,6 +48,10 @@ createApp({
     const profileGroups = ref({});
     const profileUpdatedAt = ref('');
     const manageSectorName = ref('');
+    // 模拟时间（用于测试盘中场景）
+    const mockTimeEnabled = ref(false);
+    const mockTimeHour = ref(14);
+    const mockTimeMinute = ref(0);
     const sectorGroupOptions = ['资源', '硬件', '软件'];
     const rotationSequencePayload = ref(null);
     const rotationSequenceDays = ref(60);
@@ -1788,7 +1792,7 @@ createApp({
             <div class="bg-blue-50 border-l-4 border-blue-500 p-2 mb-2">
               <div class="text-xs font-bold text-blue-700">跷跷板效应发现</div>
               <div class="text-xs text-blue-600">
-                <span class="font-bold text-red-500">${top.pair[0]}</span> 与 <span class="font-bold text-blue-500">${top.pair[1]}</span> 
+                <span class="font-bold text-red-500">${top.pair[0]}</span> 与 <span class="font-bold text-blue-500">${top.pair[1]}</span>
                 强负相关 (系数: ${top.val})。
               </div>
             </div>
@@ -1806,29 +1810,98 @@ createApp({
         }
         infoDom.innerHTML = infoHtml;
       }
-      
-      if (!chartDom || !data.history) return;
-      
+
+      if (!chartDom) return;
+
       const myChart = window.echarts.init(chartDom);
       const series = [];
-      let dates = [];
-      const days = currentDays.value || 60; // Frontend Slicing Limit
-      
+      let xAxisData = [];
+      const days = currentDays.value || 60;
+
+      // 【当日】使用分时数据
+      if (days === 1 && data.minute && Object.keys(data.minute).length > 0) {
+        const minute = data.minute;
+
+        Object.keys(minute).forEach(name => {
+          const item = minute[name];
+          const seriesData = item?.series || [];
+          const prevClose = item?.prevClose ?? null;
+
+          if (!seriesData || seriesData.length === 0) return;
+
+          const base = prevClose || (seriesData[0]?.close || seriesData[0]?.price);
+          if (!base) return;
+
+          const lineData = seriesData.map(p => {
+            const price = p?.close || p?.price || base;
+            return ((price - base) / base * 100).toFixed(2);
+          });
+
+          if (xAxisData.length === 0) {
+            xAxisData = seriesData.map(p => {
+              const t = p?.time || '';
+              return t.includes(' ') ? t.split(' ')[1].slice(0, 5) : t.slice(0, 5);
+            });
+          }
+
+          series.push({
+            name: name,
+            type: 'line',
+            showSymbol: false,
+            smooth: true,
+            data: lineData,
+            emphasis: { focus: 'series' }
+          });
+        });
+
+        if (series.length > 0) {
+          const option = {
+            title: { text: '当日分时走势 (归一化)', left: 'center', textStyle: { fontSize: 12 } },
+            tooltip: {
+              trigger: 'axis',
+              formatter: function(params) {
+                let res = params[0].axisValue + '<br/>';
+                params.sort((a, b) => b.value - a.value);
+                params.forEach(p => {
+                  const color = p.value > 0 ? 'red' : 'green';
+                  res += `<span style="display:inline-block;margin-right:5px;border-radius:10px;width:9px;height:9px;background-color:${p.color}"></span>`;
+                  res += `${p.seriesName}: <span style="color:${color}">${p.value}%</span><br/>`;
+                });
+                return res;
+              }
+            },
+            legend: {
+              type: 'scroll',
+              bottom: 0,
+              textStyle: { fontSize: 10 },
+              selectedMode: 'multiple'
+            },
+            grid: { left: '5%', right: '5%', bottom: '20%', top: '20%', containLabel: true },
+            xAxis: { type: 'category', data: xAxisData },
+            yAxis: { type: 'value', name: '累计%' },
+            series: series
+          };
+          myChart.setOption(option);
+          return;
+        }
+      }
+
+      // 其他天数使用日线数据
+      if (!data.history) return;
+
       Object.keys(data.history).forEach(name => {
         let hist = data.history[name];
         if (!hist || hist.length === 0) return;
-        
-        // Frontend Slicing Logic:
-        // If backend returns more data than needed, slice it here to satisfy user request without backend changes.
+
         if (hist.length > days) {
           hist = hist.slice(-days);
         }
-        
-        if (dates.length === 0) dates = hist.map(h => h.date);
-        
+
+        if (xAxisData.length === 0) xAxisData = hist.map(h => h.date);
+
         const base = hist[0].close;
         const lineData = hist.map(h => ((h.close - base) / base * 100).toFixed(2));
-        
+
         series.push({
           name: name,
           type: 'line',
@@ -1841,7 +1914,7 @@ createApp({
 
       const option = {
         title: { text: `${days}日相对走势 (归一化)`, left: 'center', textStyle: { fontSize: 12 } },
-        tooltip: { 
+        tooltip: {
           trigger: 'axis',
           formatter: function(params) {
             let res = params[0].axisValue + '<br/>';
@@ -1854,14 +1927,14 @@ createApp({
             return res;
           }
         },
-        legend: { 
-          type: 'scroll', 
-          bottom: 0, 
-          textStyle: {fontSize: 10},
-          selectedMode: 'multiple' // Allow toggling
+        legend: {
+          type: 'scroll',
+          bottom: 0,
+          textStyle: { fontSize: 10 },
+          selectedMode: 'multiple'
         },
         grid: { left: '5%', right: '5%', bottom: '20%', top: '20%', containLabel: true },
-        xAxis: { type: 'category', data: dates },
+        xAxis: { type: 'category', data: xAxisData },
         yAxis: { type: 'value', name: '累计%' },
         series: series
       };
@@ -2034,6 +2107,37 @@ createApp({
       if (tab === 'news') await loadNews(false);
     };
 
+    // 模拟时间控制（用于测试）
+    const toggleMockTime = async () => {
+      mockTimeEnabled.value = !mockTimeEnabled.value;
+      if (mockTimeEnabled.value) {
+        const now = new Date();
+        const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        try {
+          await fetch(`${apiBase}/api/debug/mock-time`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ date, hour: mockTimeHour.value, minute: mockTimeMinute.value })
+          });
+          await refreshAll();
+        } catch (e) {
+          console.error('设置模拟时间失败', e);
+          mockTimeEnabled.value = false;
+        }
+      } else {
+        try {
+          await fetch(`${apiBase}/api/debug/mock-time`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enable: false })
+          });
+          await refreshAll();
+        } catch (e) {
+          console.error('清除模拟时间失败', e);
+        }
+      }
+    };
+
     const init = async () => {
       try {
         const cached = localStorage.getItem(sectorCacheKey);
@@ -2068,6 +2172,6 @@ createApp({
     setInterval(refreshAll, 15000);
     setInterval(() => refreshAi(false), 30 * 60 * 1000);
 
-    return { activeTab, aiBrief, aiUpdatedAt, aiSections, marketAi, promptText, promptOutput, promptLoading, promptError, runPromptDebug, sectorPromptText, sectorPromptOutput, sectorPromptLoading, sectorPromptError, runSectorPromptDebug, refreshAi, market, bonds, extra, sectors, sentiment, pctColor, fmtPct, fmtVolumeCmp, fmtHeatDelta, rotationMonthSpan, setRotationMonthSpan, rotationMatrixAxis, rotationMatrixMonths, rotationMatrixGroups, refreshAll, dataTs, fmtTime, sectorInput, updateSectorWatch, watchList, watchIndicators, lastIndicator, currentDays, lifecycleItems, sectorRotationPayload, sectorIntradayPayload, sectorLoading, changeDays, getStageColor, getAdviceColor, badgeClass, fmtProb, selectTab, newsItems, newsLoading, heatmapItems, heatmapMax, getImpact, getImpactClass, importanceStars, loadNews, macroNews, geoNews, focusNews, rotationFilters, rotationFilter, rotationMainline, setRotationFilter, toggleRotationExpand, isRotationExpanded, exportRotationJson, copyRotationMarkdown, watchIntradayRows, rotationTopGroups, intradayBars, intradaySignal, intradayReason, intradayMax, intradayView, setIntradayView, rotationSequencePayload, rotationSequenceDays, fetchRotationSequence, riskSummary, panicPayload, showSectorManager, profileGroups, profileUpdatedAt, manageSectorName, sectorGroupOptions, openSectorManager, closeSectorManager, addWatchSector, removeWatchSector, saveSectorProfile };
+    return { activeTab, aiBrief, aiUpdatedAt, aiSections, marketAi, promptText, promptOutput, promptLoading, promptError, runPromptDebug, sectorPromptText, sectorPromptOutput, sectorPromptLoading, sectorPromptError, runSectorPromptDebug, refreshAi, market, bonds, extra, sectors, sentiment, pctColor, fmtPct, fmtVolumeCmp, fmtHeatDelta, rotationMonthSpan, setRotationMonthSpan, rotationMatrixAxis, rotationMatrixMonths, rotationMatrixGroups, refreshAll, dataTs, fmtTime, sectorInput, updateSectorWatch, watchList, watchIndicators, lastIndicator, currentDays, lifecycleItems, sectorRotationPayload, sectorIntradayPayload, sectorLoading, changeDays, getStageColor, getAdviceColor, badgeClass, fmtProb, selectTab, newsItems, newsLoading, heatmapItems, heatmapMax, getImpact, getImpactClass, importanceStars, loadNews, macroNews, geoNews, focusNews, rotationFilters, rotationFilter, rotationMainline, setRotationFilter, toggleRotationExpand, isRotationExpanded, exportRotationJson, copyRotationMarkdown, watchIntradayRows, rotationTopGroups, intradayBars, intradaySignal, intradayReason, intradayMax, intradayView, setIntradayView, rotationSequencePayload, rotationSequenceDays, fetchRotationSequence, riskSummary, panicPayload, showSectorManager, profileGroups, profileUpdatedAt, manageSectorName, sectorGroupOptions, openSectorManager, closeSectorManager, addWatchSector, removeWatchSector, saveSectorProfile, mockTimeEnabled, mockTimeHour, mockTimeMinute, toggleMockTime };
   }
 }).mount('#app');
