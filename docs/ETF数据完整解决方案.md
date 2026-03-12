@@ -51,7 +51,7 @@ data/etf_daily/
 ├── etf_516510.jsonl   # 云计算
 ├── etf_516160.jsonl   # 新能源
 ├── etf_512400.jsonl   # 有色金属
-├── etf_512690.jsonl   # 创新药
+├── etf_515120.jsonl   # 创新药
 ├── etf_515880.jsonl   # 通讯设备
 ├── etf_516010.jsonl   # 游戏
 ├── etf_562500.jsonl   # 机器人
