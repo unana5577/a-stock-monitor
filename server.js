@@ -578,9 +578,38 @@ async function fetchEastmoneyDaily(secid, limit = 180) {
 
 async function fetchTencentDaily(code, limit = 180) {
   // ⚠️ CRITICAL: ETF检测 - 6位数字，5开头(上交所)或1开头(深交所)
-  // ETF使用本地持久化数据（warmup文件或ETF日线文件），板块代码使用腾讯API
+  // ETF使用本地持久化数据（warmup文件或ETF日线文件），指数使用index_daily，板块代码使用腾讯API
   const cleanCode = code.replace(/sh|sz|SH|SZ/g, '');
   const isETF = /^\d{6}$/.test(cleanCode) && ['5', '1'].includes(cleanCode[0]);
+  // 指数代码检测
+  const isIndex = /^\d{6}$/.test(cleanCode) && ['000001', '399001', '399006', '000688'].includes(cleanCode);
+
+  if (isIndex) {
+    // ✅ 指数：从本地持久化文件读取
+    const indexFile = path.join(__dirname, 'data', 'index_daily', `index_${cleanCode}.jsonl`);
+    if (fs.existsSync(indexFile)) {
+      try {
+        let data = [];
+        const lines = fs.readFileSync(indexFile, 'utf-8').split('\n').filter(Boolean);
+        for (const line of lines) {
+          try {
+            const item = JSON.parse(line);
+            if (item.date) data.push(item);
+          } catch (e) {}
+        }
+        data.sort((a, b) => a.date.localeCompare(b.date));
+        if (data.length > limit) {
+          data = data.slice(-limit);
+        }
+        const res = { date: data[0]?.date || null, data };
+        cache.set(`tx1d:${code}:${limit}`, { t: now(), v: res });
+        return res;
+      } catch (e) {
+        console.error('指数本地文件读取失败:', e);
+      }
+    }
+    // 指数无本地数据，继续使用腾讯API
+  }
 
   if (isETF) {
     const cfg = readSectorProxyConfig();
