@@ -58,13 +58,13 @@ data/etf_daily/
 └── etf_563530.jsonl   # 商业航天
 ```
 
-**大盘指数数据**：
+**大盘指数数据**（完整历史）：
 ```
-data/archive-YYYYMMDD.jsonl
-├── archive-20260209.jsonl   # 上证指数
-├── archive-20260210.jsonl   # 深证成指
-├── archive-20260211.jsonl   # 创业板指
-└── ...
+data/index_daily/
+├── index_000001.jsonl   # 上证指数 (2017-12-08 ~ 2026-03-12)
+├── index_399001.jsonl   # 深证成指
+├── index_399006.jsonl   # 创业板指
+└── index_000688.jsonl   # 科创板指
 ```
 
 **数据格式**（JSONL，每行一条）：
@@ -100,8 +100,13 @@ if (gap > 1) {
 | `fetch_sector_data.py:_save_etf_to_disk()` | ETF数据持久化到jsonl |
 | `fetch_sector_data.py:_load_etf_from_disk()` | 从本地读取ETF数据 |
 | `fetch_sector_data.py:warmup_proxy_files()` | 生成固定文件名warmup |
-| `server.js:fetchTencentDaily()` | 从warmup/ETF文件读取 |
+| `server.js:fetchTencentDaily()` | ETF/指数从本地文件读取 |
 | `server.js:updateWarmupIfNeeded()` | 启动时检查更新warmup |
+
+**读取优先级**：
+1. ETF → warmup文件 → etf_daily/*.jsonl → 网络请求
+2. 指数 → index_daily/*.jsonl → 腾讯API
+3. 板块 → 腾讯API
 
 ---
 
@@ -431,6 +436,7 @@ print(f'✅ 回补完成，共处理 {len(result)} 个ETF')
 ---
 
 **更新记录**:
+- 2026-03-12: v2.1 - 建立大盘指数持久化存储（index_daily），清理archive等旧文件
 - 2026-03-12: v2.0 - 实施三层持久化架构：固定文件名warmup + ETF日线文件 + 自动启动更新；修复历史日期显示问题（2026-03-09→2026-03-12）
-- 2026-03-10: 添加ETF分时数据支持，实现/api/minute/{code}路由；修复/api/sector/history_proxy接口ETF分时获取；前端【当日】模式支持分时曲线显示；批量获取9个ETF分时数据（各241条）
+- 2026-03-10: 添加ETF分时数据支持，实现/api/minute/{code}路由；修复/api/sector/history_proxy接口ETF分���获取；前端【当日】模式支持分时曲线显示；批量获取9个ETF分时数据（各241条）
 - 2026-03-09: 初始版本，执行数据回补
