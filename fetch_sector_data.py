@@ -6,6 +6,7 @@ import os
 import importlib.util
 from datetime import datetime
 from zoneinfo import ZoneInfo
+from urllib.request import urlopen, Request
 from sector_lifecycle import analyze_sector, select_dynamic_benchmark
 
 # User-defined sector mapping
@@ -30,7 +31,7 @@ TRIGGER_RULES_FILE = os.path.join("data", "trigger-rules.json")
 ROTATION_CALIB_PATH = os.path.join("data", "rotation-calibration.json")
 ROTATION_REPORT_PATH = os.path.join("data", "rotation-backtest-report.json")
 NEWS_DIR = os.path.join("data", "news")
-DEFAULT_SECTORS = ["半导体", "云计算", "新能源", "商业航天", "创新药", "有色金属", "煤炭", "电力", "通讯设备"]
+DEFAULT_SECTORS = ["半导体", "云计算", "新能源", "商业航天", "创新药", "有色金属", "煤炭", "电力", "通讯设备", "游戏", "机器人"]
 DEFAULT_BENCHMARK = "上证"
 DEFAULT_GROUPS = {
     "科技:硬件": ["半导体", "通讯设备"],
@@ -42,6 +43,44 @@ DEFAULT_GROUPS = {
 
 _FETCH_ERRORS = {"daily": {}, "minute": {}}
 
+ASHARE_URL = "https://raw.githubusercontent.com/mpquant/Ashare/main/Ashare.py"
+ASHARE_PATH = os.path.join("data", "Ashare.py")
+PROXY_FILE = os.path.join("data", "sector-proxy.json")
+CACHE_ONLY = os.getenv("CACHE_ONLY") == "1"
+FORCE_SECTOR_ETF = os.getenv("FORCE_SECTOR_ETF") == "1"
+
+def _is_trading_day_session():
+    """判断是否在交易日内（9:30-15:00，含午休），用于午休时仍获取分钟线"""
+    # 优先读取环境变量（模拟时间），否则使用真实时间
+    mock_date = os.getenv("MOCK_TIME_DATE")
+    if mock_date:
+        try:
+            hour = int(os.getenv("MOCK_TIME_HOUR", "14"))
+            minute = int(os.getenv("MOCK_TIME_MINUTE", "0"))
+            # 假设模拟日期是交易日（简化判断，因为模拟主要用于测试盘中数据获取）
+            minutes = hour * 60 + minute
+            return 570 <= minutes <= 900  # 9:30-15:00
+        except:
+            pass
+
+    # 原有逻辑：使用真实时间
+    now = datetime.now(ZoneInfo("Asia/Shanghai"))
+    weekday = now.weekday()
+    if weekday >= 5:  # 周末
+        return False
+    # 简单节假日判断：读取节假日文件
+    holiday_file = os.path.join("data", "holiday.txt")
+    if os.path.exists(holiday_file):
+        try:
+            with open(holiday_file, "r", encoding="utf-8") as f:
+                holidays = set(line.strip() for line in f if line.strip())
+            if now.strftime("%Y-%m-%d") in holidays:
+                return False
+        except:
+            pass
+    minutes = now.hour * 60 + now.minute
+    return 570 <= minutes <= 900  # 9:30-15:00
+
 def _read_json_file(path):
     if not path or not os.path.exists(path):
         return None
@@ -50,6 +89,531 @@ def _read_json_file(path):
             return json.load(f)
     except:
         return None
+
+def _ensure_data_dir():
+    os.makedirs("data", exist_ok=True)
+
+def _http_get_text(url, headers=None, timeout=15):
+    hdr = {"User-Agent": "Mozilla/5.0"}
+    if isinstance(headers, dict):
+        hdr.update(headers)
+    req = Request(url, headers=hdr, method="GET")
+    with urlopen(req, timeout=timeout) as resp:
+        raw = resp.read()
+        try:
+            return raw.decode("utf-8")
+        except:
+            return raw.decode("utf-8", errors="ignore")
+
+def _ensure_ashare_file():
+    _ensure_data_dir()
+    if os.path.exists(ASHARE_PATH) and os.path.getsize(ASHARE_PATH) > 0:
+        return ASHARE_PATH
+    txt = _http_get_text(ASHARE_URL)
+    with open(ASHARE_PATH, "w", encoding="utf-8") as f:
+        f.write(txt)
+    return ASHARE_PATH
+
+def _load_ashare_module():
+    path = _ensure_ashare_file()
+    spec = importlib.util.spec_from_file_location("Ashare", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+def _normalize_etf_code(code):
+    """
+    将6位ETF代码转换为带交易所前缀的格式
+    例如：512480 -> sh512480, 159995 -> sz159995
+    """
+    code_str = str(code).strip().replace("sh", "").replace("sz", "").replace("SH", "").replace("SZ", "")
+
+    if len(code_str) != 6 or not code_str.isdigit():
+        return code_str
+
+    first_digit = code_str[0]
+
+    # 5开头：上交所ETF（51xxxx, 56xxxx）
+    if first_digit == '5':
+        return f"sh{code_str}"
+    # 1开头：深交所ETF（15xxxx, 159xxx）
+    elif first_digit == '1':
+        return f"sz{code_str}"
+    else:
+        # 其他情况，尝试从代码判断
+        # 51xxxx-58xxxx通常是上交所
+        if code_str.startswith(('51', '56', '57', '58')):
+            return f"sh{code_str}"
+        # 15xxxx-16xxxx通常是深交所
+        elif code_str.startswith(('15', '16')):
+            return f"sz{code_str}"
+        else:
+            # 默认返回上交所
+            return f"sh{code_str}"
+
+def _fetch_akshare_sina_etf(etf_code, limit=365):
+    """
+    使用AkShare的东财ETF接口获取ETF日线数据（支持复权）
+
+    ⚠️ CRITICAL: 此函数是所有ETF的专用数据源，不得修改或绕过 ⚠️
+    - ETF定义：6位数字代码，5开头(上交所)或1开头(深交所)
+    - 代码格式：必须包含sh/sz前缀（如sh512480、sz159995）
+    - 数据源：东财接口 fund_etf_hist_em()（支持前复权）
+    - 优势：✅ 提供涨跌幅字段  ✅ 支持复权  ✅ 除权日正常
+    - 请求策略：仅warmup时调用，平时读缓存，避免封号
+    """
+    try:
+        from io import StringIO
+        old_stderr = sys.stderr
+        sys.stderr = StringIO()
+
+        # 标准化ETF代码,去掉sh/sz前缀（东财接口不需要）
+        normalized_code = _normalize_etf_code(etf_code)
+        clean_code = normalized_code.replace('sh', '').replace('sz', '')
+
+        # 调用AkShare的东财ETF接口（前复权）
+        df = ak.fund_etf_hist_em(
+            symbol=clean_code,
+            period="daily",
+            start_date="20200101",
+            end_date="21231231",
+            adjust="qfq"  # 前复权，消除除权跳变
+        )
+        sys.stderr = old_stderr
+
+        if df is None or df.empty:
+            return {"date": None, "data": []}
+
+        # 取最近limit条数据,增加默认值到365天以满足MA60计算需求
+        df = df.tail(limit)
+
+        data = []
+        for _, row in df.iterrows():
+            try:
+                # 东财返回的列名：日期, 开盘, 收盘, 最高, 最低, 成交量, 成交额, 振幅, 涨跌幅, 涨跌额, 换手率
+                date_str = str(row.get('日期', ''))
+                open_price = float(row.get('开盘', 0))
+                close_price = float(row.get('收盘', 0))
+                high_price = float(row.get('最高', 0))
+                low_price = float(row.get('最低', 0))
+                volume = float(row.get('成交量', 0))
+                amount = float(row.get('成交额', 0))
+                pct = row.get('涨跌幅')  # 直接使用东财提供的涨跌幅
+                if pct is not None:
+                    pct = float(pct)
+
+                data.append({
+                    "date": date_str,
+                    "open": open_price,
+                    "close": close_price,
+                    "high": high_price,
+                    "low": low_price,
+                    "volume": volume,
+                    "amount": amount,
+                    "pct": pct
+                })
+            except:
+                continue
+
+        last_date = data[-1]["date"] if data else None
+        return {"date": last_date, "data": data}
+    except Exception as e:
+        sys.stderr = sys.__stderr__
+        return {"date": None, "data": []}
+
+def _fetch_tencent_daily(code, limit=180):
+    # ETF检测：6位数字，5开头(上交所)或1开头(深交所)
+    # CRITICAL: 此逻辑固化ETF数据源，不得修改
+    clean_code = code.replace("sh", "").replace("sz", "").replace("SH", "").replace("SZ", "")
+    is_etf = len(clean_code) == 6 and clean_code.isdigit() and clean_code[0] in ['5', '1']
+
+    # ETF自动路由到专用接口：_fetch_akshare_sina_etf()
+    # 验证状态：✅ 2026-03-09全部通过，满足2025-05-19起始要求
+    if is_etf:
+        etf_result = _fetch_akshare_sina_etf(code, limit=limit)
+        if etf_result.get("data"):
+            return etf_result
+
+    url = f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={code},day,,,{int(limit)},qfq"
+    txt = _http_get_text(url)
+    obj = json.loads(txt)
+    rows = (((obj.get("data") or {}).get(code) or {}).get("day") or [])
+    out = []
+    for r in rows:
+        try:
+            openp = float(r[1])
+            closep = float(r[2])
+            pct = round(((closep - openp) / openp) * 100.0, 2) if openp else None
+            date_raw = str(r[0])
+            date = date_raw
+            if len(date_raw) == 8 and date_raw.isdigit():
+                date = f"{date_raw[0:4]}-{date_raw[4:6]}-{date_raw[6:8]}"
+            volume = float(r[5])
+            amount = volume * closep if volume and closep else None
+            out.append({
+                "date": date,
+                "open": openp,
+                "close": closep,
+                "high": float(r[3]),
+                "low": float(r[4]),
+                "volume": volume,
+                "amount": amount,
+                "pct": pct
+            })
+        except:
+            continue
+    if not out:
+        fallback = _fetch_ashare_daily(code, limit=limit)
+        if fallback.get("data"):
+            return fallback
+    last_date = out[-1]["date"] if out else None
+    return {"date": last_date, "data": out}
+
+def _fetch_ashare_daily(symbol, limit=180):
+    try:
+        mod = _load_ashare_module()
+        df = mod.get_price(symbol, frequency="1d", count=int(limit))
+        if df is None or getattr(df, "empty", False):
+            return {"date": None, "data": []}
+        df = df.reset_index()
+        cols = [str(c).lower() for c in df.columns]
+        date_col = None
+        close_col = None
+        open_col = None
+        high_col = None
+        low_col = None
+        volume_col = None
+        for i, c in enumerate(cols):
+            if c in ["date", "datetime", "time"]:
+                date_col = df.columns[i]
+            if c == "close":
+                close_col = df.columns[i]
+            if c == "open":
+                open_col = df.columns[i]
+            if c == "high":
+                high_col = df.columns[i]
+            if c == "low":
+                low_col = df.columns[i]
+            if c in ["volume", "vol"]:
+                volume_col = df.columns[i]
+        if date_col is None or close_col is None:
+            return {"date": None, "data": []}
+        out = []
+        for _, row in df.iterrows():
+            try:
+                date_raw = str(row[date_col])[:10]
+                date = date_raw
+                if len(date_raw) == 8 and date_raw.isdigit():
+                    date = f"{date_raw[0:4]}-{date_raw[4:6]}-{date_raw[6:8]}"
+                openp = float(row[open_col]) if open_col is not None else None
+                closep = float(row[close_col])
+                highp = float(row[high_col]) if high_col is not None else None
+                lowp = float(row[low_col]) if low_col is not None else None
+                vol = float(row[volume_col]) if volume_col is not None else None
+                amount = vol * closep if vol and closep else None
+                pct = round(((closep - openp) / openp) * 100.0, 2) if openp else None
+                out.append({
+                    "date": date,
+                    "open": openp,
+                    "close": closep,
+                    "high": highp,
+                    "low": lowp,
+                    "volume": vol,
+                    "amount": amount,
+                    "pct": pct
+                })
+            except:
+                continue
+        last_date = out[-1]["date"] if out else None
+        return {"date": last_date, "data": out}
+    except:
+        return {"date": None, "data": []}
+
+def _fetch_ashare_minute(symbol, count=240):
+    try:
+        mod = _load_ashare_module()
+        df = mod.get_price(symbol, frequency="1m", count=int(count))
+        prev_close = None
+        try:
+            dfd = mod.get_price(symbol, frequency="1d", count=2)
+            if dfd is not None and not getattr(dfd, "empty", False):
+                dfd = dfd.reset_index()
+                cols = [str(c).lower() for c in dfd.columns]
+                close_col = None
+                for i, c in enumerate(cols):
+                    if c == "close":
+                        close_col = dfd.columns[i]
+                        break
+                if close_col is not None:
+                    if len(dfd) >= 2:
+                        prev_close = float(dfd.iloc[-2][close_col])
+                    else:
+                        prev_close = float(dfd.iloc[-1][close_col])
+        except:
+            prev_close = None
+        if df is None or getattr(df, "empty", False):
+            return {"date": None, "data": [], "prevClose": prev_close}
+        df = df.reset_index()
+        time_col = None
+        for c in df.columns:
+            lc = str(c).lower()
+            if lc in ["datetime", "date", "time"]:
+                time_col = c
+                break
+        if time_col is None:
+            time_col = df.columns[0]
+        cols = [str(c).lower() for c in df.columns]
+        open_col = None
+        close_col = None
+        for i, lc in enumerate(cols):
+            if lc == "open":
+                open_col = df.columns[i]
+            if lc == "close":
+                close_col = df.columns[i]
+        if open_col is None or close_col is None:
+            return {"date": None, "data": [], "prevClose": prev_close}
+        def _fmt(t):
+            s = str(t)
+            return s[:16] if len(s) >= 16 else s
+        data = []
+        for _, row in df.iterrows():
+            try:
+                data.append({"time": _fmt(row[time_col]), "open": float(row[open_col]), "close": float(row[close_col])})
+            except:
+                continue
+        day = datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d")
+        if data and isinstance(data[0].get("time"), str) and " " in data[0]["time"]:
+            dp = data[0]["time"].split(" ")[0]
+            if dp and len(dp) == 10 and dp[4] == "-" and dp[7] == "-":
+                day = dp
+                data = [p for p in data if isinstance(p.get("time"), str) and p["time"].startswith(day)]
+        return {"date": day, "data": data, "prevClose": prev_close}
+    except:
+        return {"date": None, "data": [], "prevClose": None}
+
+def _load_proxy_mapping():
+    obj = _read_json_file(PROXY_FILE)
+    if isinstance(obj, dict) and isinstance(obj.get("variants"), dict):
+        default_variant = str(obj.get("default_variant") or "theme").strip() or "theme"
+        return {"default_variant": default_variant, "variants": obj.get("variants"), "force_etf": bool(obj.get("force_etf"))}
+    return {
+        "default_variant": "theme",
+        "variants": {
+            "theme": {
+                "半导体": "sz159995",
+                "云计算": "sh516510",
+                "新能源": "sh000941",
+                "商业航天": "sh512660",
+                "创新药": "sz159992",
+                "有色金属": "sh000819",
+                "通讯设备": "sh515050"
+            },
+            "hs300": {}
+        },
+        "force_etf": False
+    }
+
+def _proxy_history_payload(sectors, days=60, variant=None):
+    cfg = _load_proxy_mapping()
+    v = str(variant or cfg.get("default_variant") or "theme").strip() or "theme"
+    proxy_map = (cfg.get("variants") or {}).get(v) or {}
+    history = {}
+    minute = {}
+    for name in sectors:
+        code = proxy_map.get(name)
+        if not code:
+            continue
+
+        # 判断是否是ETF
+        clean_code = str(code).replace("sh", "").replace("sz", "").replace("SH", "").replace("SZ", "")
+        is_etf = len(clean_code) == 6 and clean_code.isdigit() and clean_code[0] in ['5', '1']
+
+        if is_etf:
+            # ✅ ETF优先从本地读取
+            local_data = _load_etf_from_disk(code, days=int(days))
+            if local_data:
+                # 本地有数据，直接使用
+                history[name] = local_data
+                print(f"[ETF本地] {name}: 读取本地 {len(local_data)} 条数据")
+            else:
+                # 本地没有数据，从网络请求并保存
+                normalized_code = _normalize_etf_code(code)
+                daily = _fetch_akshare_sina_etf(normalized_code, limit=1000)  # 获取完整历史
+                data_list = daily.get("data") or []
+                if data_list:
+                    _save_etf_to_disk(code, data_list)  # 保存到本地
+                    # 只返回需要的days天
+                    history[name] = data_list[-int(days):] if len(data_list) > int(days) else data_list
+                    print(f"[ETF网络] {name}: 请求并保存 {len(data_list)} 条数据到本地")
+                else:
+                    history[name] = []
+        else:
+            # 板块代码：从网络请求
+            normalized_code = code
+            daily = _fetch_tencent_daily(normalized_code, limit=int(days))
+            history[name] = daily.get("data") or []
+
+        # 分时数据
+        m = _fetch_ashare_minute(code, count=240)
+        minute[name] = {"series": m.get("data") or [], "prevClose": m.get("prevClose")}
+
+    day = datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d")
+    for n, arr in history.items():
+        if arr:
+            d = str(arr[-1].get("date") or "")
+            if d and d > day:
+                day = d
+            if d and d < day:
+                day = max(day, d)
+    return {"day": day, "history": history, "minute": minute, "watch": sectors, "variant": v}
+
+def _write_json(path, obj):
+    _ensure_data_dir()
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(_json_sanitize(obj), f, ensure_ascii=False, indent=2)
+    return path
+
+# ========== ETF日线持久化 ==========
+ETF_DAILY_DIR = os.path.join("data", "etf_daily")
+
+def _ensure_etf_daily_dir():
+    """确保ETF日线目录存在"""
+    os.makedirs(ETF_DAILY_DIR, exist_ok=True)
+
+def _get_etf_file_path(etf_code):
+    """获取ETF日线文件路径"""
+    clean_code = etf_code.replace("sh", "").replace("sz", "").replace("SH", "").replace("SZ", "")
+    return os.path.join(ETF_DAILY_DIR, f"etf_{clean_code}.jsonl")
+
+def _save_etf_to_disk(etf_code, data_list):
+    """
+    将ETF数据保存到本地文件
+    :param etf_code: ETF代码，如 sh512480
+    :param data_list: 数据列表 [{date, open, close, high, low, volume, amount, pct}, ...]
+    """
+    _ensure_etf_daily_dir()
+    filepath = _get_etf_file_path(etf_code)
+
+    # 读取现有数据
+    existing_dates = set()
+    existing_data = []
+    if os.path.exists(filepath):
+        with open(filepath, 'r', encoding='utf-8') as f:
+            for line in f:
+                try:
+                    item = json.loads(line.strip())
+                    if item.get('date'):
+                        existing_dates.add(item['date'])
+                        existing_data.append(item)
+                except:
+                    pass
+
+    # 追加新数据（避免重复）
+    for item in data_list:
+        date = item.get('date')
+        if date and date not in existing_dates:
+            existing_data.append(item)
+            existing_dates.add(date)
+
+    # 写入文件（按日期排序）
+    existing_data.sort(key=lambda x: x.get('date', ''))
+    with open(filepath, 'w', encoding='utf-8') as f:
+        for item in existing_data:
+            f.write(json.dumps(item, ensure_ascii=False) + '\n')
+
+    return filepath
+
+def _load_etf_from_disk(etf_code, days=None):
+    """
+    从本地文件读取ETF数据
+    :param etf_code: ETF代码，如 sh512480
+    :param days: 返回最近N天数据，None表示全部
+    :return: [{date, open, close, high, low, volume, amount, pct}, ...]
+    """
+    filepath = _get_etf_file_path(etf_code)
+    if not os.path.exists(filepath):
+        return []
+
+    data = []
+    with open(filepath, 'r', encoding='utf-8') as f:
+        for line in f:
+            try:
+                item = json.loads(line.strip())
+                if item.get('date'):
+                    data.append(item)
+            except:
+                pass
+
+    # 按日期排序
+    data.sort(key=lambda x: x.get('date', ''))
+
+    # 返回最近days天
+    if days and len(data) > days:
+        data = data[-days:]
+
+    return data
+
+def _get_latest_etf_date(etf_code):
+    """获取本地存储的最新日期"""
+    data = _load_etf_from_disk(etf_code, days=1)
+    return data[-1].get('date') if data else None
+
+def _append_etf_daily(etf_code, data_list):
+    """
+    追加新的ETF日线数据
+    :param etf_code: ETF代码
+    :param data_list: 新数据列表
+    """
+    return _save_etf_to_disk(etf_code, data_list)
+
+def warmup_proxy_files(sectors, days=60, variant=None):
+    """
+    生成warmup文件
+    使用固定文件名（不包含日期），方便启动时自动更新
+    """
+    payload = _proxy_history_payload(sectors, days=days, variant=variant)
+    day = payload.get("day") or datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d")
+
+    # ✅ 使用固定文件名（不包含日期）
+    history_path = os.path.join("data", f"sector-history-warmup-{int(days)}.json")
+    minute_path = os.path.join("data", f"sector-minute-warmup.json")
+
+    _write_json(history_path, payload)
+    _write_json(minute_path, {"day": day, "minute": payload.get("minute") or {}, "watch": payload.get("watch") or [], "variant": payload.get("variant")})
+
+    print(f"[Warmup] ✅ 生成成功: sector-history-warmup-{int(days)}.json (day={day})")
+
+    return {"history": history_path, "minute": minute_path, "day": day, "variant": variant or payload.get("variant")}
+
+def proxy_range_file(sector, start_day, end_day, variant=None):
+    name = str(sector).strip()
+    start_s = str(start_day).strip()
+    end_s = str(end_day).strip()
+    try:
+        start_dt = datetime.strptime(start_s, "%Y-%m-%d")
+        end_dt = datetime.strptime(end_s, "%Y-%m-%d")
+    except:
+        return {"error": "bad_date"}
+    delta = (end_dt - start_dt).days + 30
+    limit = max(120, delta)
+    cfg = _load_proxy_mapping()
+    v = str(variant or cfg.get("default_variant") or "theme").strip() or "theme"
+    proxy_map = (cfg.get("variants") or {}).get(v) or {}
+    code = proxy_map.get(name)
+    if not code:
+        return {"error": "missing_mapping", "sector": name}
+    # 如果是ETF variant（6位数字代码），需要转换
+    if v == "etf" and len(str(code).replace("sh", "").replace("sz", "").replace("SH", "").replace("SZ", "")) == 6:
+        normalized_code = _normalize_etf_code(code)
+    else:
+        normalized_code = code
+    daily = _fetch_tencent_daily(normalized_code, limit=limit)
+    rows = daily.get("data") or []
+    rows = [r for r in rows if str(r.get("date") or "") >= start_s and str(r.get("date") or "") <= end_s]
+    out = {"day": end_s, "watch": [name], "variant": v, "history": {name: rows}}
+    path = os.path.join("data", f"sector-history-{name}-{start_s}-{end_s}.json")
+    _write_json(path, out)
+    return {"out": path, "rows": len(rows), "variant": v}
 
 def load_sector_groups():
     def normalize_groups(groups):
@@ -233,6 +797,8 @@ def _latest_cache_date(df):
         return None
 
 def _need_cache_refresh(df):
+    if CACHE_ONLY:
+        return False
     latest = _latest_cache_date(df)
     if not latest:
         return True
@@ -521,6 +1087,37 @@ def _build_histories_from_cache(df, sectors):
         } for d, r in zip(part["date"], part.to_dict(orient="records"))]
     return histories
 
+def _load_market_amount_daily_rows(days=180):
+    path = os.path.join("data", "market-amount-daily.jsonl")
+    if not os.path.exists(path):
+        return None
+    rows = []
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    arr = json.loads(line)
+                except:
+                    continue
+                if not isinstance(arr, list) or len(arr) < 2:
+                    continue
+                d = str(arr[0] or "")
+                a = _num(arr[1], None)
+                if not d or a is None:
+                    continue
+                rows.append({"date": d, "amount": a})
+    except:
+        return None
+    if not rows:
+        return None
+    rows.sort(key=lambda x: x.get("date") or "")
+    if days is not None and int(days) > 0 and len(rows) > int(days):
+        rows = rows[-int(days):]
+    return rows
+
 def _append_benchmark_rows(df, days=60):
     index_map = {
         "上证": {"symbol": "sh000001"},
@@ -550,7 +1147,9 @@ def _append_benchmark_rows(df, days=60):
                 "low": h.get("low"),
                 "close": h.get("close")
             })
-    market_rows = build_market_amount_rows(index_hist.get("上证"), index_hist.get("深证"))
+    market_rows = _load_market_amount_daily_rows(days=max(180, int(days or 0) or 180))
+    if not market_rows:
+        market_rows = build_market_amount_rows(index_hist.get("上证"), index_hist.get("深证"))
     if market_rows:
         for h in market_rows:
             rows.append({
@@ -911,21 +1510,28 @@ def get_sector_payload(sector_items, indicator_days=20):
     if not sectors:
         sectors = _normalize_sectors(DEFAULT_SECTORS)
     df = _load_cache()
-    if df is None or df.empty or _need_cache_refresh(df):
+    if (df is None or df.empty or _need_cache_refresh(df)) and not CACHE_ONLY:
         df = _update_sector_cache(sectors, ensure_days=indicator_days)
     histories = _build_histories_from_cache(df, sectors)
     df_with_bench = _append_benchmark_rows(df, days=max(indicator_days * 3, 60))
     indicators = _build_indicators_from_cache(df_with_bench, sectors, indicator_days)
     minutes = {}
+    # 交易日内（含午休）仍获取分钟线，用于合成当日数据
+    should_fetch_minute = not CACHE_ONLY or _is_trading_day_session()
     for item in sectors:
         display = item["display"]
         name = item["name"]
-        series = get_sector_minute(name)
-        daily = _build_daily_from_minute(series)
-        histories[display] = _merge_today(histories.get(display) or [], daily)
-        hist = histories.get(display) or []
-        prev_close = hist[-1].get("close") if hist else None
-        minutes[display] = {"series": series, "prevClose": prev_close}
+        if should_fetch_minute:
+            series = get_sector_minute(name)
+            daily = _build_daily_from_minute(series)
+            histories[display] = _merge_today(histories.get(display) or [], daily)
+            hist = histories.get(display) or []
+            prev_close = hist[-1].get("close") if hist else None
+            minutes[display] = {"series": series, "prevClose": prev_close}
+        else:
+            hist = histories.get(display) or []
+            prev_close = hist[-1].get("close") if hist else None
+            minutes[display] = {"series": [], "prevClose": prev_close}
     correlations = calculate_correlations(histories)
     latest = None
     for arr in histories.values():
@@ -958,6 +1564,36 @@ def _build_lifecycle_df(df, sector_name, days=60):
     part["amount"] = pd.to_numeric(part.get("amount"), errors="coerce").fillna(0)
     return part[["date", "close", "amount"]]
 
+def _build_proxy_lifecycle_pair(sector_name, days=60):
+    cfg = _load_proxy_mapping()
+    v = str(cfg.get("default_variant") or "theme").strip() or "theme"
+    proxy_map = (cfg.get("variants") or {}).get(v) or {}
+    code = proxy_map.get(sector_name)
+    if not code:
+        return None, None
+    # 如果是ETF variant（6位数字代码），需要转换
+    if v == "etf" and len(str(code).replace("sh", "").replace("sz", "").replace("SH", "").replace("SZ", "")) == 6:
+        normalized_code = _normalize_etf_code(code)
+    else:
+        normalized_code = code
+    limit = max(180, int(days or 0) * 3)
+    daily = _fetch_tencent_daily(normalized_code, limit=limit)
+    rows = daily.get("data") or []
+    if not rows:
+        return None, None
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return None, None
+    df["date"] = pd.to_datetime(df["date"], errors="coerce")
+    df = df.dropna(subset=["date"]).sort_values("date")
+    if df.empty:
+        return None, None
+    df["close"] = pd.to_numeric(df.get("close"), errors="coerce").fillna(0)
+    df["amount"] = pd.to_numeric(df.get("amount"), errors="coerce").fillna(0)
+    df_full = df[["date", "close", "amount"]].copy()
+    df_slice = df_full.tail(int(days)) if days is not None else df_full
+    return df_slice, df_full
+
 def _build_pool_benchmark(df, sector_displays, days=180):
     if df is None or df.empty:
         return None
@@ -988,8 +1624,9 @@ def get_sector_lifecycle(sector_items, days=60):
     sectors = _normalize_sectors(sector_items)
     if not sectors:
         sectors = _normalize_sectors(DEFAULT_SECTORS)
+    force_etf = FORCE_SECTOR_ETF
     df = _load_cache()
-    if df is None or df.empty or _need_cache_refresh(df):
+    if (df is None or df.empty or _need_cache_refresh(df)) and not CACHE_ONLY and not force_etf:
         df = _update_sector_cache(sectors, ensure_days=days)
     df_with_bench = _append_benchmark_rows(df, days=max(days, 60))
     bench_days = max(days, 60)
@@ -1009,10 +1646,17 @@ def get_sector_lifecycle(sector_items, days=60):
     items = []
     for item in sectors:
         display = item["display"]
-        sector_df = _build_lifecycle_df(df_with_bench, display, bench_days)
-        sector_full = _build_lifecycle_df(df_with_bench, display, None)
+        sector_df = None
+        sector_full = None
+        if not force_etf:
+            sector_df = _build_lifecycle_df(df_with_bench, display, bench_days)
+            sector_full = _build_lifecycle_df(df_with_bench, display, None)
         if sector_df is None or sector_df.empty:
-            continue
+            proxy_df, proxy_full = _build_proxy_lifecycle_pair(display, bench_days)
+            if proxy_df is None or proxy_df.empty:
+                continue
+            sector_df = proxy_df
+            sector_full = proxy_full
         bench_name, bench_corr = select_dynamic_benchmark(sector_df, benchmark_map, 60)
         if not bench_name:
             bench_name = DEFAULT_BENCHMARK if DEFAULT_BENCHMARK in benchmark_map else list(benchmark_map.keys())[0]
@@ -1021,7 +1665,12 @@ def get_sector_lifecycle(sector_items, days=60):
             bench_df = benchmark_map.get(DEFAULT_BENCHMARK) if DEFAULT_BENCHMARK in benchmark_map else list(benchmark_map.values())[0]
         amount_df = market_amount_df if market_amount_df is not None else benchmark_map.get(DEFAULT_BENCHMARK)
         items.append(analyze_sector(sector_df, bench_df, display, bench_name, bench_corr, amount_df, sector_full))
-    return {"items": items, "watch": [s["display"] for s in sectors]}
+    latest = None
+    for it in items:
+        d = it.get("数据日期") or it.get("asof_date")
+        if d and (latest is None or str(d) > str(latest)):
+            latest = str(d)
+    return {"day": latest, "items": items, "watch": [s["display"] for s in sectors]}
 
 def _num(v, default=0.0):
     try:
@@ -1476,7 +2125,7 @@ def get_sector_rotation(sector_items, days=90):
         ev["position"] = _apply_news_gate(ev["position"], m.get("news_view"))
         m["exec_view"] = ev
     df = _load_cache()
-    if df is None or df.empty or _need_cache_refresh(df):
+    if (df is None or df.empty or _need_cache_refresh(df)) and not CACHE_ONLY:
         df = _update_sector_cache(sectors, ensure_days=max(60, int(days or 0) or 90))
     df_with_bench = _append_benchmark_rows(df, days=max(90, int(days or 0) or 90))
     idx_star = _index_state(df_with_bench, "科创板", days=max(60, int(days or 0) or 90))
@@ -1518,7 +2167,7 @@ def get_rotation_sequence(sector_items, days=60):
     if not sectors:
         sectors = _normalize_sectors(DEFAULT_SECTORS)
     df = _load_cache()
-    if df is None or df.empty or _need_cache_refresh(df):
+    if (df is None or df.empty or _need_cache_refresh(df)) and not CACHE_ONLY:
         df = _update_sector_cache(sectors, ensure_days=max(180, int(days or 0) * 3))
     histories = _build_histories_from_cache(df, sectors)
     date_map = {}
@@ -1594,7 +2243,7 @@ def _build_benchmark_map(df_with_bench, days):
 
 def _collect_rotation_samples(sectors, ensure_days, min_lookback=60):
     df = _load_cache()
-    if df is None or df.empty or _need_cache_refresh(df):
+    if (df is None or df.empty or _need_cache_refresh(df)) and not CACHE_ONLY:
         df = _update_sector_cache(sectors, ensure_days=ensure_days)
     if df is None or df.empty:
         return [], {}
@@ -1906,6 +2555,14 @@ def get_index_history(symbol, days=180):
                 df = ak.stock_zh_index_daily_em(symbol=code, start_date=START_DATE, end_date=datetime.now().strftime("%Y%m%d"))
             except TypeError:
                 df = ak.stock_zh_index_daily_em(symbol=code)
+        except:
+            df = None
+    if df is None or df.empty:
+        try:
+            tx_symbol = symbol
+            if not str(tx_symbol).startswith(("sh", "sz")) and len(str(code)) == 6:
+                tx_symbol = f"sh{code}"
+            df = ak.stock_zh_index_daily_tx(symbol=tx_symbol)
         except:
             df = None
     if df is None or df.empty:
@@ -2281,6 +2938,229 @@ def get_market_breadth():
         sys.stderr = sys.__stderr__
         return None
 
+def get_snapshot_from_akshare(secids_json):
+    """
+    获取快照数据，替代 fetchEastmoneySnapshot
+    secids_json: JSON字符串，如 '["1.000001", "90.BK0475"]'
+    """
+    try:
+        from io import StringIO
+        old_stderr = sys.stderr
+        sys.stderr = StringIO()
+
+        secids = json.loads(secids_json)
+        result = {}
+
+        # 批量获取A股快照
+        try:
+            df = ak.stock_zh_a_spot_em()
+            for secid in secids:
+                # 解析secid格式: 1.000001 (上证) 或 90.BK0475 (板块)
+                parts = secid.split('.')
+                if len(parts) != 2:
+                    continue
+
+                market, code = parts[0], parts[1]
+
+                # A股市场
+                if market == '1':  # 上证
+                    row = df[df['代码'] == code]
+                    if not row.empty:
+                        r = row.iloc[0]
+                        result[secid] = {
+                            "name": r.get('名称', ''),
+                            "price": float(r.get('最新价', 0)) / 100 if r.get('最新价') else None,
+                            "pct": float(r.get('涨跌幅', 0)) / 100 if r.get('涨跌幅') else None,
+                            "prevClose": None
+                        }
+                elif market == '0':  # 深证
+                    row = df[df['代码'] == code]
+                    if not row.empty:
+                        r = row.iloc[0]
+                        result[secid] = {
+                            "name": r.get('名称', ''),
+                            "price": float(r.get('最新价', 0)) / 100 if r.get('最新价') else None,
+                            "pct": float(r.get('涨跌幅', 0)) / 100 if r.get('涨跌幅') else None,
+                            "prevClose": None
+                        }
+        except Exception as e:
+            pass
+
+        # 板块数据
+        if market == '90':  # 板块
+            try:
+                df = ak.stock_board_industry_name_em()
+                row = df[df['板块代码'] == code]
+                if not row.empty:
+                    r = row.iloc[0]
+                    result[secid] = {
+                        "name": r.get('板块名称', ''),
+                        "price": None,
+                        "pct": float(r.get('涨跌幅', 0)) / 100 if r.get('涨跌幅') else None,
+                        "prevClose": None
+                    }
+            except:
+                pass
+
+        sys.stderr = old_stderr
+        return result
+    except Exception as e:
+        sys.stderr = sys.__stderr__
+        return None
+
+def get_minute_data_from_akshare(secid):
+    """
+    获取分钟数据，替代 fetchEastmoneyMinute
+    secid: 如 "1.000001"
+    """
+    try:
+        from io import StringIO
+        old_stderr = sys.stderr
+        sys.stderr = StringIO()
+
+        parts = secid.split('.')
+        if len(parts) != 2:
+            return None
+
+        market, code = parts[0], parts[1]
+
+        # 转换akshare格式
+        if market == '1':  # 上证
+            symbol = f'sh{code}'
+        elif market == '0':  # 深证
+            symbol = f'sz{code}'
+        else:
+            sys.stderr = old_stderr
+            return None
+
+        # 获取分钟数据
+        df = ak.stock_zh_a_hist_min_em(symbol=symbol, period='1', adjust='')
+        sys.stderr = old_stderr
+
+        if df.empty:
+            return {"date": None, "data": [], "prevClose": None}
+
+        today = datetime.now().strftime('%Y-%m-%d')
+        filtered = df[df['时间'].astype(str).str.startswith(today)]
+
+        data = []
+        for _, row in filtered.iterrows():
+            data.append({
+                "time": str(row['时间'])[:16],
+                "open": float(row['开盘']),
+                "close": float(row['收盘'])
+            })
+
+        return {"date": today, "data": data, "prevClose": None}
+    except Exception as e:
+        sys.stderr = sys.__stderr__
+        return None
+
+def get_etf_minute_data(code):
+    """
+    获取ETF分时数据
+    code: 如 "sh159995" 或 "sz159995"（带前缀）
+    """
+    try:
+        from io import StringIO
+        old_stderr = sys.stderr
+        sys.stderr = StringIO()
+
+        # 去除前缀，fund_etf_hist_min_em需要纯数字
+        clean_code = code.replace('sh', '').replace('sz', '').replace('SH', '').replace('SZ', '')
+
+        # 验证ETF代码格式
+        if not (len(clean_code) == 6 and clean_code.isdigit() and clean_code[0] in ['5', '1']):
+            sys.stderr = old_stderr
+            return None
+
+        # 获取ETF分时数据
+        df = ak.fund_etf_hist_min_em(symbol=clean_code, period='1', adjust='')
+        sys.stderr = old_stderr
+
+        if df.empty:
+            return {"date": None, "data": [], "prevClose": None}
+
+        # 获取当日数据
+        today = datetime.now().strftime('%Y-%m-%d')
+        filtered = df[df['时间'].astype(str).str.startswith(today)]
+
+        data = []
+        for _, row in filtered.iterrows():
+            data.append({
+                "time": str(row['时间'])[:16],
+                "price": float(row['收盘']),
+                "volume": int(row['成交量']) if '成交量' in row else 0,
+                "amount": float(row['成交额']) if '成交额' in row else 0
+            })
+
+        # 获取昨收
+        prev_close = None
+        if len(filtered) > 0:
+            # 尝试从第一条数据获取昨收（如果API提供）
+            # 否则用第一笔开盘价作为参考
+            prev_close = float(filtered.iloc[0]['开盘']) if '开盘' in filtered.iloc[0] else None
+
+        return {"date": today, "data": data, "prevClose": prev_close}
+    except Exception as e:
+        sys.stderr = sys.__stderr__
+        return None
+
+def get_daily_data_from_akshare(secid, limit=180):
+    """
+    获取日线数据，替代 fetchEastmoneyDaily
+    secid: 如 "1.000001"
+    limit: 天数
+    """
+    try:
+        from io import StringIO
+        old_stderr = sys.stderr
+        sys.stderr = StringIO()
+
+        parts = secid.split('.')
+        if len(parts) != 2:
+            return None
+
+        market, code = parts[0], parts[1]
+
+        # 转换akshare格式
+        if market == '1':  # 上证
+            symbol = f'sh{code}'
+        elif market == '0':  # 深证
+            symbol = f'sz{code}'
+        else:
+            sys.stderr = old_stderr
+            return None
+
+        # 获取日线数据
+        df = ak.stock_zh_a_hist(symbol=symbol, period="daily", start_date="20240101", adjust="")
+        sys.stderr = old_stderr
+
+        if df.empty:
+            return {"date": None, "data": []}
+
+        # 取最近limit条
+        df = df.tail(limit)
+
+        data = []
+        for _, row in df.iterrows():
+            data.append({
+                "date": str(row['日期']),
+                "open": float(row['开盘']),
+                "close": float(row['收盘']),
+                "high": float(row['最高']),
+                "low": float(row['最低']),
+                "volume": float(row['成交量']),
+                "amount": float(row['成交额']),
+                "pct": float(row['涨跌幅']) if '涨跌幅' in row else None
+            })
+
+        last_date = str(df.iloc[-1]['日期']) if len(df) > 0 else None
+        return {"date": last_date, "data": data}
+    except Exception as e:
+        sys.stderr = sys.__stderr__
+        return None
+
 def main():
     if len(sys.argv) < 2:
         print(json.dumps({"error": "No command"}))
@@ -2305,7 +3185,40 @@ def main():
     elif cmd == "breadth":
         data = get_market_breadth()
         print(json.dumps(_json_sanitize(data), ensure_ascii=False))
-        
+
+    elif cmd == "snapshot":
+        if len(sys.argv) >= 3:
+            secids_json = sys.argv[2]
+            data = get_snapshot_from_akshare(secids_json)
+            print(json.dumps(_json_sanitize(data), ensure_ascii=False))
+        else:
+            print(json.dumps({"error": "Missing secids argument"}, ensure_ascii=False))
+
+    elif cmd == "minute":
+        if len(sys.argv) >= 3:
+            secid = sys.argv[2]
+            data = get_minute_data_from_akshare(secid)
+            print(json.dumps(_json_sanitize(data), ensure_ascii=False))
+        else:
+            print(json.dumps({"error": "Missing secid argument"}, ensure_ascii=False))
+
+    elif cmd == "etf-minute":
+        if len(sys.argv) >= 3:
+            code = sys.argv[2]  # ETF代码，如 "sh159995" 或 "sz159995"
+            data = get_etf_minute_data(code)
+            print(json.dumps(_json_sanitize(data), ensure_ascii=False))
+        else:
+            print(json.dumps({"error": "Missing ETF code argument"}, ensure_ascii=False))
+
+    elif cmd == "daily":
+        if len(sys.argv) >= 3:
+            secid = sys.argv[2]
+            limit = int(sys.argv[3]) if len(sys.argv) >= 4 else 180
+            data = get_daily_data_from_akshare(secid, limit)
+            print(json.dumps(_json_sanitize(data), ensure_ascii=False))
+        else:
+            print(json.dumps({"error": "Missing secid argument"}, ensure_ascii=False))
+
     elif cmd == "history":
         if len(sys.argv) >= 3:
             try:
@@ -2324,6 +3237,32 @@ def main():
                 indicator_days = 20
         payload = get_sector_payload(items, indicator_days)
         print(json.dumps(_json_sanitize(payload), ensure_ascii=False))
+    elif cmd == "warmup":
+        raw = sys.argv[2] if len(sys.argv) >= 3 else ""
+        days = 60
+        items = DEFAULT_SECTORS
+        if raw:
+            try:
+                days = int(raw)
+                items = DEFAULT_SECTORS
+            except:
+                items = _parse_sector_arg(raw)
+        if len(sys.argv) >= 4:
+            try:
+                days = int(sys.argv[3])
+            except:
+                days = days
+        out = warmup_proxy_files(items, days=days)
+        print(json.dumps(_json_sanitize(out), ensure_ascii=False))
+    elif cmd == "proxy_range":
+        if len(sys.argv) < 5:
+            print(json.dumps({"error": "Missing args: sector start end"}, ensure_ascii=False))
+            return
+        sector = sys.argv[2]
+        start_day = sys.argv[3]
+        end_day = sys.argv[4]
+        out = proxy_range_file(sector, start_day, end_day)
+        print(json.dumps(_json_sanitize(out), ensure_ascii=False))
     elif cmd == "lifecycle":
         if len(sys.argv) >= 3:
             try:

@@ -578,26 +578,24 @@ async function fetchEastmoneyDaily(secid, limit = 180) {
 
 async function fetchTencentDaily(code, limit = 180) {
   // ⚠️ CRITICAL: ETF检测 - 6位数字，5开头(上交所)或1开头(深交所)
-  // ETF使用AkShare Sina数据源（warmup文件），板块代码使用腾讯API
+  // ETF使用本地持久化数据（warmup文件或ETF日线文件），板块代码使用腾讯API
   const cleanCode = code.replace(/sh|sz|SH|SZ/g, '');
   const isETF = /^\d{6}$/.test(cleanCode) && ['5', '1'].includes(cleanCode[0]);
 
   if (isETF) {
-    // ETF：从warmup文件读取历史数据
-    const warmupFile = findLatestCacheFileOnOrBefore('sector-history-warmup', latestTradingDay());
-    if (warmupFile) {
-      try {
-        const txt = readJsonCache(warmupFile);
-        const obj = JSON.parse(txt);
-        const cfg = readSectorProxyConfig();
-        const proxyMap = (cfg.variants && (cfg.variants.etf || {})) || {};
+    const cfg = readSectorProxyConfig();
+    const proxyMap = (cfg.variants && (cfg.variants.etf || {})) || {};
+    const sectorName = Object.keys(proxyMap).find(name => proxyMap[name] === code);
 
-        // 代码→板块名反向映射
-        const sectorName = Object.keys(proxyMap).find(name => proxyMap[name] === code);
+    // ✅ 方法1: 从固定名称的warmup文件读取
+    const warmupFile = path.join(__dirname, 'data', `sector-history-warmup-60.json`);
+    if (fs.existsSync(warmupFile)) {
+      try {
+        const txt = fs.readFileSync(warmupFile, 'utf-8');
+        const obj = JSON.parse(txt);
 
         if (sectorName && obj.history && obj.history[sectorName]) {
           let data = obj.history[sectorName];
-          // 只返回最近limit条（页面展示不需要全部365天）
           if (data.length > limit) {
             data = data.slice(-limit);
           }
@@ -609,7 +607,32 @@ async function fetchTencentDaily(code, limit = 180) {
         console.error('ETF warmup读取失败:', e);
       }
     }
-    // ETF没有warmup数据，返回空（不fallback到腾讯API）
+
+    // ✅ 方法2: fallback到直接读取ETF日线文件
+    const etfFile = path.join(__dirname, 'data', 'etf_daily', `etf_${cleanCode}.jsonl`);
+    if (fs.existsSync(etfFile)) {
+      try {
+        let data = [];
+        const lines = fs.readFileSync(etfFile, 'utf-8').split('\n').filter(Boolean);
+        for (const line of lines) {
+          try {
+            const item = JSON.parse(line);
+            if (item.date) data.push(item);
+          } catch (e) {}
+        }
+        data.sort((a, b) => a.date.localeCompare(b.date));
+        if (data.length > limit) {
+          data = data.slice(-limit);
+        }
+        const res = { date: data[0]?.date || null, data };
+        cache.set(`tx1d:${code}:${limit}`, { t: now(), v: res });
+        return res;
+      } catch (e) {
+        console.error('ETF本地文件读取失败:', e);
+      }
+    }
+
+    // ETF没有任何本地数据，返回空
     return { date: null, data: [] };
   }
 
@@ -3926,6 +3949,25 @@ const server = http.createServer(async (req, res) => {
     const missingNames = names.filter(n => !proxyMap[n]);
     const allowFetch = force || isMarketOpenNow();
     if (!allowFetch) {
+      // ✅ 在检查缓存之前先检查warmup文件
+      const warmupFile = path.join(__dirname, 'data', `sector-history-warmup-60.json`);
+      if (fs.existsSync(warmupFile)) {
+        try {
+          const txt = fs.readFileSync(warmupFile, 'utf-8');
+          if (txt && isJsonText(txt)) {
+            const obj = JSON.parse(txt);
+            obj.variant = obj.variant || variant;
+            obj.data_incomplete = missingNames.length > 0;
+            obj.missing = missingNames;
+            obj.source = 'etf_proxy_warmup';
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.end(JSON.stringify(obj));
+            return;
+          }
+        } catch (e) {
+          console.error('Warmup读取错误:', e);
+        }
+      }
       const cached = readJsonCache(cacheFile);
       if (cached) {
         try {
@@ -3974,25 +4016,7 @@ const server = http.createServer(async (req, res) => {
           }
         }
       }
-      const warmupFile = findLatestCacheFileOnOrBefore('sector-history-warmup', day);
-      if (warmupFile) {
-        const txt = readJsonCache(warmupFile);
-        if (txt && isJsonText(txt)) {
-          try {
-            const obj = JSON.parse(txt);
-            const normalized = normalizeHistoryPayloadToDay(obj, day);
-            normalized.variant = normalized.variant || variant;
-            normalized.data_incomplete = missingNames.length > 0;
-            normalized.missing = missingNames;
-            normalized.source = 'etf_proxy_warmup';
-            res.setHeader('Content-Type', 'application/json; charset=utf-8');
-            res.end(JSON.stringify(normalized));
-            return;
-          } catch (e) {
-            void e;
-          }
-        }
-      }
+      // 没有缓存数据且非交易时间，返回空数据
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.end(JSON.stringify({ day, history: {}, indicators: {}, minute: {}, correlations: [], watch: names, variant, data_incomplete: true, missing: missingNames, reason: 'market_closed', source: 'etf_proxy' }));
       return;
@@ -4798,8 +4822,79 @@ setTimeout(async () => {
   await backfillMissingDataOnStartup();
   // 2. 再更新当天的概览历史数据
   await backfillOverviewHistoryIfNeeded();
+  // 3. 检查并更新warmup（从本地ETF数据）
+  await updateWarmupIfNeeded();
   console.log('=== 启动数据补全完成 ===');
 }, 3000);
+
+// 检查并更新warmup（从本地ETF持久化数据）
+async function updateWarmupIfNeeded() {
+  try {
+    const days = 60;
+    const warmupFile = path.join(__dirname, 'data', `sector-history-warmup-${days}.json`);
+    const today = latestTradingDay();
+
+    // 检查warmup文件是否存在
+    if (!fs.existsSync(warmupFile)) {
+      console.log(`[Warmup] 文件不存在，生成新文件...`);
+      await regenerateWarmup(days);
+      return;
+    }
+
+    // 读取warmup文件
+    const content = fs.readFileSync(warmupFile, 'utf-8');
+    let warmupData;
+    try {
+      warmupData = JSON.parse(content);
+    } catch (e) {
+      console.log(`[Warmup] 文件解析失败，重新生成...`);
+      await regenerateWarmup(days);
+      return;
+    }
+
+    const warmupDay = warmupData.day;
+    const gap = warmupDay ? dateDiffDays(today, warmupDay) : null;
+
+    // 如果warmup数据过期（超过1天），重新生成
+    if (gap != null && gap > 1) {
+      console.log(`[Warmup] 数据过期 (${warmupDay} → ${today}, 差距${gap}天)，开始更新...`);
+      await regenerateWarmup(days);
+    } else {
+      console.log(`[Warmup] ✅ 数据最新 (${warmupDay})，无需更新`);
+    }
+  } catch (e) {
+    console.error('[Warmup] 检查失败:', e.message);
+  }
+}
+
+// 重新生成warmup（从本地ETF数据）
+async function regenerateWarmup(days) {
+  return new Promise((resolve) => {
+    const cfg = readSectorProxyConfig();
+    const proxyMap = cfg.variants?.etf || {};
+    const sectors = Object.keys(proxyMap).join(',');
+
+    if (!sectors) {
+      console.log('[Warmup] ⚠️ 没有配置ETF，跳过');
+      resolve(false);
+      return;
+    }
+
+    console.log(`[Warmup] 开始生成... sectors=${sectors}, days=${days}`);
+
+    execFile('python3', ['fetch_sector_data.py', 'warmup', sectors, String(days)],
+      getExecOptions(),
+      (err, stdout, stderr) => {
+        if (err) {
+          console.error(`[Warmup] ❌ 生成失败:`, stderr || err.message);
+          resolve(false);
+        } else {
+          console.log(`[Warmup] ✅ 生成成功`);
+          resolve(true);
+        }
+      });
+  });
+}
 
 // 定时任务：每分钟检查一次是否需要更新当天数据
 setInterval(() => { backfillOverviewHistoryIfNeeded(); }, 60 * 1000);
