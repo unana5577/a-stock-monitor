@@ -1,0 +1,14 @@
+flowchart TD
+  U["用户查看行情区域\nspark/数字需要更新"] --> FE["前端：遍历 minuteMap\n逐个code发起请求"]
+  FE -->|"每60秒：拉分钟线"| REQ["请求分钟线JSON\n拿series+latest+prevClose"]
+
+  REQ --> BE["后端：选择数据源并校验\n读落盘→回源→合并→过滤交易分钟"]
+  BE -->|"优先"| EMK["东方财富分钟线\nsecid→kline/get"]
+  BE -->|"ETF等兜底"| AS["Ashare分钟线\nsymbol→get_price(1m)"]
+  BE --> RT["写入运行时增量文件\nruntime/minute/*.jsonl"]
+  BE --> DATA["合并历史分钟线\ndata/minute-*.jsonl"]
+  BE --> FILTER["过滤非交易分钟/乱序\n仅保留9:30-11:30/13:00-15:00"]
+  BE --> FALL["非交易时段/回源失败\n回退最近文件或last-good"]
+  BE --> RESP["返回JSON给前端\nday/series/latest/prevClose"]
+  RESP --> DERIVE["前端：用series推导price/pct\n异常则按“最后正常值回退”"]
+  DERIVE --> UI["更新spark与数值展示"]

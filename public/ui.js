@@ -48,10 +48,6 @@ createApp({
     const profileGroups = ref({});
     const profileUpdatedAt = ref('');
     const manageSectorName = ref('');
-    // 模拟时间（用于测试盘中场景）
-    const mockTimeEnabled = ref(false);
-    const mockTimeHour = ref(14);
-    const mockTimeMinute = ref(0);
     const sectorGroupOptions = ['资源', '硬件', '软件'];
     const rotationSequencePayload = ref(null);
     const rotationSequenceDays = ref(60);
@@ -2107,37 +2103,6 @@ createApp({
       if (tab === 'news') await loadNews(false);
     };
 
-    // 模拟时间控制（用于测试）
-    const toggleMockTime = async () => {
-      mockTimeEnabled.value = !mockTimeEnabled.value;
-      if (mockTimeEnabled.value) {
-        const now = new Date();
-        const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-        try {
-          await fetch(`${apiBase}/api/debug/mock-time`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ date, hour: mockTimeHour.value, minute: mockTimeMinute.value })
-          });
-          await refreshAll();
-        } catch (e) {
-          console.error('设置模拟时间失败', e);
-          mockTimeEnabled.value = false;
-        }
-      } else {
-        try {
-          await fetch(`${apiBase}/api/debug/mock-time`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ enable: false })
-          });
-          await refreshAll();
-        } catch (e) {
-          console.error('清除模拟时间失败', e);
-        }
-      }
-    };
-
     const init = async () => {
       try {
         const cached = localStorage.getItem(sectorCacheKey);
@@ -2172,6 +2137,6 @@ createApp({
     setInterval(refreshAll, 15000);
     setInterval(() => refreshAi(false), 30 * 60 * 1000);
 
-    return { activeTab, aiBrief, aiUpdatedAt, aiSections, marketAi, promptText, promptOutput, promptLoading, promptError, runPromptDebug, sectorPromptText, sectorPromptOutput, sectorPromptLoading, sectorPromptError, runSectorPromptDebug, refreshAi, market, bonds, extra, sectors, sentiment, pctColor, fmtPct, fmtVolumeCmp, fmtHeatDelta, rotationMonthSpan, setRotationMonthSpan, rotationMatrixAxis, rotationMatrixMonths, rotationMatrixGroups, refreshAll, dataTs, fmtTime, sectorInput, updateSectorWatch, watchList, watchIndicators, lastIndicator, currentDays, lifecycleItems, sectorRotationPayload, sectorIntradayPayload, sectorLoading, changeDays, getStageColor, getAdviceColor, badgeClass, fmtProb, selectTab, newsItems, newsLoading, heatmapItems, heatmapMax, getImpact, getImpactClass, importanceStars, loadNews, macroNews, geoNews, focusNews, rotationFilters, rotationFilter, rotationMainline, setRotationFilter, toggleRotationExpand, isRotationExpanded, exportRotationJson, copyRotationMarkdown, watchIntradayRows, rotationTopGroups, intradayBars, intradaySignal, intradayReason, intradayMax, intradayView, setIntradayView, rotationSequencePayload, rotationSequenceDays, fetchRotationSequence, riskSummary, panicPayload, showSectorManager, profileGroups, profileUpdatedAt, manageSectorName, sectorGroupOptions, openSectorManager, closeSectorManager, addWatchSector, removeWatchSector, saveSectorProfile, mockTimeEnabled, mockTimeHour, mockTimeMinute, toggleMockTime };
+    return { activeTab, aiBrief, aiUpdatedAt, aiSections, marketAi, promptText, promptOutput, promptLoading, promptError, runPromptDebug, sectorPromptText, sectorPromptOutput, sectorPromptLoading, sectorPromptError, runSectorPromptDebug, refreshAi, market, bonds, extra, sectors, sentiment, pctColor, fmtPct, fmtVolumeCmp, fmtHeatDelta, rotationMonthSpan, setRotationMonthSpan, rotationMatrixAxis, rotationMatrixMonths, rotationMatrixGroups, refreshAll, dataTs, fmtTime, sectorInput, updateSectorWatch, watchList, watchIndicators, lastIndicator, currentDays, lifecycleItems, sectorRotationPayload, sectorIntradayPayload, sectorLoading, changeDays, getStageColor, getAdviceColor, badgeClass, fmtProb, selectTab, newsItems, newsLoading, heatmapItems, heatmapMax, getImpact, getImpactClass, importanceStars, loadNews, macroNews, geoNews, focusNews, rotationFilters, rotationFilter, rotationMainline, setRotationFilter, toggleRotationExpand, isRotationExpanded, exportRotationJson, copyRotationMarkdown, watchIntradayRows, rotationTopGroups, intradayBars, intradaySignal, intradayReason, intradayMax, intradayView, setIntradayView, rotationSequencePayload, rotationSequenceDays, fetchRotationSequence, riskSummary, panicPayload, showSectorManager, profileGroups, profileUpdatedAt, manageSectorName, sectorGroupOptions, openSectorManager, closeSectorManager, addWatchSector, removeWatchSector, saveSectorProfile };
   }
 }).mount('#app');

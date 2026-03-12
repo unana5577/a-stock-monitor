@@ -109,3 +109,65 @@ SECTOR_THRESHOLDS = {
     "有色金属": {"alpha_high": 0.09, "alpha_mid": 0.035, "alpha_low": -0.04, "amount_high": 0.50, "amount_low": 0.30},
     "通讯设备": {"alpha_high": 0.07, "alpha_mid": 0.025, "alpha_low": -0.025, "amount_high": 0.45, "amount_low": 0.28}
 }
+
+# ========== 分位数阈值配置（阶段5新增）==========
+# 格式：{指标名: {分位数阈值: 值}}
+# 例如：{"Alpha_20": {0.8: 0.10, 0.6: 0.05, 0.4: 0.0, 0.2: -0.05}}
+# 表示：Alpha_20 > 80%分位时为"高位"，在40%-60%分位时为"中性"等
+
+QUANTILE_THRESHOLDS = {
+    "默认": {
+        "Alpha_20": {
+            0.8: "高位区",
+            0.6: "中高位区",
+            0.4: "中位区",
+            0.2: "低位区",
+            "default": "冰点区"
+        },
+        "Amount_Share_MA5": {
+            0.8: "高位区",
+            0.6: "中高位区",
+            0.4: "中位区",
+            0.2: "低位区",
+            "default": "冰点区"
+        },
+        "Alpha_5": {
+            0.7: "强势",
+            0.5: "偏强",
+            0.3: "偏弱",
+            "default": "弱势"
+        },
+        "Amount_Share_Change": {
+            0.8: "放量",
+            0.6: "温和放量",
+            0.4: "平稳",
+            0.2: "缩量",
+            "default": "极度缩量"
+        }
+    }
+}
+
+# 分位数计算参数
+QUANTILE_CONFIG = {
+    "window": 60,  # 滚动窗口大小（交易日）
+    "min_periods": 20,  # 最小计算周期
+    "update_frequency": "monthly"  # 更新频率：monthly=每月重算
+}
+
+# ETF专属分位数阈值（优化后的配置）
+# 此配置由 threshold_optimizer.py 自动生成
+QUANTILE_THRESHOLDS_PER_ETF = {}
+
+# 从文件加载已保存的ETF阈值（如有）
+import os as _os
+_etf_threshold_path = _os.path.join(_os.path.dirname(__file__), "config", "thresholds")
+if _os.path.exists(_etf_threshold_path):
+    try:
+        import json as _json
+        for _f in _os.listdir(_etf_threshold_path):
+            if _f.endswith(".json"):
+                _etf_name = _f.replace(".json", "")
+                with open(_os.path.join(_etf_threshold_path, _f), "r") as _fp:
+                    QUANTILE_THRESHOLDS_PER_ETF[_etf_name] = _json.load(_fp)
+    except Exception:
+        pass

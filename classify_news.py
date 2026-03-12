@@ -5,6 +5,7 @@
 """
 
 import json
+import argparse
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Set
@@ -122,6 +123,10 @@ def classify_level(news_type: str, sector: Optional[str], sentiment: int) -> str
     # P2: 行业一般新闻
     if news_type == "行业" and sector:
         return "P2"
+    
+    # 稍微提高一点其他新闻的等级，如果有明显的利好/利空
+    if sentiment != 0:
+        return "P2"
 
     # P3: 其他
     return "P3"
@@ -150,6 +155,7 @@ def transform_news_item(news: Dict, default_crawl_time: str = "") -> Dict:
     crawl_time = news.get("fetch_time", default_crawl_time)
     tag = news.get("tag")
     tags = tag if isinstance(tag, list) else ([tag] if tag else [])
+    time_slot = news.get("time_slot")
 
     level = news.get("classify", {}).get("level", "P3")
     importance_map = {
@@ -169,6 +175,7 @@ def transform_news_item(news: Dict, default_crawl_time: str = "") -> Dict:
         "importance": importance_map.get(level, 2),
         "related_stocks": [],
         "status": "new",
+        "time_slot": time_slot,
     }
 
     # 移除已被替换的旧字段
@@ -178,7 +185,28 @@ def transform_news_item(news: Dict, default_crawl_time: str = "") -> Dict:
     return transformed
 
 
-def process_news_file(file_path: str) -> Dict:
+def load_filter_keywords() -> List[str]:
+    config_file = Path(__file__).resolve().parent / "config" / "news_filter_keywords.json"
+    if not config_file.exists():
+        return []
+    try:
+        data = json.loads(config_file.read_text(encoding="utf-8"))
+        items = data.get("keywords", [])
+        return [str(x).strip() for x in items if str(x).strip()]
+    except Exception:
+        return []
+
+
+def match_blacklist(text: str, keywords: List[str]) -> bool:
+    if not text or not keywords:
+        return False
+    for kw in keywords:
+        if kw and kw in text:
+            return True
+    return False
+
+
+def process_news_file(file_path: str, time_slot: Optional[str] = None) -> Dict:
     """
     处理新闻文件，添加分类信息和统计
     """
@@ -188,6 +216,7 @@ def process_news_file(file_path: str) -> Dict:
 
     date_str = data["date"]
     news_list = data["news"]
+    blacklist = load_filter_keywords()
 
     # 初始化统计
     stats = {
@@ -212,6 +241,10 @@ def process_news_file(file_path: str) -> Dict:
     for news in news_list:
         title = news.get("title", "")
         content = news.get("content", "")
+        combined = f"{title} {content} {news.get('source', '')}"
+        if match_blacklist(combined, blacklist):
+            stats["filtered"] += 1
+            continue
 
         # 类型分类
         news_type, type_keywords = classify_type(title, content)
@@ -230,6 +263,7 @@ def process_news_file(file_path: str) -> Dict:
             # 添加分类字段
             classified_item = {
                 **news,
+                "time_slot": time_slot,
                 "classify": {
                     "type": news_type,
                     "type_keywords": type_keywords,
@@ -254,6 +288,7 @@ def process_news_file(file_path: str) -> Dict:
     # 构建输出数据
     output = {
         "date": date_str,
+        "time_slot": time_slot,
         "fetch_time": data.get("fetch_time", ""),
         "source": data.get("source", ""),
         "classify_time": datetime.now().isoformat(),
@@ -266,24 +301,45 @@ def process_news_file(file_path: str) -> Dict:
 
 def main():
     """主函数"""
-    # 确定输入文件路径
+    parser = argparse.ArgumentParser(description="新闻分类脚本")
+    parser.add_argument("--date", type=str, default=None, help="日期，格式 YYYY-MM-DD")
+    parser.add_argument("--time_slot", type=str, default=None, help="时间分片，如 pre_market/09:10")
+    parser.add_argument("--input", type=str, default=None, help="输入文件路径")
+    args = parser.parse_args()
+
     data_dir = Path("data/news")
+    time_slot = args.time_slot
 
-    # 默认处理最新日期的文件
-    json_files = list(data_dir.glob("*.json"))
-    if len(json_files) > 0:
-        latest_file = max(json_files)
-        input_file = str(latest_file)
-        print(f"处理文件: {input_file}")
+    if args.input:
+        input_file = Path(args.input)
+    elif args.date and args.time_slot:
+        input_file = data_dir / args.date / f"{args.time_slot}.json"
+    elif args.date:
+        input_file = data_dir / f"{args.date}.json"
     else:
-        print("错误: 未找到新闻数据文件")
-        return
+        json_files = list(data_dir.glob("*.json"))
+        if json_files:
+            input_file = max(json_files)
+        else:
+            date_dirs = [p for p in data_dir.iterdir() if p.is_dir() and len(p.name) == 10]
+            date_dirs.sort()
+            input_file = None
+            if date_dirs:
+                latest_dir = date_dirs[-1]
+                slot_files = list(latest_dir.glob("*.json"))
+                slot_files.sort()
+                if slot_files:
+                    input_file = slot_files[-1]
+                    time_slot = input_file.stem
+        if not input_file:
+            print("错误: 未找到新闻数据文件")
+            return
 
-    # 处理新闻
-    output_data = process_news_file(input_file)
+    print(f"处理文件: {input_file}")
+    output_data = process_news_file(str(input_file), time_slot)
 
     # 输出结果
-    output_file = input_file
+    output_file = str(input_file)
     with open(output_file, 'w', encoding='utf-8') as f:
         json.dump(output_data, f, ensure_ascii=False, indent=2)
 

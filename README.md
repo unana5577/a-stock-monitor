@@ -122,6 +122,14 @@ PORT=8787 node server.js
 # 前端是 public/ 下的静态页面，由 server.js 自动托管
 # 无需单独启动
 ``` 
+
+### Docker（可选）
+```bash
+docker build -t a-stock-monitor .
+docker run -d --name a-stock-monitor -p 8787:8787 a-stock-monitor
+# 打开 http://localhost:8787
+# 默认会预热一组关注板块（见 Dockerfile），需要的话直接改 Dockerfile
+```
  
 --- 
  
@@ -130,6 +138,7 @@ PORT=8787 node server.js
 | 接口 | 说明 | 
 |------|------| 
 | `GET /api/snapshot/latest` | 今日看盘快照（指数/量能/涨跌家数，含 AI 可选） | 
+| `GET /api/market/etf_amount_total` | 全市场 ETF 总成交额（落盘历史，可用于占比） |
 | `GET /api/sector/lifecycle` | 板块生命周期概览（关注板块） | 
 | `GET /api/sector/history` | T-60 走势归一化对比（关注板块历史数据） | 
 | `GET /api/sector/rotation/sequence` | 轮动顺序与节奏（关注板块） | 

@@ -977,24 +977,6 @@ function getExecOptions() {
 }
 
 function getBeijingParts() {
-  // 如果有模拟时间，使用模拟时间
-  if (mockTime && mockTime.date) {
-    const { date, hour = 14, minute = 0 } = mockTime;
-    const dt = new Date(`${date}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00+08:00`);
-    const fmt = new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'Asia/Shanghai',
-      weekday: 'short'
-    });
-    const parts = fmt.formatToParts(dt);
-    const map = {};
-    parts.forEach((p) => {
-      if (p.type !== 'literal') map[p.type] = p.value;
-    });
-    const weekMap = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
-    const weekday = Object.prototype.hasOwnProperty.call(weekMap, map.weekday) ? weekMap[map.weekday] : null;
-    return { date, minutes: hour * 60 + minute, weekday };
-  }
-
   const fmt = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Shanghai',
     year: 'numeric',
@@ -3084,8 +3066,10 @@ const server = http.createServer(async (req, res) => {
       try {
         const marketOpen = isMarketOpenNow();
         if (marketOpen) {
+          const execOpts = getExecOptions();
+          execOpts.timeout = 30000;
           data = await new Promise((resolve) => {
-            execFile('python3', ['fetch_sector_data.py', 'etf-minute', etfCode], { timeout: 30000 }, (err, stdout, stderr) => {
+            execFile('python3', ['fetch_sector_data.py', 'etf-minute', etfCode], execOpts, (err, stdout, stderr) => {
               if (err) {
                 console.error(`ETF minute error for ${etfCode}:`, err, stderr);
                 resolve({ data: [], prevClose: null });
@@ -3391,36 +3375,7 @@ const server = http.createServer(async (req, res) => {
     const marketDate = getMarketDate();
     const isOpen = isInTradingTime(parts);
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
-    res.end(JSON.stringify({ date: marketDate, isOpen, parts, mockTime }));
-    return;
-  }
-  // 模拟时间 API（用于测试）
-  if (url.pathname === '/api/debug/mock-time') {
-    if (req.method === 'POST') {
-      let body = '';
-      req.on('data', chunk => { body += chunk.toString(); });
-      req.on('end', () => {
-        try {
-          const data = JSON.parse(body || '{}');
-          if (data.enable === false) {
-            mockTime = null;
-          } else if (data.date && data.hour !== undefined) {
-            mockTime = { date: data.date, hour: data.hour, minute: data.minute || 0 };
-          }
-          res.setHeader('Content-Type', 'application/json; charset=utf-8');
-          res.end(JSON.stringify({ ok: true, mockTime }));
-        } catch (e) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'Invalid JSON' }));
-        }
-      });
-    } else if (req.method === 'GET') {
-      res.setHeader('Content-Type', 'application/json; charset=utf-8');
-      res.end(JSON.stringify({ mockTime }));
-    } else {
-      res.writeHead(405);
-      res.end('Method Not Allowed');
-    }
+    res.end(JSON.stringify({ date: marketDate, isOpen, parts }));
     return;
   }
   if (url.pathname === '/api/snapshot') {

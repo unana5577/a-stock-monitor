@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>A股当日走势与仓位</title>
+  <style>
+    [v-cloak] { display: none; }
+  </style>
+  <!-- Use local libraries -->
+  <link href="./libs/tailwind.min.css" rel="stylesheet">
+  <script src="./libs/vue.js"></script>
+  <script src="./libs/echarts.min.js"></script>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📈</text></svg>">
+</head>
+<body class="bg-gray-50 min-h-screen text-gray-800">
+  <div id="app" class="max-w-7xl mx-auto p-4" v-cloak>
+    <div class="flex items-center justify-between mb-4">
+      <h1 class="text-2xl font-bold">快捷看盘 + AI 分析</h1>
+      <div class="flex items-center gap-2">
+        <div class="text-xs text-gray-500 mr-2" v-if="dataTs">更新: {{ fmtTime(dataTs) }}</div>
+        <button @click="refreshAll" class="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition">刷新</button>
+      </div>
+    </div>
+    <div class="flex items-center gap-2 mb-4">
+      <button @click="selectTab('overview')" class="px-3 py-2 rounded" :class="activeTab==='overview' ? 'bg-blue-600 text-white' : 'bg-white border text-gray-600'">概览</button>
+      <button @click="selectTab('market')" class="px-3 py-2 rounded" :class="activeTab==='market' ? 'bg-blue-600 text-white' : 'bg-white border text-gray-600'">行情</button>
+      <button @click="selectTab('news')" class="px-3 py-2 rounded" :class="activeTab==='news' ? 'bg-blue-600 text-white' : 'bg-white border text-gray-600'">新闻</button>
+    </div>
+    <div v-if="activeTab==='overview'" class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div class="lg:col-span-1 space-y-4">
+        <div class="bg-white rounded-xl shadow p-4 min-h-[320px]">
+          <div class="flex items-center justify-between mb-2">
+            <div class="text-sm text-gray-500">AI 今日解读</div>
+            <button @click="refreshAi(true)" class="text-gray-400 hover:text-gray-600 transition" title="刷新AI">⟳</button>
+          </div>
+          <div class="space-y-2">
+            <div class="rounded-lg bg-gray-50 p-2" v-for="(item, i) in aiSections" :key="i">
+              <div class="text-sm font-semibold text-gray-700">{{ item.title }}</div>
+              <div class="text-sm text-gray-700 mt-1">{{ item.content }}</div>
+            </div>
+          </div>
+          <div class="text-xs text-gray-400 mt-2">开盘时段30分钟更新一次</div>
+          <div class="text-xs text-gray-400">上次更新时间：{{ aiUpdatedAt ? fmtTime(aiUpdatedAt) : '-' }}</div>
+          <div class="text-xs text-gray-400">规则版将先行上线，AI版第3步加入</div>
+        </div>
+        <div class="bg-white rounded-xl shadow p-4">
+          <div class="text-sm text-gray-500 mb-2">Prompt 调试</div>
+          <div class="text-xs text-gray-400 mb-2">模型：deepseek-v3.2</div>
+          <textarea v-model="promptText" class="w-full border rounded p-2 text-xs h-40"></textarea>
+          <div class="flex items-center gap-2 mt-2">
+            <button @click="runPromptDebug" class="px-3 py-2 bg-gray-800 text-white rounded hover:bg-gray-900 transition" :disabled="promptLoading">生成解读</button>
+            <div class="text-xs text-gray-400" v-if="promptLoading">生成中...</div>
+            <div class="text-xs text-red-500" v-if="promptError">{{ promptError }}</div>
+          </div>
+          <div class="text-sm text-gray-600 mt-3 whitespace-pre-wrap" v-if="promptOutput">{{ promptOutput }}</div>
+        </div>
+      </div>
+      <div class="lg:col-span-2 space-y-4">
+        <div class="bg-white rounded-xl shadow p-4">
+          <div class="text-sm text-gray-500 mb-2 font-semibold">大盘情绪（量能=沪深全市场分时累计成交额）</div>
+          <div class="grid grid-cols-1 gap-3">
+            <!-- Market Breadth -->
+            <div id="market-breadth" class="border rounded-lg p-3 hidden">
+              <div class="flex justify-between text-sm mb-1">
+                <span>涨跌家数</span>
+                <span id="breadth-ratio" class="font-bold"></span>
+              </div>
+              <div class="w-full bg-gray-200 rounded-full h-2.5 flex overflow-hidden">
+                <div id="breadth-up" class="bg-red-500 h-2.5" style="width: 50%"></div>
+                <div id="breadth-down" class="bg-green-500 h-2.5" style="width: 50%"></div>
+              </div>
+              <div class="flex justify-between text-xs text-gray-500 mt-1">
+                <span id="breadth-up-count" class="text-red-500"></span>
+                <span id="breadth-down-count" class="text-green-500"></span>
+              </div>
+            </div>
+            
+            <div class="border rounded-lg p-3">
+              <div class="flex items-start justify-between text-sm">
+                <span>成交额</span>
+                <div class="text-xs text-right">
+                  <div class="text-gray-600">{{ (sentiment.volumePhaseText || '盘中') + ' 预估量能 ' + (sentiment.estVolumeStr || '-') }}</div>
+                  <div v-if="sentiment.volumePhase==='open' && sentiment.estVolume && sentiment.estVolumeCmp && sentiment.estVolumeCmp.pct!=null && sentiment.estVolumeCmp.delta!=null" :class="pctColor(sentiment.estVolumeCmp?.pct)">{{ fmtVolumeCmp(sentiment.estVolumeCmp) }}</div>
+                  <div v-else class="text-gray-400">{{ sentiment.volumePhase==='open' ? '预估未启用' : ((sentiment.volumePhaseText || '休市') + '不预估') }}</div>
+                </div>
+              </div>
+              <div class="text-gray-800 font-bold mt-1">{{ sentiment.volumeStr || '-' }}</div>
+              <div id="spark-volume" class="mt-2" style="height:60px;"></div>
+            </div>
+          </div>
+        </div>
+        <div class="bg-white rounded-xl shadow p-4">
+          <div class="text-sm text-gray-500 mb-2">国债与指数</div>
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div class="border rounded-lg p-3">
+              <div class="flex justify-between text-sm"><span>30年国债ETF 511130</span><span :class="pctColor(bonds.tl.pct)">{{ fmtPct(bonds.tl.pct) }}</span></div>
+              <div class="text-xs text-gray-500 mt-1">价 {{ bonds.tl.price || '-' }}</div>
+              <div id="spark-tl" class="mt-2" style="height:60px;"></div>
+            </div>
+            <div class="border rounded-lg p-3">
+              <div class="flex justify-between text-sm"><span>10年国债ETF 511260</span><span :class="pctColor(bonds.t.pct)">{{ fmtPct(bonds.t.pct) }}</span></div>
+              <div class="text-xs text-gray-500 mt-1">价 {{ bonds.t.price || '-' }}</div>
+              <div id="spark-t" class="mt-2" style="height:60px;"></div>
+            </div>
+            <div class="border rounded-lg p-3">
+              <div class="flex justify-between text-sm"><span>沪深300</span><span :class="pctColor(extra.hs300.pct)">{{ fmtPct(extra.hs300.pct) }}</span></div>
+              <div class="text-xs text-gray-500 mt-1">价 {{ extra.hs300.price || '-' }}</div>
+              <div id="spark-hs300" class="mt-2" style="height:60px;"></div>
+            </div>
+            <div class="border rounded-lg p-3">
+              <div class="flex justify-between text-sm"><span>中证2000</span><span :class="pctColor(extra.csi2000.pct)">{{ fmtPct(extra.csi2000.pct) }}</span></div>
+              <div class="text-xs text-gray-500 mt-1">价 {{ extra.csi2000.price || '-' }}</div>
+              <div id="spark-csi2000" class="mt-2" style="height:60px;"></div>
+            </div>
+          </div>
+        </div>
+        <div class="bg-white rounded-xl shadow p-4">
+          <div class="text-sm text-gray-500 mb-2">金融指数</div>
+          <div class="grid grid-cols-3 gap-3">
+            <div class="border rounded-lg p-3">
+              <div class="flex justify-between text-sm"><span>银行 BK0475</span><span :class="pctColor(sectors.bank?.pct)">{{ fmtPct(sectors.bank?.pct) }}</span></div>
+              <div class="text-xs text-gray-500 mt-1">价 {{ sectors.bank?.price || '-' }}</div>
+              <div id="spark-bank" class="mt-2" style="height:60px;"></div>
+            </div>
+            <div class="border rounded-lg p-3">
+              <div class="flex justify-between text-sm"><span>证券 BK0473</span><span :class="pctColor(sectors.broker?.pct)">{{ fmtPct(sectors.broker?.pct) }}</span></div>
+              <div class="text-xs text-gray-500 mt-1">价 {{ sectors.broker?.price || '-' }}</div>
+              <div id="spark-broker" class="mt-2" style="height:60px;"></div>
+            </div>
+            <div class="border rounded-lg p-3">
+              <div class="flex justify-between text-sm"><span>保险 BK0474</span><span :class="pctColor(sectors.insure?.pct)">{{ fmtPct(sectors.insure?.pct) }}</span></div>
+              <div class="text-xs text-gray-500 mt-1">价 {{ sectors.insure?.price || '-' }}</div>
+              <div id="spark-insure" class="mt-2" style="height:60px;"></div>
+            </div>
+          </div>
+        </div>
+        <div class="bg-white rounded-xl shadow p-4">
+          <div class="text-sm text-gray-500 mb-2">大盘走势（腾讯源）</div>
+          <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <div class="border rounded-lg p-3">
+              <div class="flex justify-between text-sm"><span>上证</span><span :class="pctColor(market.sse.pct)">{{ fmtPct(market.sse.pct) }}</span></div>
+              <div class="text-xs text-gray-500 mt-1">价 {{ market.sse.price || '-' }}</div>
+              <div id="spark-sse" class="mt-2" style="height:60px;"></div>
+            </div>
+            <div class="border rounded-lg p-3">
+              <div class="flex justify-between text-sm"><span>深证</span><span :class="pctColor(market.szi.pct)">{{ fmtPct(market.szi.pct) }}</span></div>
+              <div class="text-xs text-gray-500 mt-1">价 {{ market.szi.price || '-' }}</div>
+              <div id="spark-szi" class="mt-2" style="height:60px;"></div>
+            </div>
+            <div class="border rounded-lg p-3">
+              <div class="flex justify-between text-sm"><span>创业板</span><span :class="pctColor(market.chinaext.pct)">{{ fmtPct(market.chinaext.pct) }}</span></div>
+              <div class="text-xs text-gray-500 mt-1">价 {{ market.chinaext.price || '-' }}</div>
+              <div id="spark-gem" class="mt-2" style="height:60px;"></div>
+            </div>
+            <div class="border rounded-lg p-3">
+              <div class="flex justify-between text-sm"><span>科创综指 000680</span><span :class="pctColor(market.star.pct)">{{ fmtPct(market.star.pct) }}</span></div>
+              <div class="text-xs text-gray-500 mt-1">价 {{ market.star.price || '-' }}</div>
+              <div id="spark-star" class="mt-2" style="height:60px;"></div>
+            </div>
+            <div class="border rounded-lg p-3">
+              <div class="flex justify-between text-sm"><span>平均股价</span><span :class="pctColor(extra.avg.pct)">{{ fmtPct(extra.avg.pct) }}</span></div>
+              <div class="text-xs text-gray-500 mt-1">价 {{ extra.avg.price || '-' }}</div>
+              <div id="spark-avg" class="mt-2" style="height:60px;"></div>
+            </div>
+          </div>
+        </div>
+        <div class="text-center text-xs text-gray-400">数据源：腾讯财经 (Real-time)</div>
+      </div>
+    </div>
+    <div v-if="activeTab==='market'" class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div class="lg:col-span-1 space-y-4">
+        <div class="bg-white rounded-xl shadow p-4">
+          <div class="text-sm text-gray-500 mb-2">API 服务</div>
+          <div class="text-xs text-gray-500 mb-2">当前：{{ apiBase }}</div>
+          <div class="flex items-center gap-2">
+            <input v-model="apiBaseInput" class="flex-1 border rounded px-2 py-1 text-xs" placeholder="http://服务器IP:8787">
+            <button @click="applyApiBase" class="px-2 py-1 text-xs bg-gray-800 text-white rounded">应用</button>
+          </div>
+          <div class="text-[11px] text-gray-400 mt-2">留空可恢复为当前页面同源</div>
+        </div>
+        <div class="bg-white rounded-xl shadow p-4">
+          <div class="flex items-center justify-between mb-2">
+            <div class="text-sm text-gray-500">风险门控（盘中/盘后）</div>
+            <div class="text-xs text-gray-400" v-if="panicPayload?.is_panic">恐慌</div>
+          </div>
+          <div class="text-xs text-gray-600" v-if="panicPayload">
+            <span>下跌占比 {{ ((panicPayload.ratio || 0) * 100).toFixed(1) }}%</span>
+            <span class="mx-2">|</span>
+            <span>下 {{ panicPayload.down ?? '-' }}</span>
+            <span class="ml-2">上 {{ panicPayload.up ?? '-' }}</span>
+          </div>
+          <div class="text-xs text-gray-600 mt-2">
+            <span class="font-semibold">风险标签</span>
+            <span class="ml-2" v-if="riskSummary.tags?.length">{{ riskSummary.tags.join(' / ') }}</span>
+            <span class="ml-2 text-gray-400" v-else>暂无</span>
+          </div>
+          <div class="text-xs text-gray-600 mt-2">
+            <span class="font-semibold">仓位上限</span>
+            <span class="ml-2">{{ (riskSummary.cap ?? 1).toFixed(2) }}</span>
+          </div>
+        </div>
+        <div class="bg-white rounded-xl shadow p-4">
+          <div class="flex items-center justify-between mb-2">
+            <div class="text-sm text-gray-500">自选池（盘中对比 / 昨日对照）</div>
+          </div>
+          <div v-if="!watchIntradayRows?.length" class="text-xs text-gray-400">暂无数据</div>
+          <div v-else class="space-y-2">
+            <div v-for="row in watchIntradayRows" :key="row.name" class="border rounded-lg p-2">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <div class="text-sm font-semibold">{{ row.name }}</div>
+                  <span v-if="row.topRank" class="inline-flex items-center px-1.5 py-0.5 rounded text-[7px] leading-3 bg-indigo-600 text-white">Top{{ row.topRank }}</span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <div class="text-[11px] font-semibold" v-if="row.sigAction === '错杀'" :class="row.sigColor">错杀</div>
+                  <div class="text-xs font-semibold" :class="row.actionColor">{{ row.action }}</div>
+                </div>
+              </div>
+              <div class="text-xs text-gray-600 mt-1">
+                <span>昨 {{ fmtPct(row.ydayPct) }}</span>
+                <span class="mx-2">|</span>
+                <span>今 {{ fmtPct(row.nowPct) }}</span>
+                <span class="mx-2">|</span>
+                <span>趋势 {{ row.tag || '-' }}</span>
+              </div>
+              <div class="text-xs text-gray-500 mt-1">
+                <span>{{ row.momentum }}</span>
+                <span class="mx-2">|</span>
+                <span>{{ row.behavior }}</span>
+                <span class="mx-2">|</span>
+                <span v-if="row.shareChange != null" title="量能变化：近5日相对近20日的成交量变化（ETF代理口径）">量能Δ {{ fmtHeatDelta(row.shareChange) }}</span>
+                <span v-else title="量能变化：近5日相对近20日的成交量变化（ETF代理口径）">量能Δ -</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="bg-white rounded-xl shadow p-4">
+          <div class="flex items-center justify-between mb-2">
+            <div class="text-sm text-gray-500">主线&轮动（盘后）</div>
+            <div class="flex items-center gap-2">
+              <div class="text-xs text-gray-400">代理口径：ETF</div>
+              <div class="text-xs" v-if="sectorActionMsg" :class="sectorActionLoading ? 'text-blue-600' : 'text-gray-500'">{{ sectorActionMsg }}</div>
+              <div class="text-xs text-gray-400">{{ sectorRotationPayload?.day || '' }}</div>
+            </div>
+          </div>
+          <div class="border rounded-lg p-2 mb-3">
+            <div class="flex items-center justify-between mb-2">
+              <div class="text-xs text-gray-500">盘中结构监控</div>
+              <div class="flex items-center gap-1">
+                <button @click="setIntradayView('summary')" class="px-2 py-0.5 text-xs rounded border" :class="intradayView==='summary' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600'">大类</button>
+                <button @click="setIntradayView('detail')" class="px-2 py-0.5 text-xs rounded border" :class="intradayView==='detail' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600'">细分</button>
+              </div>
+            </div>
+            <div class="text-xs text-gray-600 mb-2" v-if="intradaySignal">{{ intradaySignal }}</div>
+            <div class="text-xs text-gray-500 mb-2" v-if="intradayReason?.length">{{ intradayReason.join('；') }}</div>
+            <div v-if="!intradayBars?.length" class="text-xs text-gray-400">暂无数据</div>
+            <div v-else>
+              <div v-if="intradayView==='detail'" class="border rounded-lg p-2">
+                <div class="flex items-center justify-between text-xs text-gray-500 px-1 mb-1">
+                  <span class="text-green-600">跌幅</span>
+                  <span class="text-red-600">涨幅</span>
+                </div>
+                <div class="grid grid-cols-2 gap-0 h-64">
+                  <div id="intraday-watch-down-chart" class="w-full h-full"></div>
+                  <div id="intraday-watch-up-chart" class="w-full h-full border-l border-gray-200"></div>
+                </div>
+              </div>
+              <div v-else class="space-y-2">
+                <div v-for="bar in intradayBars" :key="bar.group" class="text-xs text-gray-700" :title="bar.top?.map(t => `${t.name} ${fmtPct(t.pct)}`).join(' / ')">
+                  <div class="flex items-center justify-between">
+                    <span class="font-semibold">{{ bar.group }}</span>
+                    <span>{{ fmtPct(bar.today_pct) }}</span>
+                  </div>
+                  <div class="w-full h-2 bg-gray-100 rounded">
+                    <div class="h-2 rounded" :class="bar.today_pct >= 0 ? 'bg-red-400' : 'bg-green-400'" :style="{ width: `${Math.min(100, Math.abs(bar.today_pct || 0) / intradayMax * 100)}%` }"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="flex flex-wrap items-center justify-between gap-2 mb-3" v-if="sectorRotationPayload?.mainline?.length">
+            <div class="flex flex-wrap gap-2">
+              <button v-for="f in rotationFilters" :key="f" @click="setRotationFilter(f)" class="px-2 py-1 text-xs rounded border" :class="rotationFilter===f ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600'">{{ f }}</button>
+            </div>
+            <div class="flex items-center gap-2">
+              <button @click="exportRotationJson" class="px-2 py-1 text-xs rounded bg-gray-800 text-white">导出JSON</button>
+              <button @click="copyRotationMarkdown" class="px-2 py-1 text-xs rounded bg-gray-100 text-gray-700 border">复制Markdown</button>
+            </div>
+          </div>
+          <div class="text-xs text-gray-500">主线Top1-3已同步到上方自选池前3展示</div>
+        </div>
+        <div class="bg-white rounded-xl shadow p-4">
+          <div class="text-sm text-gray-500 mb-2">板块跷跷板/同涨同跌</div>
+          <div class="text-sm text-gray-700 leading-6 whitespace-pre-wrap">{{ marketAi.seesaw }}</div>
+        </div>
+        <div class="bg-white rounded-xl shadow p-4">
+          <div class="text-sm text-gray-500 mb-2">涨跌幅榜趋势判断</div>
+          <div class="text-sm text-gray-700 leading-6 whitespace-pre-wrap">{{ marketAi.streak }}</div>
+        </div>
+        <div class="bg-white rounded-xl shadow p-4">
+          <div class="text-sm text-gray-500 mb-2">板块 Prompt 调试</div>
+          <div class="text-xs text-gray-400 mb-2">模型：deepseek-v3.2</div>
+          <textarea v-model="sectorPromptText" class="w-full border rounded p-2 text-xs h-40"></textarea>
+          <div class="flex items-center gap-2 mt-2">
+            <button @click="runSectorPromptDebug" class="px-3 py-2 bg-gray-800 text-white rounded hover:bg-gray-900 transition" :disabled="sectorPromptLoading">生成解读</button>
+            <div class="text-xs text-gray-400" v-if="sectorPromptLoading">生成中...</div>
+            <div class="text-xs text-red-500" v-if="sectorPromptError">{{ sectorPromptError }}</div>
+          </div>
+          <div class="text-sm text-gray-600 mt-3 whitespace-pre-wrap" v-if="sectorPromptOutput">{{ sectorPromptOutput }}</div>
+        </div>
+      </div>
+      <div class="lg:col-span-2 space-y-4">
+        <div class="bg-white rounded-xl shadow p-4">
+          <div class="flex items-center justify-between mb-2">
+            <div class="text-sm text-gray-500 font-semibold">板块行情与关联分析</div>
+            <div class="flex items-center gap-2">
+              <button @click="backfillSectorDaily" class="px-2 py-0.5 text-xs rounded border text-gray-600 hover:bg-gray-100">补全6个月</button>
+              <button @click="forceRefreshSector" class="px-2 py-0.5 text-xs rounded border text-gray-600 hover:bg-gray-100">强制刷新</button>
+              <button @click="fetchEmProbe" class="px-2 py-0.5 text-xs rounded border text-gray-600 hover:bg-gray-100">东财探测</button>
+              <div class="text-xs" v-if="emProbe" :class="emProbe.ok ? 'text-green-600' : 'text-red-600'">东财 {{ emProbe.ok ? 'OK' : '异常' }} {{ emProbe.last_date || '-' }}</div>
+              <div class="text-xs" v-if="sectorActionMsg" :class="sectorActionLoading ? 'text-blue-600' : 'text-gray-500'">{{ sectorActionMsg }}</div>
+            </div>
+          </div>
+          <div id="sector-analysis">
+            <div class="flex items-center justify-between mb-4">
+               <div class="flex items-center gap-2">
+                 <button @click="changeDays(1)" :class="currentDays===1 ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'" class="px-2 py-1 text-xs rounded transition">当日</button>
+                 <button @click="changeDays(5)" :class="currentDays===5 ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'" class="px-2 py-1 text-xs rounded transition">5日</button>
+                 <button @click="changeDays(30)" :class="currentDays===30 ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'" class="px-2 py-1 text-xs rounded transition">30日</button>
+                 <button @click="changeDays(60)" :class="currentDays===60 ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'" class="px-2 py-1 text-xs rounded transition">60日</button>
+               </div>
+               <div class="text-xs text-gray-400" v-if="sectorLoading">加载中...</div>
+            </div>
+
+            <div class="flex items-center gap-2 mb-2">
+              <input v-model="sectorInput" class="flex-1 border rounded px-2 py-1 text-xs" placeholder="输入关注板块，逗号分隔">
+              <button @click="updateSectorWatch" class="px-2 py-1 text-xs bg-gray-800 text-white rounded">更新</button>
+              <button @click="openSectorManager" class="px-2 py-1 text-xs bg-white border rounded">管理</button>
+            </div>
+            <div class="text-xs text-gray-400 mb-2">示例：半导体,云计算 或 BK_半导体</div>
+            
+            <div id="sector-info" class="mb-2 text-sm"></div>
+            
+            <div class="h-72 border rounded-lg p-2 mb-4 relative">
+               <div v-if="sectorLoading" class="absolute inset-0 bg-white/50 z-10 flex items-center justify-center">
+                 <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+               </div>
+               <div id="sector-trend-chart" class="w-full h-full"></div>
+            </div>
+
+            <div class="border rounded-lg p-2 mb-4" v-if="rotationMatrixAxis?.length && rotationMatrixGroups?.length">
+              <div class="flex items-center justify-between mb-2">
+                <div class="text-xs text-gray-500">60日上涨周期（关注板块）</div>
+                <div class="flex items-center gap-2">
+                  <select class="text-xs border rounded px-2 py-1" :value="rotationMonthSpan" @change="setRotationMonthSpan($event.target.value)">
+                    <option value="2">近2个月</option>
+                    <option value="3">近3个月</option>
+                    <option value="6">近6个月</option>
+                    <option value="12">近12个月</option>
+                  </select>
+                  <div class="text-xs text-gray-400">{{ rotationMatrixAxis[0] }} ~ {{ rotationMatrixAxis[rotationMatrixAxis.length - 1] }}</div>
+                </div>
+              </div>
+              <div class="overflow-x-auto w-full text-xs">
+                <div :class="rotationMatrixAxis.length <= 70 ? 'w-full' : 'min-w-max'">
+                  <div class="flex text-xs text-gray-500 border-b pb-1">
+                    <div class="w-12 shrink-0 sticky left-0 bg-white z-30">分类</div>
+                    <div class="w-8 shrink-0 sticky bg-white z-30" :style="{ left: '48px' }">属性</div>
+                    <div class="w-20 shrink-0 sticky bg-white z-30" :style="{ left: '80px' }">板块</div>
+                    <div class="flex-1">
+                      <div class="relative h-4">
+                        <div v-for="(m, mi) in rotationMatrixMonths" :key="m.label + mi"
+                          class="absolute top-0 h-4 text-[10px] text-gray-500 flex items-center justify-center"
+                          :style="rotationMatrixAxis.length <= 70 ? { left: `${(m.start / rotationMatrixAxis.length) * 100}%`, width: `${(m.len / rotationMatrixAxis.length) * 100}%` } : { left: `${m.start * 10}px`, width: `${m.len * 10}px` }">
+                          {{ m.label }}
+                        </div>
+                      </div>
+                      <div class="grid h-4" :style="{ gridTemplateColumns: rotationMatrixAxis.length <= 70 ? `repeat(${rotationMatrixAxis.length}, 1fr)` : `repeat(${rotationMatrixAxis.length}, 10px)` }">
+                        <div v-for="(d, di) in rotationMatrixAxis" :key="d + di" class="text-[10px] text-gray-400 flex items-center justify-center" :title="d">
+                          {{ rotationMatrixAxis.length <= 40 ? d.slice(8) : (di % 2 === 0 ? d.slice(8) : '') }}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div v-for="(g, gi) in rotationMatrixGroups" :key="g.group + gi">
+                    <div v-for="row in g.rows" :key="g.group + row.name" class="flex items-center py-1 border-b">
+                      <div class="w-12 shrink-0 text-xs text-gray-500 sticky left-0 bg-white z-20">{{ row.group }}</div>
+                      <div class="w-8 shrink-0 text-xs sticky bg-white z-20" :style="{ left: '48px' }" :class="row.type==='主线' ? 'text-indigo-700' : 'text-gray-500'">{{ row.type }}</div>
+                      <div class="w-20 shrink-0 text-xs text-gray-700 truncate sticky bg-white z-20" :style="{ left: '80px' }" :title="row.name">{{ row.name }}</div>
+                      <div class="flex-1">
+                        <div class="h-5 relative"
+                          :style="{ backgroundImage: 'linear-gradient(to right, rgba(229,231,235,0.7) 1px, transparent 1px)', backgroundSize: rotationMatrixAxis.length <= 70 ? `${(100 / rotationMatrixAxis.length)}% 100%` : '10px 100%' }">
+                          <div v-for="(seg, si) in row.segments" :key="row.name + si"
+                            class="absolute top-1 h-3 rounded flex items-center justify-center"
+                            :class="row.type==='主线' ? 'bg-indigo-600 text-white' : 'bg-indigo-200 text-indigo-800'"
+                            :style="rotationMatrixAxis.length <= 70 ? { left: `${(seg.start / rotationMatrixAxis.length) * 100}%`, width: `${(seg.len / rotationMatrixAxis.length) * 100}%` } : { left: `${seg.start * 10}px`, width: `${seg.len * 10}px` }"
+                            :title="`${row.name} 连涨${seg.len}天 ${seg.from}~${seg.to} 累计${seg.sum}%`">
+                            <span class="text-[10px] leading-3" v-if="seg.len >= 3">{{ seg.len }}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="text-[11px] text-gray-400 mt-2">属性口径：近20交易日上涨天数≥12且累计涨幅≥6%且最大连涨≥4天 → 主线（最多3个，超出按累计涨幅取前3），其余为题材。</div>
+              <div class="mt-3 border-t pt-2" v-if="rotationUpcycleStats6m?.rows?.length">
+                <div class="text-xs text-gray-500 mb-2">近6个月上涨周期统计（关注板块）</div>
+                <div class="overflow-x-auto">
+                  <table class="w-full text-xs">
+                    <thead>
+                      <tr class="text-gray-500 border-b">
+                        <th class="py-1 text-left font-normal">分类</th>
+                        <th class="py-1 text-left font-normal">板块/ETF</th>
+                        <th class="py-1 text-right font-normal">上涨天数</th>
+                        <th class="py-1 text-right font-normal">最大连涨</th>
+                        <th class="py-1 text-right font-normal">上涨段数</th>
+                        <th class="py-1 text-right font-normal">累计涨幅</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="r in rotationUpcycleStats6m.rows" :key="r.group + r.name" class="border-b">
+                        <td class="py-1 text-gray-500">{{ r.group }}</td>
+                        <td class="py-1 text-gray-700 truncate" :title="r.name">
+                          <span>{{ r.name }}</span>
+                          <span class="text-gray-400 ml-1" v-if="proxyEtf?.[r.name]">{{ proxyEtf[r.name] }}</span>
+                        </td>
+                        <td class="py-1 text-right">{{ r.upDays }}</td>
+                        <td class="py-1 text-right">{{ r.maxStreak }}</td>
+                        <td class="py-1 text-right">{{ r.segCount }}</td>
+                        <td class="py-1 text-right" :class="r.cumPct >= 0 ? 'text-red-600' : 'text-green-600'">{{ r.cumPct }}%</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="text-xs text-gray-400 mb-4" v-else>暂无上涨周期统计数据</div>
+
+          </div>
+        </div>
+        <div class="bg-white rounded-xl shadow p-4">
+          <div class="text-sm text-gray-500 mb-2 font-semibold">板块生命周期监测</div>
+          <div id="sector-lifecycle">
+            <div v-if="!lifecycleItems.length" class="text-xs text-gray-400">暂无数据</div>
+            <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div v-for="(item, idx) in lifecycleItems" :key="idx" class="border rounded-lg p-3 hover:shadow-md transition">
+                <div class="flex items-center justify-between">
+                  <div class="text-sm font-semibold">{{ item["板块名称"] || '-' }}</div>
+                  <div class="text-xs text-gray-500">{{ item["板块位置"] || '-' }}</div>
+                </div>
+                <div class="text-xs text-gray-500 mt-1 flex flex-wrap gap-2">
+                   <span>基准 {{ item["基准指数"] || '-' }}</span>
+                   <span class="px-1 rounded text-white" :class="getStageColor(item['阶段信号'])">{{ item["阶段信号"] || '-' }}</span>
+                </div>
+                <div class="text-sm text-gray-700 mt-1 font-medium">{{ item["显示名称"] || '-' }}</div>
+                <div class="text-xs text-gray-500 mt-1">{{ item["含义"] || '-' }}</div>
+                
+                <div class="grid grid-cols-3 gap-2 mt-2 text-xs">
+                  <div class="bg-gray-50 rounded px-2 py-1">动能 <span class="text-gray-700">{{ item["动能"] || '-' }}</span></div>
+                  <div class="bg-gray-50 rounded px-2 py-1">资金 <span class="text-gray-700">{{ item["资金行为"] || '-' }}</span></div>
+                  <div class="bg-gray-50 rounded px-2 py-1">建议 <span class="font-bold" :class="getAdviceColor(item['操作建议'])">{{ item["操作建议"] || '-' }}</span></div>
+                </div>
+                
+                <div class="text-xs text-gray-600 mt-2 bg-yellow-50 p-1 rounded">归因：{{ item["归因说明"] || '-' }}</div>
+                
+                <div class="mt-2 grid grid-cols-2 gap-2 text-xs text-gray-500">
+                  <div class="bg-gray-50 rounded px-2 py-1">5日超额 {{ item["指标数据"]?.Alpha_5 ? (item["指标数据"].Alpha_5 * 100).toFixed(1) + '%' : '-' }}</div>
+                  <div class="bg-gray-50 rounded px-2 py-1">20日超额 {{ item["指标数据"]?.Alpha_20 ? (item["指标数据"].Alpha_20 * 100).toFixed(1) + '%' : '-' }}</div>
+                  <div class="bg-gray-50 rounded px-2 py-1">Bias20 {{ item["指标数据"]?.Bias_20 || '-' }}</div>
+                  <div class="bg-gray-50 rounded px-2 py-1">热度变化 {{ item["指标数据"]?.Amount_Share_Change || '-' }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="text-center text-xs text-gray-400">数据源：腾讯财经 (Real-time)</div>
+      </div>
+    </div>
+    <div v-if="activeTab==='news'" class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div class="lg:col-span-2 space-y-4">
+        <div class="bg-white rounded-xl shadow p-4">
+          <div class="flex items-center justify-between">
+            <div class="text-sm text-gray-500 font-semibold">新闻分类</div>
+            <div class="flex items-center gap-2">
+              <div class="text-xs text-gray-400" v-if="newsLoading">加载中...</div>
+              <button @click="loadNews(true)" class="px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded hover:bg-gray-200 transition">刷新</button>
+            </div>
+          </div>
+        </div>
+        <div class="grid grid-cols-1 gap-4">
+          <div class="bg-white rounded-xl shadow p-4">
+            <div class="text-sm text-gray-500 font-semibold mb-2">宏观</div>
+            <div v-if="!macroNews.length" class="text-xs text-gray-400">暂无新闻</div>
+            <div v-else class="space-y-2">
+              <div v-for="item in macroNews" :key="item.news_id" class="group relative">
+                <details>
+                  <summary class="list-none cursor-pointer flex items-center gap-2 text-xs text-gray-700" :title="item.summary">
+                    <span class="px-1.5 py-0.5 rounded text-[10px] font-medium min-w-[32px] text-center" :class="getImpactClass(getImpact(item))">{{ getImpact(item) }}</span>
+                    <span class="text-yellow-500" :title="'等级: ' + (item.classify?.level || 'P3')">{{ importanceStars(item.importance) }}</span>
+                    <span class="truncate flex-1">{{ item.title }}</span>
+                    <span class="text-gray-400">{{ item.source }}</span>
+                    <span class="text-gray-400">{{ fmtNewsTime(item.publish_time) }}</span>
+                  </summary>
+                  <div class="mt-2 text-xs text-gray-600 bg-gray-50 p-2 rounded leading-relaxed">
+                    <span v-if="item.summary && item.summary.length > item.title.length + 5">{{ item.summary }}</span>
+                    <span v-else class="text-gray-400 italic">摘要信息较少，建议查看原文。</span>
+                    <div class="mt-2 text-gray-400 flex gap-2" v-if="item.url">
+                       <a :href="item.url" target="_blank" class="hover:text-blue-600 underline">查看原文</a>
+                       <span v-if="item.tags && item.tags.length">标签: {{ item.tags.join(', ') }}</span>
+                    </div>
+                  </div>
+                </details>
+                <div class="hidden group-hover:block absolute left-0 top-6 z-20 bg-white border shadow-lg rounded-lg p-3 text-xs text-gray-700 w-full max-w-xl whitespace-normal break-words">
+                  {{ item.summary }}
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="bg-white rounded-xl shadow p-4">
+            <div class="text-sm text-gray-500 font-semibold mb-2">地缘</div>
+            <div v-if="!geoNews.length" class="text-xs text-gray-400">暂无新闻</div>
+            <div v-else class="space-y-2">
+              <div v-for="item in geoNews" :key="item.news_id" class="group relative">
+                <details>
+                  <summary class="list-none cursor-pointer flex items-center gap-2 text-xs text-gray-700" :title="item.summary">
+                    <span class="px-1.5 py-0.5 rounded text-[10px] font-medium min-w-[32px] text-center" :class="getImpactClass(getImpact(item))">{{ getImpact(item) }}</span>
+                    <span class="text-yellow-500" :title="'等级: ' + (item.classify?.level || 'P3')">{{ importanceStars(item.importance) }}</span>
+                    <span class="truncate flex-1">{{ item.title }}</span>
+                    <span class="text-gray-400">{{ item.source }}</span>
+                    <span class="text-gray-400">{{ fmtNewsTime(item.publish_time) }}</span>
+                  </summary>
+                  <div class="mt-2 text-xs text-gray-600 bg-gray-50 p-2 rounded leading-relaxed">
+                    <span v-if="item.summary && item.summary.length > item.title.length + 5">{{ item.summary }}</span>
+                    <span v-else class="text-gray-400 italic">摘要信息较少，建议查看原文。</span>
+                    <div class="mt-2 text-gray-400 flex gap-2" v-if="item.url">
+                       <a :href="item.url" target="_blank" class="hover:text-blue-600 underline">查看原文</a>
+                       <span v-if="item.tags && item.tags.length">标签: {{ item.tags.join(', ') }}</span>
+                    </div>
+                  </div>
+                </details>
+                <div class="hidden group-hover:block absolute left-0 top-6 z-20 bg-white border shadow-lg rounded-lg p-3 text-xs text-gray-700 w-full max-w-xl whitespace-normal break-words">
+                  {{ item.summary }}
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="bg-white rounded-xl shadow p-4">
+            <div class="text-sm text-gray-500 font-semibold mb-2">关注行业</div>
+            <div v-if="!groupedFocusNews.length" class="text-xs text-gray-400">暂无新闻</div>
+            <div v-else class="space-y-4">
+              <div v-for="group in groupedFocusNews" :key="group.name">
+                <div class="flex items-center mb-2">
+                  <div class="w-1 h-3 bg-blue-500 rounded mr-2"></div>
+                  <div class="text-sm font-bold text-gray-800">{{ group.name }}</div>
+                </div>
+                <div class="space-y-2">
+                  <div v-for="item in group.items" :key="item.news_id" class="group relative pl-3 border-l border-gray-100">
+                    <details>
+                      <summary class="list-none cursor-pointer flex items-center gap-2 text-xs text-gray-700" :title="item.summary">
+                        <span class="px-1.5 py-0.5 rounded text-[10px] font-medium min-w-[32px] text-center" :class="getImpactClass(getImpact(item))">{{ getImpact(item) }}</span>
+                        <span class="text-gray-400 text-[10px] bg-gray-50 px-1 rounded border border-gray-100" v-if="item.classify?.sector">{{ item.classify.sector }}</span>
+                        <span class="text-yellow-500" :title="'等级: ' + (item.classify?.level || 'P3')">{{ importanceStars(item.importance) }}</span>
+                        <span class="truncate flex-1">{{ item.title }}</span>
+                        <span class="text-gray-400">{{ item.source }}</span>
+                        <span class="text-gray-400">{{ fmtNewsTime(item.publish_time) }}</span>
+                      </summary>
+                      <div class="mt-2 text-xs text-gray-600 bg-gray-50 p-2 rounded leading-relaxed">
+                        <span v-if="item.summary && item.summary.length > item.title.length + 5">{{ item.summary }}</span>
+                        <span v-else class="text-gray-400 italic">摘要信息较少，建议查看原文。</span>
+                        <div class="mt-2 text-gray-400 flex gap-2" v-if="item.url">
+                           <a :href="item.url" target="_blank" class="hover:text-blue-600 underline">查看原文</a>
+                           <span v-if="item.tags && item.tags.length">标签: {{ item.tags.join(', ') }}</span>
+                        </div>
+                      </div>
+                    </details>
+                    <div class="hidden group-hover:block absolute left-0 top-6 z-20 bg-white border shadow-lg rounded-lg p-3 text-xs text-gray-700 w-full max-w-xl whitespace-normal break-words">
+                      {{ item.summary }}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="lg:col-span-1 space-y-4">
+        <div class="bg-white rounded-xl shadow p-4">
+          <div class="text-sm text-gray-500 font-semibold mb-2">板块热度图</div>
+          <div v-if="!heatmapItems.length" class="text-xs text-gray-400">暂无数据</div>
+          <div id="sector-heatmap-chart" class="w-full h-80"></div>
+        </div>
+      </div>
+    </div>
+    <div v-if="showSectorManager" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div class="bg-white rounded-xl shadow-xl w-full max-w-2xl p-4">
+        <div class="flex items-center justify-between mb-3">
+          <div class="text-sm font-semibold">关注板块管理</div>
+          <button @click="closeSectorManager" class="text-xs text-gray-500">关闭</button>
+        </div>
+        <div class="flex items-center gap-2 mb-3">
+          <input v-model="manageSectorName" class="flex-1 border rounded px-2 py-1 text-xs" placeholder="新增关注板块">
+          <button @click="addWatchSector" class="px-2 py-1 text-xs bg-gray-800 text-white rounded">添加</button>
+        </div>
+        <div class="text-xs text-gray-400 mb-2">分类可自定义；ETF代码建议填完整（如 sh512400 / sz159995），也可只填6位（自动识别 sh/sz）。</div>
+        <datalist id="sector-group-options">
+          <option v-for="g in sectorGroupSuggestions" :key="g" :value="g"></option>
+        </datalist>
+        <div class="border rounded-lg p-3 mb-3 bg-gray-50">
+          <div class="text-xs text-gray-500 mb-2">分类体系管理（顶层大类 + 排序 + 归并）</div>
+          <div class="flex items-center gap-2 mb-2">
+            <input v-model="newTopCategoryName" class="flex-1 border rounded px-2 py-1 text-xs bg-white" placeholder="新增顶层大类（例如：医疗/消费/军工）">
+            <button @click="addTopCategory" class="px-2 py-1 text-xs bg-white border rounded">添加大类</button>
+          </div>
+          <div class="text-[11px] text-gray-400 mb-2">顶层顺序将影响：盘中结构监控（大类）与上涨周期表的排序。</div>
+          <div v-if="taxonomyOrder?.length" class="space-y-1 mb-2">
+            <div v-for="c in taxonomyOrder" :key="c" class="flex items-center gap-2">
+              <div class="text-xs text-gray-700 flex-1 truncate" :title="c">{{ c }}</div>
+              <button @click="moveTopCategory(c,'up')" class="text-xs border rounded px-2 py-0.5 text-gray-600 bg-white">上移</button>
+              <button @click="moveTopCategory(c,'down')" class="text-xs border rounded px-2 py-0.5 text-gray-600 bg-white">下移</button>
+              <button @click="removeTopCategory(c)" class="text-xs border rounded px-2 py-0.5 text-red-500 bg-white">删除</button>
+            </div>
+          </div>
+          <div class="text-xs text-gray-500 mb-1">细分分类归并到顶层大类（可选）</div>
+          <div class="text-[11px] text-gray-400 mb-2">不选择则默认“细分分类本身就是顶层”。</div>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-40 overflow-auto">
+            <div v-for="sub in taxonomySubgroups" :key="sub" class="flex items-center gap-2">
+              <div class="text-xs text-gray-600 w-20 truncate" :title="sub">{{ sub }}</div>
+              <select v-model="taxonomyParent[sub]" class="text-xs border rounded px-2 py-1 flex-1 bg-white">
+                <option value="">（不归并）</option>
+                <option v-for="c in taxonomyOrder" :key="c" :value="c">{{ c }}</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="flex items-center gap-2 mb-2">
+          <input v-model="newSectorGroupName" class="flex-1 border rounded px-2 py-1 text-xs" placeholder="新增分类（例如：医疗）">
+          <button @click="addSectorGroupSuggestion" class="px-2 py-1 text-xs bg-white border rounded">添加分类</button>
+        </div>
+        <div v-if="!watchList.length" class="text-xs text-gray-400">暂无关注板块</div>
+        <div v-else class="space-y-2 max-h-80 overflow-auto">
+          <div v-for="name in watchList" :key="name" class="flex items-center gap-2 border rounded px-2 py-2">
+            <div class="text-sm font-semibold w-28 truncate" :title="name">{{ name }}</div>
+            <input v-model="profileGroups[name]" list="sector-group-options" class="text-xs border rounded px-2 py-1 w-20" placeholder="分类">
+            <input v-model="proxyEtf[name]" class="text-xs border rounded px-2 py-1 w-28" placeholder="ETF代码">
+            <button @click="saveSectorProxyOne(name)" class="text-xs text-gray-600 border rounded px-2 py-1 hover:bg-gray-50">存代码</button>
+            <button @click="removeWatchSector(name)" class="text-xs text-red-500">移除</button>
+          </div>
+        </div>
+        <div class="flex items-center justify-between mt-3">
+          <div class="text-xs text-gray-400">上次保存：{{ profileUpdatedAt || '-' }}</div>
+          <div class="flex items-center gap-2">
+            <div class="text-xs" v-if="profileSaveMsg" :class="profileSaving ? 'text-blue-600' : 'text-gray-500'">{{ profileSaveMsg }}</div>
+            <button @click="saveSectorProfile" class="px-2 py-1 text-xs bg-blue-600 text-white rounded" :disabled="profileSaving">保存分类</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="./ui.js"></script>
+</body>
+</html>

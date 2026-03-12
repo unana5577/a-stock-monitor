@@ -11,6 +11,7 @@ import argparse
 from datetime import datetime
 from pathlib import Path
 import akshare as ak
+import difflib
 
 
 def get_news_id(url: str) -> str:
@@ -19,10 +20,28 @@ def get_news_id(url: str) -> str:
 
 
 def truncate_title(summary: str, max_length: int = 50) -> str:
-    """从摘要中截取前50字作为标题"""
-    if len(summary) <= max_length:
-        return summary
-    return summary[:max_length]
+    """从摘要中截取前50字作为标题，并清理常见前缀"""
+    # 清理常见前缀
+    cleaned = summary
+    prefixes = ["【", "快讯：", "财联社", "证券时报", "e公司", "晚间公告", "公告精选", "本文系数据通"]
+    for p in prefixes:
+        if cleaned.startswith(p):
+            cleaned = cleaned.replace(p, "", 1).lstrip("】:： ")
+            
+    # 再次检查【】是否成对出现但被截断，如果是，尝试去掉整个【...】
+    if cleaned.startswith("【") and "】" in cleaned:
+        end_idx = cleaned.find("】")
+        if end_idx < 50: # 稍微放宽一点，有些前缀可能比较长
+             cleaned = cleaned[end_idx+1:].strip()
+
+    if len(cleaned) <= max_length:
+        return cleaned
+    return cleaned[:max_length]
+
+
+def is_similar(title1: str, title2: str, threshold: float = 0.8) -> bool:
+    """判断两个标题是否相似"""
+    return difflib.SequenceMatcher(None, title1, title2).ratio() > threshold
 
 
 def parse_publish_time(item: dict, fallback: str) -> str:
@@ -122,7 +141,20 @@ def merge_news(existing_data: dict, new_items: list) -> dict:
     ]
 
     # 合并数据
-    merged_news = existing_data['news'] + items_to_add
+    merged_news = existing_data['news']
+    
+    # 标题相似度去重
+    for item in items_to_add:
+        title = item.get('title') or item.get('summary', '')[:20]
+        is_duplicate = False
+        for existing_item in merged_news:
+             existing_title = existing_item.get('title') or existing_item.get('summary', '')[:20]
+             if is_similar(title, existing_title, 0.8):
+                 is_duplicate = True
+                 break
+        if not is_duplicate:
+            merged_news.append(item)
+            
     existing_data['news'] = merged_news
     existing_data['total'] = len(merged_news)
 

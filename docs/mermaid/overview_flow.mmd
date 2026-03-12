@@ -1,0 +1,19 @@
+flowchart TD
+  U["用户打开页面\n触发初始化与定时器"] --> FE["前端：判断是否交易时段\n决定是否发起刷新"]
+  FE -->|"每60秒：拉快照"| SNAP["请求快照JSON\n拿指数/板块/债券当前价、涨跌幅、成交额"]
+  FE -->|"每5分钟：拉概览日线"| OH["请求概览日线JSON\n拿近180日+用分钟线补齐当日"]
+  FE -->|"每60秒：拉情绪"| BR["请求涨跌家数JSON\n统计涨/跌/平"]
+
+  SNAP --> BE["后端：校验时间口径\n读缓存→必要时回源→修复字段→写缓存"]
+  OH --> BE
+  BR --> BE
+
+  BE --> CACHE["优先读取本地缓存/归档\ndata/*.json & archive-*.jsonl"]
+  BE -->|"缓存缺失/过期"| SRC["回源聚合：腾讯/东方财富/Ashare/Python"]
+  SRC --> TX["腾讯：快照/日线\nqt.gtimg.cn"]
+  SRC --> EM["东方财富：快照/分钟线/日线\npush2.eastmoney.com"]
+  SRC --> AS["Ashare：分钟线/日线兜底\nget_price"]
+  SRC --> PY["Python：板块计算/历史\nfetch_sector_data.py"]
+
+  BE --> RESP["返回JSON给前端\n含day/series/latest/prevClose等"]
+  RESP --> RENDER["前端：容错与回退\n更新UI图表并缓存localStorage"]

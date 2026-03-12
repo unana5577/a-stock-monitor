@@ -1,0 +1,2699 @@
+const { createApp, ref, computed } = window.Vue;
+
+createApp({
+  setup() {
+    const sparks = ref({});
+    const dataTs = ref(0);
+    const aiBrief = ref({ title:'规则版即将上线', detail: '将根据国债/行业/指数/情绪判定避险或上攻、风险与仓位' });
+    const aiText = ref('');
+    const aiUpdatedAt = ref(0);
+    const promptText = ref('');
+    const promptOutput = ref('');
+    const promptLoading = ref(false);
+    const promptError = ref('');
+    const sectorPromptText = ref('');
+    const sectorPromptOutput = ref('');
+    const sectorPromptLoading = ref(false);
+    const sectorPromptError = ref('');
+    const sectorInput = ref(localStorage.getItem('sector_input') || '半导体,云计算,新能源,商业航天,创新药,有色金属,煤炭,电力,通讯设备');
+    const watchList = ref([]);
+    const currentDays = ref(60);
+    const lifecycleItems = ref([]);
+    const sectorLoading = ref(false);
+    const watchIndicators = ref({});
+    const activeTab = ref('overview');
+    const marketAi = ref({ seesaw: '数据加载中', streak: '数据加载中' });
+    const market = ref({ sse:{price:null,pct:null}, szi:{price:null,pct:null}, chinaext:{price:null,pct:null}, star:{price:null,pct:null} });
+    const extra = ref({ avg:{price:null,pct:null}, hs300:{price:null,pct:null}, csi2000:{price:null,pct:null} });
+    const bonds = ref({ gov:{pct:null,slope:null}, tl:{price:null,pct:null}, t:{price:null,pct:null} });
+    const sectors = ref({ bank:{price:null,pct:null}, broker:{price:null,pct:null}, insure:{price:null,pct:null} });
+    const sentiment = ref({ volume:0, volumeStr:'-', estVolume:null, estVolumeStr:'-', estVolumeCmp:null, upCount:'-', downCount:'-', volumeCmp:null, volumePhase:'', volumePhaseText:'', volumeCmpMode:'' });
+    const overviewDailyReady = ref(false);
+    const overviewHistoryDay = ref('');
+    const overviewHistoryTs = ref(0);
+    const minuteCache = {};
+    const sectorTs = ref(0);
+    const sectorCacheKey = 'sector_cache_v1';
+    const sectorHistoryPayload = ref(null);
+    const sectorLifecyclePayload = ref(null);
+    const sectorRotationPayload = ref(null);
+    const sectorIntradayPayload = ref(null);
+    const intradayTs = ref(0);
+    const intradayCacheMs = 2 * 60 * 1000;
+    const intradayIdleCacheMs = 10 * 60 * 1000;
+    const intradayView = ref('summary');
+    const signalsMap = ref({});
+    const panicPayload = ref(null);
+    const showSectorManager = ref(false);
+    const profileGroups = ref({});
+    const profileUpdatedAt = ref('');
+    const profileSaveMsg = ref('');
+    const profileSaving = ref(false);
+    const taxonomyOrder = ref([]);
+    const taxonomyParent = ref({});
+    const newTopCategoryName = ref('');
+    const manageSectorName = ref('');
+    const sectorGroupOptions = ['资源', '硬件', '软件'];
+    const customSectorGroups = ref([]);
+    const newSectorGroupName = ref('');
+    const rotationSequencePayload = ref(null);
+    const rotationSequenceDays = ref(60);
+    const rotationSequenceTs = ref(0);
+    const rotationSequenceLoading = ref(false);
+    const rotationSequenceCacheMs = 10 * 60 * 1000;
+    const warmupTs = ref(0);
+    const warmupCacheMs = 10 * 60 * 1000;
+    const sectorActionLoading = ref(false);
+    const sectorActionMsg = ref('');
+    const rotationFilter = ref('全部');
+    const rotationExpanded = ref({});
+    const rotationMonthSpan = ref(Number(localStorage.getItem('rotation_month_span') || 2));
+    const sectorPrimarySource = ref('proxy');
+    const newsList = ref([]);
+    const newsLoading = ref(false);
+    const newsTs = ref(0);
+    const latestMarketDay = ref('');
+    const apiBase = (() => {
+      let q = '';
+      try {
+        const params = new URLSearchParams(location.search || '');
+        q = (params.get('api') || '').trim();
+        if (q) localStorage.setItem('api_base', q);
+      } catch (e) { q = ''; }
+      const stored = (localStorage.getItem('api_base') || '').trim();
+      if (stored) return stored.replace(/\/+$/, '');
+      if (location.protocol === 'file:' || location.origin === 'null') return 'http://localhost:8787';
+      return location.origin;
+    })();
+    const apiBaseInput = ref(localStorage.getItem('api_base') || apiBase);
+    const sectorVariant = ref('etf');
+    const sectorVariantLabel = computed(() => (sectorVariant.value === 'index' ? '板块指数' : 'ETF'));
+    const emProbe = ref(null);
+    const proxyConfig = ref(null);
+    const proxyEtf = ref({});
+    const proxyIndex = ref({});
+    const buildAiSections = (sourceText, brief) => {
+      const map = {};
+      const text = (sourceText || '').replace(/\r/g, '').trim();
+      const detail = (brief?.detail || '').replace(/\r/g, '').trim();
+      const title = (brief?.title || '').trim();
+      const source = text || detail || title || '';
+      if (source) {
+        const raw = source.replace(/\s+/g, ' ');
+        const pattern = /(走势判断|支撑依据|情绪结论|市场情绪|资金态度|资金风格|仓位建议|提示)\s*[：:]/g;
+        let lastTitle = '';
+        let lastIndex = 0;
+        let match;
+        while ((match = pattern.exec(raw))) {
+          if (lastTitle) {
+            const seg = raw.slice(lastIndex, match.index).trim();
+            if (seg) map[lastTitle] = seg;
+          }
+          lastTitle = match[1];
+          lastIndex = pattern.lastIndex;
+        }
+        if (lastTitle) {
+          const seg = raw.slice(lastIndex).trim();
+          if (seg) map[lastTitle] = seg;
+        }
+      }
+      if (!map['走势判断'] && title) map['走势判断'] = title;
+      if (!Object.keys(map).length && detail) map['走势判断'] = detail;
+      const pick = (keys) => {
+        for (const k of keys) {
+          if (map[k]) return map[k];
+        }
+        return '';
+      };
+      const sections = [
+        { title: '走势判断', content: pick(['走势判断']) },
+        { title: '支撑依据', content: pick(['支撑依据', '依据']) },
+        { title: '情绪结论', content: pick(['情绪结论', '市场情绪', '情绪']) },
+        { title: '资金风格', content: pick(['资金风格', '资金态度', '资金']) },
+        { title: '仓位建议', content: pick(['仓位建议', '仓位']) },
+        { title: '提示', content: pick(['提示', '提醒']) }
+      ];
+      return sections.map(s => ({ title: s.title, content: s.content || '暂无' }));
+    };
+    const aiSections = computed(() => buildAiSections(aiText.value, aiBrief.value));
+
+    const pickLastPctFromMinute = (series, prevClose) => {
+      if (!Array.isArray(series) || !series.length) return null;
+      const last = series[series.length - 1];
+      const lastPrice = pickPrice(last);
+      const firstPx = pickPrice(series[0]);
+      const prev = (typeof prevClose === 'number' && prevClose > 0) ? prevClose : null;
+      let first = prev != null ? prev : firstPx;
+      if (prev != null && firstPx != null) {
+        const ratio = firstPx / prev;
+        if (!Number.isFinite(ratio) || ratio < 0.5 || ratio > 2) first = firstPx;
+      }
+      if (!first || !lastPrice) return null;
+      const pct = +(((lastPrice - first) / first) * 100).toFixed(2);
+      if (Number.isFinite(pct) && Math.abs(pct) > 30) return null;
+      return pct;
+    };
+
+    const pickPctFromBar = (bar) => {
+      if (!bar) return null;
+      const pct = Number(bar.pct);
+      if (Number.isFinite(pct)) return pct;
+      const open = Number(bar.open);
+      const close = Number(bar.close);
+      if (!Number.isFinite(open) || !Number.isFinite(close) || open === 0) return null;
+      return +(((close - open) / open) * 100).toFixed(2);
+    };
+
+    const toSignalAction = (sig, ydayPct, nowPct, isPanic) => {
+      const y = Number(ydayPct);
+      const n = Number(nowPct);
+      const yOk = Number.isFinite(y);
+      const nOk = Number.isFinite(n);
+      if (isPanic) return { action: '风控', color: 'text-gray-600' };
+      if (sig === 'false_kill') {
+        if (yOk && nOk && y <= -0.5 && n <= -0.5) return { action: '错杀', color: 'text-orange-600' };
+        return { action: '观望', color: 'text-gray-600' };
+      }
+      if (sig === 'long') {
+        if (nOk && n >= 0.5) return { action: '建仓', color: 'text-red-600' };
+        return { action: '观望', color: 'text-gray-600' };
+      }
+      return { action: '观望', color: 'text-gray-600' };
+    };
+
+    const watchIntradayRows = computed(() => {
+      const hist = sectorHistoryPayload.value || {};
+      const lifecycle = sectorLifecyclePayload.value || {};
+      const mainline = sectorRotationPayload.value?.mainline || [];
+      const topMap = new Map();
+      (Array.isArray(mainline) ? mainline : []).slice(0, 3).forEach((m, idx) => {
+        const name = String(m?.['板块名称'] || '').trim();
+        if (name) topMap.set(name, idx + 1);
+      });
+      const items = Array.isArray(lifecycle?.items) ? lifecycle.items : [];
+      const byName = new Map();
+      items.forEach((it) => {
+        const name = String(it?.['板块名称'] || '').trim();
+        if (name) byName.set(name, it);
+      });
+      const list = Array.isArray(hist?.watch) && hist.watch.length ? hist.watch : (watchList.value || []);
+      const out = list.map((name) => {
+        const h = hist?.history?.[name] || [];
+        const last = h.length ? h[h.length - 1] : null;
+        const prev = h.length >= 2 ? h[h.length - 2] : null;
+        const ydayPct = pickPctFromBar(prev);
+        const todayPct = pickPctFromBar(last);
+        const minute = hist?.minute?.[name] || {};
+        const minutePct = pickLastPctFromMinute(minute?.series, minute?.prevClose);
+        const nowPct = minutePct ?? todayPct;
+        const it = byName.get(name) || {};
+        const momentum = it?.['动能'] || '-';
+        const behavior = it?.['资金行为'] || '-';
+        const advice = it?.['操作建议'] || '-';
+        const ch = it?.['指标数据']?.['Amount_Share_Change'];
+        const chNum = Number(ch);
+        const chOk = Number.isFinite(chNum);
+        let tag = '';
+        const y = Number(ydayPct);
+        const n = Number(nowPct);
+        const yOk = Number.isFinite(y);
+        const nOk = Number.isFinite(n);
+        if (yOk && nOk) {
+          if (y <= -1 && n >= 0.5) tag = '修复转强';
+          else if (y < 0 && n > 0) tag = '转强';
+          else if (y > 0 && n < 0) tag = '转弱';
+          else if (n >= 1) tag = '今日强势';
+          else if (y < 0 && n < 0 && n > y) tag = '跌势收敛';
+          else if (y < 0 && n < 0 && n < y) tag = '跌势加剧';
+          else if (n <= -1) tag = '今日走弱';
+        }
+        const sig = signalsMap.value?.[name];
+        const sigView = toSignalAction(sig, ydayPct, nowPct, !!panicPayload.value?.is_panic);
+        const action = advice;
+        const actionColor = getAdviceColor(action);
+        const topRank = topMap.get(name) || null;
+        return {
+          name,
+          ydayPct,
+          nowPct,
+          tag,
+          momentum,
+          behavior,
+          action,
+          actionColor,
+          topRank,
+          sigAction: sigView.action,
+          sigColor: sigView.color,
+          shareChange: chOk ? +chNum.toFixed(3) : null
+        };
+      });
+      const score = (row) => {
+        const tag = row.tag || '';
+        if (tag.includes('启动')) return 3;
+        if (tag.includes('走强')) return 2;
+        if (tag.includes('回落')) return -2;
+        if (tag.includes('走弱')) return -1;
+        return 0;
+      };
+      out.sort((a, b) => {
+        const ar = a.topRank || 99;
+        const br = b.topRank || 99;
+        if (ar !== br) return ar - br;
+        return score(b) - score(a);
+      });
+      return out;
+    });
+
+    const rotationTopGroups = computed(() => {
+      const groups = sectorRotationPayload.value?.groups || [];
+      const rows = groups.filter((g) => g && g['组别'] && Number.isFinite(Number(g['均值得分'])));
+      return rows.slice(0, 5);
+    });
+
+    const intradayBars = computed(() => {
+      const bars = sectorIntradayPayload.value?.intraday?.bars || [];
+      return Array.isArray(bars) ? bars : [];
+    });
+
+    const intradaySignal = computed(() => {
+      return sectorIntradayPayload.value?.intraday?.signal || '';
+    });
+
+    const intradayReason = computed(() => {
+      const reason = sectorIntradayPayload.value?.intraday?.reason || [];
+      return Array.isArray(reason) ? reason : [];
+    });
+
+    const intradayMax = computed(() => {
+      const vals = intradayBars.value.map(b => Math.abs(Number(b?.today_pct || 0))).filter(v => Number.isFinite(v));
+      return vals.length ? Math.max(...vals, 0.1) : 1;
+    });
+
+    const riskSummary = computed(() => {
+      const mainline = sectorRotationPayload.value?.mainline || [];
+      const tags = [];
+      const seen = new Set();
+      let cap = 1.0;
+      mainline.forEach((m) => {
+        const newsTags = m?.news_view?.risk_tags || [];
+        newsTags.forEach((t) => {
+          const v = String(t || '').trim();
+          if (!v || seen.has(v)) return;
+          seen.add(v);
+          tags.push(v);
+        });
+        const max = Number(m?.exec_view?.position?.max);
+        if (Number.isFinite(max)) cap = Math.min(cap, max);
+      });
+      return { tags, cap: Number.isFinite(cap) ? cap : 1.0 };
+    });
+    const rotationFilters = computed(() => {
+      const set = new Set(['全部', '资源', '硬件', '软件', '科技']);
+      const groups = sectorRotationPayload.value?.groups || [];
+      groups.forEach((g) => {
+        const raw = String(g?.['组别'] || '').trim();
+        if (!raw) return;
+        const head = raw.split(':')[0];
+        if (head) set.add(head);
+      });
+      return Array.from(set);
+    });
+    const rotationMainline = computed(() => {
+      const list = sectorRotationPayload.value?.mainline || [];
+      if (rotationFilter.value === '全部') return list;
+      const key = rotationFilter.value;
+      return list.filter((m) => {
+        const groups = Array.isArray(m?.groups) ? m.groups : [];
+        return groups.some((g) => {
+          const name = String(g || '');
+          if (!name) return false;
+          const head = name.split(':')[0];
+          return head === key || name.includes(key);
+        });
+      });
+    });
+    const minuteMap = {
+      'spark-sse': 'sse',
+      'spark-szi': 'szi',
+      'spark-gem': 'gem',
+      'spark-star': 'star',
+      'spark-hs300': 'hs300',
+      'spark-csi2000': 'csi2000',
+      'spark-avg': 'avg',
+      'spark-tl': 'tl',
+      'spark-t': 't',
+      'spark-bank': 'bank',
+      'spark-broker': 'broker',
+      'spark-insure': 'insure'
+    };
+    const dailyMap = {
+      'spark-sse': 'sse',
+      'spark-szi': 'szi',
+      'spark-gem': 'gem',
+      'spark-star': 'star',
+      'spark-hs300': 'hs300',
+      'spark-csi2000': 'csi2000',
+      'spark-avg': 'avg',
+      'spark-tl': 'tl',
+      'spark-t': 't',
+      'spark-bank': 'bank',
+      'spark-broker': 'broker',
+      'spark-insure': 'insure'
+    };
+    const lockIndexSparks = true;
+    const indexSparkEls = new Set([
+      'spark-sse','spark-szi','spark-gem','spark-star','spark-hs300','spark-csi2000','spark-avg',
+      'spark-bank','spark-broker','spark-insure','spark-t','spark-tl'
+    ]);
+    const dailySeriesLen = {};
+    const minDailyPoints = 5;
+    const minuteTarget = {
+      sse: (v) => market.value.sse = v,
+      szi: (v) => market.value.szi = v,
+      gem: (v) => market.value.chinaext = v,
+      star: (v) => market.value.star = v,
+      hs300: (v) => extra.value.hs300 = v,
+      csi2000: (v) => extra.value.csi2000 = v,
+      avg: (v) => extra.value.avg = v,
+      tl: (v) => bonds.value.tl = v,
+      t: (v) => bonds.value.t = v,
+      bank: (v) => sectors.value.bank = { price: v.price ?? null, pct: v.pct },
+      broker: (v) => sectors.value.broker = { price: v.price ?? null, pct: v.pct },
+      insure: (v) => sectors.value.insure = { price: v.price ?? null, pct: v.pct }
+    };
+
+    const fmtTime = (ts) => {
+      if (!ts) return '';
+      const d = new Date(ts);
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${month}-${day} ${d.toTimeString().slice(0, 8)}`;
+    };
+
+    const fmtNewsTime = (val) => {
+      if (!val) return '';
+      const d = new Date(val);
+      if (!Number.isNaN(d.getTime())) {
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        const hh = String(d.getHours()).padStart(2, '0');
+        const mm = String(d.getMinutes()).padStart(2, '0');
+        return `${m}/${day} ${hh}:${mm}`;
+      }
+      const text = String(val).replace('T', ' ');
+      const parts = text.split(' ');
+      if (parts.length >= 2) {
+        const date = parts[0];
+        const time = parts[1];
+        const seg = date.split('-');
+        if (seg.length >= 3) {
+          const m = seg[1];
+          const day = seg[2];
+          return `${m}/${day} ${time.slice(0, 5)}`;
+        }
+      }
+      return text;
+    };
+
+    const toHM = (t) => {
+      if (!t) return '';
+      if (t.includes(' ')) return t.split(' ')[1].slice(0,5);
+      if (t.includes(':')) return t.slice(-5);
+      if (t.length >= 4) return t.slice(-4).replace(/(\d{2})(\d{2})/, '$1:$2');
+      return t;
+    };
+
+    const extractDate = (t) => {
+      if (!t) return '';
+      const s = String(t);
+      if (s.includes(' ')) return s.split(' ')[0];
+      if (s.includes('T')) return s.split('T')[0];
+      return '';
+    };
+
+    const normalizeMinuteSeries = (data) => {
+      const series = Array.isArray(data?.series) ? data.series : [];
+      const day = data?.day || extractDate(series[series.length - 1]?.time) || extractDate(series[0]?.time) || '';
+      if (!day) return { series, day: data?.day || '' };
+      const filtered = series.filter((p) => {
+        const d = extractDate(p?.time);
+        if (!d) return true;
+        return d === day;
+      });
+      const out = filtered.length ? filtered : series;
+      const outDay = day || extractDate(out[out.length - 1]?.time) || extractDate(out[0]?.time) || '';
+      return { series: out, day: outDay };
+    };
+
+    const buildTs = (day, t) => {
+      if (!t) return null;
+      const s = String(t);
+      if (s.includes(' ')) return s.replace(' ', 'T');
+      if (s.includes('T')) return s;
+      if (day && s.includes(':')) return `${day}T${s.length === 5 ? s : s.slice(0, 5)}:00`;
+      return null;
+    };
+
+    const buildTradingAxis = () => {
+      const axis = [];
+      const push = (h, m) => axis.push(`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`);
+      const toHM = (total) => {
+        const h = Math.floor(total / 60);
+        const m = total % 60;
+        return { h, m };
+      };
+      for (let i = 0; i <= 120; i += 1) {
+        const { h, m } = toHM(9 * 60 + 30 + i);
+        push(h, m);
+      }
+      for (let i = 0; i <= 120; i += 1) {
+        const { h, m } = toHM(13 * 60 + i);
+        push(h, m);
+      }
+      return axis;
+    };
+
+    const pickPrice = (p) => {
+      const c = p?.close;
+      if (typeof c === 'number' && c > 0) return c;
+      const o = p?.open;
+      if (typeof o === 'number' && o > 0) return o;
+      return null;
+    };
+
+    const renderSpark = (el, arr, prevClose) => {
+      if (!arr || !arr.length) {
+        if (sparks.value[el]) sparks.value[el].clear();
+        return;
+      }
+      const base = (typeof prevClose === 'number' && prevClose > 0) ? prevClose : pickPrice(arr[0]);
+      const axis = buildTradingAxis();
+      const map = new Map();
+      arr.forEach((p) => {
+        const t = toHM(p.time);
+        const v = pickPrice(p);
+        if (!t || v == null || base == null) return;
+        map.set(t, ((v - base) / base) * 100);
+      });
+      const valsRaw = axis.map(t => map.has(t) ? map.get(t) : null);
+      const firstIdx = valsRaw.findIndex(v => v != null);
+      const lastIdx = (() => {
+        if (firstIdx === -1) return -1;
+        for (let i = valsRaw.length - 1; i >= 0; i -= 1) {
+          if (valsRaw[i] != null) return i;
+        }
+        return -1;
+      })();
+      let lastSeen = null;
+      const vals = valsRaw.map((v, i) => {
+        if (v != null) { lastSeen = v; return v; }
+        if (firstIdx !== -1 && i > firstIdx && i < lastIdx) return lastSeen;
+        return null;
+      });
+      const latest = [...vals].reverse().find(v => v != null) ?? 0;
+      const color = latest >= 0 ? '#f87171' : '#4ade80';
+      if (!sparks.value[el]) { sparks.value[el] = window.echarts.init(document.getElementById(el)); }
+      sparks.value[el].setOption({
+        grid:{left:0,right:0,top:0,bottom:0},
+        xAxis:{type:'category',data:axis,show:false},
+        yAxis:{type:'value',show:false, min:(v)=>Math.min(0, v.min), max:(v)=>Math.max(0, v.max)},
+        tooltip: { trigger: 'axis', formatter: (params)=>{ const p = params.find(x => x && x.value != null) || params[0] || {}; const v = p.value; const n = Number(v); const s = Number.isFinite(n) ? n.toFixed(2) : v; return `${p.axisValue||''}<br/>${s}%`; } },
+        markLine:{ silent:true, symbol:'none', lineStyle:{color:'#9ca3af',width:0.6}, data:[{ yAxis: 0 }]},
+        series:[
+          { type:'line', data:vals, smooth:true, symbol:'none', connectNulls:false, lineStyle:{width:1.2, color} }
+        ]
+      });
+    };
+    
+    const renderVolumeSpark = (el, arr, ydayArr, ydayTotal) => {
+      const buildVolumeVals = (series, axis) => {
+        if (!series || !series.length || !axis.length) return { vals: [], raw: [] };
+        const map = new Map();
+        series.forEach((p) => {
+          const t = toHM(p.time);
+          const v = p.volume ?? p.value;
+          if (!t || v == null || v === 0) return;
+          map.set(t, v);
+        });
+        const rawVals = axis.map(t => map.has(t) ? map.get(t) : null);
+        const firstRawIdx = rawVals.findIndex(v => v != null);
+        const vals = rawVals.map((v, i) => {
+          if (v == null) return null;
+          if (i === firstRawIdx) return null;
+          const prev = rawVals[i - 1];
+          const a = Number(v);
+          const b = Number(prev);
+          if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+          const d = a - b;
+          if (!Number.isFinite(d) || d < 0) return null;
+          return +(d / 10000).toFixed(2);
+        });
+        return { vals, raw: rawVals };
+      };
+      const axis = buildTradingAxis();
+      const today = buildVolumeVals(arr, axis);
+      const yday = buildVolumeVals(ydayArr, axis);
+      const hasAny = today.raw.some(v => v != null) || yday.raw.some(v => v != null);
+      if (!axis.length || !hasAny) {
+        if (sparks.value[el]) sparks.value[el].clear();
+        return;
+      }
+      const ydayAvgFinal = (() => {
+        const tot = Number(ydayTotal);
+        if (!Number.isFinite(tot) || tot <= 0) return null;
+        const minutes = 240;
+        return +((tot / 10000) / minutes).toFixed(4);
+      })();
+      const todayVals = today.vals.filter(v => v != null).map(Number).filter(Number.isFinite);
+      const maxToday = todayVals.length ? Math.max(...todayVals) : null;
+      const yMax = (() => {
+        if (ydayAvgFinal != null && ydayAvgFinal > 0) {
+          const base = ydayAvgFinal * 2;
+          const m = maxToday != null ? Math.max(base, maxToday * 1.05) : base;
+          return +m.toFixed(2);
+        }
+        if (maxToday == null) return null;
+        return maxToday > 0 ? +(maxToday * 1.15).toFixed(2) : null;
+      })();
+      const yMin = (() => {
+        if (ydayAvgFinal != null && ydayAvgFinal > 0 && yMax != null) {
+          const min = yMax - ydayAvgFinal * 2;
+          return min > 0 ? +min.toFixed(2) : 0;
+        }
+        return 0;
+      })();
+      const series = [];
+      if (today.vals.length) {
+        const color = '#f87171';
+        series.push({
+          name: '今日分时成交额',
+          type:'line',
+          data: today.vals.map((v, i) => v == null ? null : ({ value: v, raw: today.raw[i] })),
+          smooth:0.65,
+          symbol:'none',
+          connectNulls:false,
+          lineStyle:{width:1.2, color}
+        });
+      }
+      if (ydayAvgFinal != null) {
+        series.push({
+          name: '昨日分时均值',
+          type:'line',
+          data: axis.map(() => ({ value: +ydayAvgFinal.toFixed(2), raw: null })),
+          smooth:0.65,
+          symbol:'none',
+          connectNulls:false,
+          lineStyle:{width:1, color:'#60a5fa', type:'dashed'}
+        });
+      }
+      if (!sparks.value[el]) { sparks.value[el] = window.echarts.init(document.getElementById(el)); }
+      sparks.value[el].setOption({
+        grid:{left:0,right:0,top:0,bottom:0},
+        xAxis:{type:'category',data:axis,show:false},
+        yAxis:{type:'value',show:false, min:yMin, max:yMax ?? undefined},
+        tooltip: {
+          trigger: 'axis',
+          formatter: (params)=>{
+            const items = (params || []).filter(x => x && x.value != null);
+            if (!items.length) return '';
+            const time = items[0]?.axisValue || '';
+            const lines = items.map(p => {
+              const v = p?.data?.value;
+              const raw = p?.data?.raw;
+              const s = Number.isFinite(Number(v)) ? `${Number(v).toFixed(2)}亿` : '-';
+              const sum = Number.isFinite(Number(raw)) ? `${(Number(raw) / 10000).toFixed(1)}亿` : '';
+              const ds = sum ? `（累计${sum}）` : '';
+              return `${p.seriesName} ${s}${ds}`;
+            });
+            return `${time}<br/>${lines.join('<br/>')}`;
+          }
+        },
+        series
+      });
+    };
+
+    const renderDailySpark = (el, series) => {
+      if (!series || !series.length) {
+        if (sparks.value[el]) sparks.value[el].clear();
+        return;
+      }
+      const axis = series.map(p => p.date);
+      const base = Number(series[0]?.close);
+      const vals = series.map((p) => {
+        const v = Number(p?.close);
+        if (!Number.isFinite(v) || !Number.isFinite(base) || base === 0) return null;
+        return ((v - base) / base) * 100;
+      });
+      const latest = [...vals].reverse().find(v => v != null) ?? 0;
+      const color = latest >= 0 ? '#f87171' : '#4ade80';
+      if (!sparks.value[el]) { sparks.value[el] = window.echarts.init(document.getElementById(el)); }
+      sparks.value[el].setOption({
+        grid:{left:0,right:0,top:0,bottom:0},
+        xAxis:{type:'category',data:axis,show:false},
+        yAxis:{type:'value',show:false, min:(v)=>Math.min(0, v.min), max:(v)=>Math.max(0, v.max)},
+        tooltip: { trigger: 'axis', formatter: (params)=>{ const p = params.find(x => x && x.value != null) || params[0] || {}; const v = p.value; const n = Number(v); const s = Number.isFinite(n) ? n.toFixed(2) : v; return `${p.axisValue||''}<br/>${s}%`; } },
+        markLine:{ silent:true, symbol:'none', lineStyle:{color:'#9ca3af',width:0.6}, data:[{ yAxis: 0 }]},
+        series:[
+          { type:'line', data:vals, smooth:true, symbol:'none', connectNulls:false, lineStyle:{width:1.2, color} }
+        ]
+      });
+    };
+
+    const pctColor = (v) => v==null? 'text-gray-400' : (v>=0? 'text-red-400' : 'text-green-400');
+    const fmtPct = (v) => v==null? '-' : (v>0? `+${v}%` : `${v}%`);
+    const fmtVolume = (v) => v==null? '-' : `${(v / 10000).toFixed(1)}亿`;
+    const fmtVolumeCmp = (cmp) => {
+      if (!cmp) return '昨日缺失';
+      const pctNum = Number(cmp.pct);
+      const deltaNum = Number(cmp.delta);
+      if (!Number.isFinite(pctNum) || !Number.isFinite(deltaNum)) return '昨日缺失';
+      const dir = deltaNum >= 0 ? '增量' : '缩量';
+      const pct = Math.abs(pctNum).toFixed(2);
+      const delta = Math.abs(deltaNum);
+      return `${dir} ${pct}% / ${fmtVolume(delta)}`;
+    };
+
+    const fmtHeatDelta = (raw) => {
+      const n = Number(raw);
+      if (!Number.isFinite(n)) return '-';
+      const pct = Math.abs(n) < 1 ? n * 100 : n;
+      const sign = pct > 0 ? '+' : '';
+      return `${sign}${pct.toFixed(2)}%`;
+    };
+
+    const applyApiBase = () => {
+      const v = String(apiBaseInput.value || '').trim().replace(/\/+$/, '');
+      if (!v) {
+        localStorage.removeItem('api_base');
+      } else {
+        localStorage.setItem('api_base', v);
+      }
+      location.reload();
+    };
+
+    const rotationMatrixAxisAll = computed(() => {
+      const hist = sectorHistoryPayload.value || {};
+      const history = hist.history || {};
+      const dates = new Set();
+      Object.values(history).forEach((arr) => {
+        (Array.isArray(arr) ? arr : []).forEach((r) => {
+          const d = r?.date;
+          if (d) dates.add(String(d));
+        });
+      });
+      return Array.from(dates).sort().slice(-180);
+    });
+
+    const rotationMatrixAxis = computed(() => {
+      const axis = rotationMatrixAxisAll.value || [];
+      if (!axis.length) return [];
+      const span = Number(rotationMonthSpan.value) || 2;
+      const last = axis[axis.length - 1];
+      const lastMonth = String(last || '').slice(0, 7);
+      if (!lastMonth) return axis.slice(-60);
+      const months = [];
+      for (let i = axis.length - 1; i >= 0; i -= 1) {
+        const m = String(axis[i] || '').slice(0, 7);
+        if (!m) continue;
+        if (!months.includes(m)) months.push(m);
+        if (months.length >= span) break;
+      }
+      const allow = new Set(months);
+      const filtered = axis.filter(d => allow.has(String(d).slice(0, 7)));
+      return filtered.length ? filtered : axis.slice(-60);
+    });
+
+    const rotationMatrixMonths = computed(() => {
+      const axis = rotationMatrixAxis.value || [];
+      const out = [];
+      let cur = '';
+      let start = 0;
+      for (let i = 0; i < axis.length; i += 1) {
+        const d = axis[i] || '';
+        const m = d ? d.slice(0, 7) : '';
+        if (!m) continue;
+        if (!cur) {
+          cur = m;
+          start = i;
+          continue;
+        }
+        if (m !== cur) {
+          out.push({ label: cur, start, len: i - start });
+          cur = m;
+          start = i;
+        }
+      }
+      if (cur) out.push({ label: cur, start, len: axis.length - start });
+      return out;
+    });
+
+    const rotationUpcycleStats6m = computed(() => {
+      const hist = sectorHistoryPayload.value || {};
+      const history = hist.history || {};
+      const list = Array.isArray(hist?.watch) && hist.watch.length ? hist.watch : (watchList.value || []);
+      const groups = profileGroups.value || {};
+      const axisAll = rotationMatrixAxisAll.value || [];
+      if (!axisAll.length) return { axis: [], rows: [] };
+      const months = [];
+      for (let i = axisAll.length - 1; i >= 0; i -= 1) {
+        const m = String(axisAll[i] || '').slice(0, 7);
+        if (!m) continue;
+        if (!months.includes(m)) months.push(m);
+        if (months.length >= 6) break;
+      }
+      const allow = new Set(months);
+      const axis = axisAll.filter(d => allow.has(String(d).slice(0, 7)));
+      const rows = (Array.isArray(list) ? list : []).map((name) => {
+        const nm = String(name || '').trim();
+        const group = resolveTopCategory(String(groups?.[nm] || '未分类'));
+        const rows = Array.isArray(history?.[nm]) ? history[nm] : [];
+        const byDate = new Map();
+        rows.forEach((r) => {
+          const d = r?.date;
+          if (!d) return;
+          byDate.set(String(d), Number(r?.pct));
+        });
+        let upDays = 0;
+        let cumPct = 0;
+        let streak = 0;
+        let maxStreak = 0;
+        let segCount = 0;
+        axis.forEach((d) => {
+          const v = byDate.has(d) ? Number(byDate.get(d)) : null;
+          const up = Number.isFinite(v) && v > 0;
+          if (Number.isFinite(v)) cumPct += v;
+          if (up) {
+            upDays += 1;
+            streak += 1;
+            if (streak > maxStreak) maxStreak = streak;
+          } else if (streak > 0) {
+            segCount += 1;
+            streak = 0;
+          }
+        });
+        if (streak > 0) segCount += 1;
+        return { name: nm, group, upDays, maxStreak, segCount, cumPct: +cumPct.toFixed(2) };
+      }).filter(r => r.name);
+      rows.sort((a, b) => {
+        const ag = String(a.group || '');
+        const bg = String(b.group || '');
+        const ai = topCategoryIndex(ag);
+        const bi = topCategoryIndex(bg);
+        if (ai !== bi) return ai - bi;
+        if (ag !== bg) return ag.localeCompare(bg);
+        return b.cumPct - a.cumPct;
+      });
+      return { axis, months: months.slice().reverse(), rows };
+    });
+
+    const rotationMatrixRows = computed(() => {
+      const hist = sectorHistoryPayload.value || {};
+      const history = hist.history || {};
+      const axis = rotationMatrixAxis.value || [];
+      const groups = profileGroups.value || {};
+      const list = Array.isArray(hist?.watch) && hist.watch.length ? hist.watch : (watchList.value || []);
+      const MAINLINE_WINDOW = 20;
+      const MAINLINE_MIN_UP_DAYS = 12;
+      const MAINLINE_MIN_CUM_PCT = 6;
+      const MAINLINE_MIN_STREAK = 4;
+      const MAINLINE_MAX = 3;
+      const base = (Array.isArray(list) ? list : []).map((name) => {
+        const nm = String(name || '').trim();
+        const g = resolveTopCategory(String(groups?.[nm] || '未分类'));
+        const rows = Array.isArray(history?.[nm]) ? history[nm] : [];
+        const byDate = new Map();
+        rows.forEach((r) => {
+          const d = r?.date;
+          if (!d) return;
+          byDate.set(String(d), Number(r?.pct));
+        });
+        const tail = rows.slice(-MAINLINE_WINDOW);
+        let upDays = 0;
+        let cumPct = 0;
+        let streak = 0;
+        let maxStreak = 0;
+        tail.forEach((r) => {
+          const v = Number(r?.pct);
+          const ok = Number.isFinite(v);
+          if (ok) cumPct += v;
+          if (ok && v > 0) {
+            upDays += 1;
+            streak += 1;
+            if (streak > maxStreak) maxStreak = streak;
+          } else {
+            streak = 0;
+          }
+        });
+        const stats = {
+          upDays,
+          cumPct: +cumPct.toFixed(2),
+          maxStreak
+        };
+        const segs = [];
+        let start = null;
+        let sum = 0;
+        for (let i = 0; i < axis.length; i += 1) {
+          const d = axis[i];
+          const v = byDate.has(d) ? Number(byDate.get(d)) : null;
+          const up = Number.isFinite(v) && v > 0;
+          if (up) {
+            if (start == null) {
+              start = i;
+              sum = 0;
+            }
+            sum += v;
+          } else if (start != null) {
+            const len = i - start;
+            segs.push({ start, len, from: axis[start], to: axis[i - 1], sum: +sum.toFixed(2) });
+            start = null;
+            sum = 0;
+          }
+        }
+        if (start != null) {
+          const len = axis.length - start;
+          segs.push({ start, len, from: axis[start], to: axis[axis.length - 1], sum: +sum.toFixed(2) });
+        }
+        return { name: nm, group: g, segments: segs, stats };
+      }).filter(r => r.name);
+
+      const mainlineCandidates = base.filter(r => r.stats.upDays >= MAINLINE_MIN_UP_DAYS && r.stats.cumPct >= MAINLINE_MIN_CUM_PCT && r.stats.maxStreak >= MAINLINE_MIN_STREAK);
+      mainlineCandidates.sort((a, b) => (b.stats.cumPct - a.stats.cumPct));
+      const mainlineSet = new Set(mainlineCandidates.slice(0, MAINLINE_MAX).map(r => r.name));
+      return base.map((r) => ({ ...r, type: mainlineSet.has(r.name) ? '主线' : '题材' }));
+    });
+
+    const rotationMatrixGroups = computed(() => {
+      const rows = rotationMatrixRows.value || [];
+      const map = new Map();
+      rows.forEach((r) => {
+        const g = r.group || '未分类';
+        if (!map.has(g)) map.set(g, []);
+        map.get(g).push(r);
+      });
+      const keys = Array.from(map.keys()).sort((a, b) => {
+        const ai = topCategoryIndex(a);
+        const bi = topCategoryIndex(b);
+        if (ai !== bi) return ai - bi;
+        return String(a).localeCompare(String(b));
+      });
+      return keys.map(k => ({ group: k, rows: map.get(k) || [] }));
+    });
+
+    const setRotationMonthSpan = (v) => {
+      const n = Number(v);
+      const next = Number.isFinite(n) ? n : 2;
+      rotationMonthSpan.value = next;
+      localStorage.setItem('rotation_month_span', String(next));
+    };
+
+    const renderIntradayWatchRank = (rows) => {
+      const list = Array.isArray(rows) ? rows : [];
+      const toPct = (v) => {
+        if (v == null) return null;
+        if (typeof v === 'string') {
+          const n = Number(v.replace('%', ''));
+          return Number.isFinite(n) ? n : null;
+        }
+        const n = Number(v);
+        return Number.isFinite(n) ? n : null;
+      };
+      const renderChart = (domId, items, color, align) => {
+        const chartDom = document.getElementById(domId);
+        if (!chartDom) return;
+        const myChart = window.echarts.init(chartDom);
+        if (!items.length) {
+          myChart.clear();
+          return;
+        }
+        const names = items.map(d => d.name);
+        const rawPcts = items.map(d => toPct(d.pct));
+        const barPcts = rawPcts.map(v => (Number.isFinite(v) ? Math.abs(+v.toFixed(2)) : 0));
+        const maxVal = Math.max(1, ...barPcts);
+        const isLeft = align === 'left';
+        const labelFormatter = (params) => {
+          const item = items[params.dataIndex] || {};
+          const name = item.name || '';
+          const v = toPct(item.pct);
+          const pct = Number.isFinite(v) ? v.toFixed(2) : '-';
+          return `${name} ${pct}%`;
+        };
+        const option = {
+          tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+          grid: { left: 0, right: 8, top: 4, bottom: 4, containLabel: false },
+          xAxis: {
+            type: 'value',
+            min: 0,
+            max: maxVal,
+            inverse: isLeft,
+            boundaryGap: [0, 0],
+            axisLabel: { show: false },
+            axisLine: { show: false },
+            axisTick: { show: false },
+            splitLine: { show: false }
+          },
+          yAxis: {
+            type: 'category',
+            data: names,
+            inverse: true,
+            axisLabel: { show: false },
+            axisLine: { show: false },
+            axisTick: { show: false }
+          },
+          dataZoom: [
+            { type: 'inside', yAxisIndex: 0, filterMode: 'none' }
+          ],
+          series: [
+            {
+              type: 'bar',
+              data: barPcts,
+              itemStyle: { color: color },
+              barWidth: 12,
+              label: {
+                show: true,
+                position: isLeft ? 'insideLeft' : 'insideRight',
+                align: isLeft ? 'left' : 'right',
+                formatter: labelFormatter,
+                distance: 0,
+                fontSize: 10
+              }
+            }
+          ]
+        };
+        myChart.setOption(option);
+      };
+      const items = list
+        .map((r) => ({ name: r?.name || '', pct: r?.nowPct }))
+        .filter(x => x.name && Number.isFinite(Number(x.pct)));
+      const downList = items.filter(i => Number(i.pct) < 0).sort((a, b) => Number(a.pct) - Number(b.pct));
+      const upList = items.filter(i => Number(i.pct) > 0).sort((a, b) => Number(b.pct) - Number(a.pct));
+      renderChart('intraday-watch-down-chart', downList, '#4ade80', 'left');
+      renderChart('intraday-watch-up-chart', upList, '#eb5454', 'right');
+    };
+
+    const corrOf = (a, b) => {
+      const n = Math.min(a.length, b.length);
+      if (n < 5) return null;
+      let sumA = 0;
+      let sumB = 0;
+      for (let i = 0; i < n; i += 1) {
+        sumA += a[i];
+        sumB += b[i];
+      }
+      const meanA = sumA / n;
+      const meanB = sumB / n;
+      let num = 0;
+      let denA = 0;
+      let denB = 0;
+      for (let i = 0; i < n; i += 1) {
+        const da = a[i] - meanA;
+        const db = b[i] - meanB;
+        num += da * db;
+        denA += da * da;
+        denB += db * db;
+      }
+      const den = Math.sqrt(denA * denB);
+      if (!den) return null;
+      return num / den;
+    };
+
+    const buildSeesawAi = (histRes) => {
+      const history = histRes?.history || {};
+      const names = Object.keys(history).filter(n => (history[n] || []).length);
+      if (!names.length) return '数据缺失';
+      const seriesMap = {};
+      names.forEach((n) => {
+        const arr = (history[n] || []).map(h => Number(h.close)).filter(v => Number.isFinite(v));
+        if (arr.length >= 5) seriesMap[n] = arr;
+      });
+      const keys = Object.keys(seriesMap);
+      if (keys.length < 2) return '数据缺失';
+      let bestNeg = null;
+      let bestPos = null;
+      for (let i = 0; i < keys.length; i += 1) {
+        for (let j = i + 1; j < keys.length; j += 1) {
+          const a = keys[i];
+          const b = keys[j];
+          const c = corrOf(seriesMap[a], seriesMap[b]);
+          if (!Number.isFinite(c)) continue;
+          if (bestNeg == null || c < bestNeg.val) bestNeg = { a, b, val: c };
+          if (bestPos == null || c > bestPos.val) bestPos = { a, b, val: c };
+        }
+      }
+      const parts = [];
+      if (bestNeg && bestNeg.val <= -0.3) parts.push(`${bestNeg.a}与${bestNeg.b}负相关${bestNeg.val.toFixed(2)}，跷跷板特征明显`);
+      else parts.push('未见明显跷跷板');
+      if (bestPos && bestPos.val >= 0.5) parts.push(`${bestPos.a}与${bestPos.b}同涨同跌${bestPos.val.toFixed(2)}`);
+      else parts.push('共振板块不明显');
+      return `180天观察：${parts.join('；')}。`;
+    };
+
+    const buildStreakAi = (rankRes, histRes) => {
+      const history = histRes?.history || {};
+      if (!rankRes) return '数据缺失';
+      const getStreak = (name, dir) => {
+        const hist = history[name];
+        if (!hist || !hist.length) return 0;
+        let cnt = 0;
+        for (let i = hist.length - 1; i >= 0; i -= 1) {
+          const v = Number(hist[i]?.pct);
+          if (!Number.isFinite(v)) break;
+          if (dir === 'up' && v > 0) cnt += 1;
+          else if (dir === 'down' && v < 0) cnt += 1;
+          else break;
+        }
+        return cnt;
+      };
+      const upList = (rankRes.up || []).map(i => ({ name: i.name, streak: getStreak(i.name, 'up') })).sort((a, b) => b.streak - a.streak);
+      const downList = (rankRes.down || []).map(i => ({ name: i.name, streak: getStreak(i.name, 'down') })).sort((a, b) => b.streak - a.streak);
+      const topUp = upList[0] || { name: '', streak: 0 };
+      const topDown = downList[0] || { name: '', streak: 0 };
+      const upText = topUp.streak >= 3 ? `连涨：${topUp.name} ${topUp.streak}天` : '连涨持续性不强';
+      const downText = topDown.streak >= 3 ? `连跌：${topDown.name} ${topDown.streak}天` : '连跌持续性不强';
+      let trend = '趋势信号一般';
+      if (topUp.streak >= 5 && topUp.streak > topDown.streak) trend = '主线可能形成';
+      if (topDown.streak >= 5 && topDown.streak > topUp.streak) trend = '趋势走坏需防守';
+      return `${upText}；${downText}；判断：${trend}。`;
+    };
+    
+    const fetchSnapshot = async (withAi) => {
+      try {
+        const res = await fetch(`${apiBase}/api/snapshot/latest?ai=${withAi ? '1' : '0'}`);
+        if (!res.ok) throw new Error('bad');
+        const data = await res.json();
+        if (data?.day) latestMarketDay.value = data.day;
+        const aiChanged = !!(data?.aiBrief || data?.aiText);
+        if (data?.aiBrief) aiBrief.value = data.aiBrief;
+        if (data?.aiText) aiText.value = data.aiText;
+        if (aiChanged && withAi) aiUpdatedAt.value = Date.now();
+        if (data?.sentiment) sentiment.value = { ...sentiment.value, ...data.sentiment };
+        if (data?.sentiment?.volumeCmp) sentiment.value.volumeCmp = data.sentiment.volumeCmp;
+        const arrToday = data?.sentiment?.volumeSeries || [];
+        const ydayArr = data?.sentiment?.volumeSeriesYday || [];
+        sentiment.value.volumeSeries = arrToday;
+        sentiment.value.volumeSeriesYday = ydayArr;
+        const ydayTotal = data?.sentiment?.volumeCmp?.yday ?? null;
+        renderVolumeSpark('spark-volume', arrToday, ydayArr, ydayTotal);
+        const open = isMarketOpen();
+        if (data?.bonds?.gov?.pct != null) bonds.value.gov = { ...bonds.value.gov, pct: data.bonds.gov.pct };
+        if (!open || !minuteCache['spark-tl']?.series?.length) {
+          if (data?.bonds?.tl) {
+            const v = data.bonds.tl;
+            bonds.value.tl = { price: v.price ?? bonds.value.tl.price, pct: v.pct ?? bonds.value.tl.pct };
+          } else if (data?.bonds?.tl2603) {
+            const v = data.bonds.tl2603;
+            bonds.value.tl = { price: v.price ?? bonds.value.tl.price, pct: v.pct ?? bonds.value.tl.pct };
+          }
+        }
+        if (!open || !minuteCache['spark-t']?.series?.length) {
+          if (data?.bonds?.t) {
+            const v = data.bonds.t;
+            bonds.value.t = { price: v.price ?? bonds.value.t.price, pct: v.pct ?? bonds.value.t.pct };
+          } else if (data?.bonds?.t2603) {
+            const v = data.bonds.t2603;
+            bonds.value.t = { price: v.price ?? bonds.value.t.price, pct: v.pct ?? bonds.value.t.pct };
+          }
+        }
+        if (!open || !minuteCache['spark-bank']?.series?.length) {
+          if (data?.sectors?.bank) sectors.value.bank = { price: data.sectors.bank.price ?? sectors.value.bank?.price ?? null, pct: data.sectors.bank.pct ?? sectors.value.bank?.pct };
+        }
+        if (!open || !minuteCache['spark-broker']?.series?.length) {
+          if (data?.sectors?.broker) sectors.value.broker = { price: data.sectors.broker.price ?? sectors.value.broker?.price ?? null, pct: data.sectors.broker.pct ?? sectors.value.broker?.pct };
+        }
+        if (!open || !minuteCache['spark-insure']?.series?.length) {
+          if (data?.sectors?.insure) sectors.value.insure = { price: data.sectors.insure.price ?? sectors.value.insure?.price ?? null, pct: data.sectors.insure.pct ?? sectors.value.insure?.pct };
+        }
+        if (data?.ts) dataTs.value = data.ts;
+      } catch (e) { console.error(e); }
+    };
+
+    const fetchPrompt = async () => {
+      try {
+        const res = await fetch(`${apiBase}/api/prompt/stock-daily`);
+        if (!res.ok) throw new Error('bad');
+        const data = await res.json();
+        if (data?.text) promptText.value = data.text;
+      } catch (e) { console.error(e); }
+    };
+
+    const fetchSectorPrompt = async () => {
+      try {
+        const res = await fetch(`${apiBase}/api/prompt/sector-analysis`);
+        if (!res.ok) throw new Error('bad');
+        const data = await res.json();
+        if (data?.text) sectorPromptText.value = data.text;
+      } catch (e) { console.error(e); }
+    };
+
+    const runPromptDebug = async () => {
+      promptLoading.value = true;
+      promptError.value = '';
+      promptOutput.value = '';
+      try {
+        const res = await fetch(`${apiBase}/api/ai/debug`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: promptText.value })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || '调用失败');
+        promptOutput.value = data?.text || '';
+        aiText.value = data?.text || '';
+      } catch (e) {
+        promptError.value = String(e?.message || '调用失败');
+      } finally {
+        promptLoading.value = false;
+      }
+    };
+
+    const runSectorPromptDebug = async () => {
+      sectorPromptLoading.value = true;
+      sectorPromptError.value = '';
+      sectorPromptOutput.value = '';
+      try {
+        const res = await fetch(`${apiBase}/api/ai/sector-debug`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: sectorPromptText.value })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || '调用失败');
+        sectorPromptOutput.value = data?.text || '';
+        const parsed = parseSectorAiText(data?.text || '');
+        if (parsed.seesaw || parsed.streak) {
+          marketAi.value = {
+            seesaw: parsed.seesaw || marketAi.value.seesaw,
+            streak: parsed.streak || marketAi.value.streak
+          };
+        }
+      } catch (e) {
+        sectorPromptError.value = String(e?.message || '调用失败');
+      } finally {
+        sectorPromptLoading.value = false;
+      }
+    };
+
+    const deriveFromSeries = (series, prevClose) => {
+      if (!series || !series.length) return { price: null, pct: null };
+      const firstPx = pickPrice(series[0]);
+      const last = pickPrice(series[series.length - 1]);
+      const prev = (typeof prevClose === 'number' && prevClose > 0) ? prevClose : null;
+      let base = prev != null ? prev : firstPx;
+      if (prev != null && firstPx != null) {
+        const ratio = firstPx / prev;
+        if (!Number.isFinite(ratio) || ratio < 0.5 || ratio > 2) base = firstPx;
+      }
+      const isValidPct = (pct) => Number.isFinite(pct) && Math.abs(pct) <= 30;
+      const findLastNormal = () => {
+        for (let i = series.length - 1; i >= 0; i -= 1) {
+          const price = pickPrice(series[i]);
+          if (!Number.isFinite(price) || price <= 0) continue;
+          if (!Number.isFinite(base) || base <= 0) return { price, pct: null };
+          const pct = +(((price - base) / base) * 100).toFixed(2);
+          if (!isValidPct(pct)) continue;
+          const prevP = i > 0 ? pickPrice(series[i - 1]) : null;
+          if (Number.isFinite(prevP) && prevP > 0) {
+            const jump = price / prevP;
+            if (!Number.isFinite(jump) || jump < 0.6 || jump > 1.6) continue;
+          }
+          return { price, pct };
+        }
+        return null;
+      };
+      const normal = findLastNormal();
+      if (normal) return normal;
+      return { price: last ?? null, pct: null };
+    };
+
+    const deriveSlope = (series) => {
+      if (!series || series.length < 2) return null;
+      const first = pickPrice(series[0]);
+      const last = pickPrice(series[series.length - 1]);
+      if (!first || !last) return null;
+      return (last - first) / first;
+    };
+
+    const fetchMinute = async (el, code) => {
+      try {
+        const res = await fetch(`${apiBase}/api/minute/${code}`);
+        if (!res.ok) throw new Error('bad');
+        const data = await res.json();
+        const normalized = normalizeMinuteSeries(data);
+        const series = normalized.series || [];
+        const prevClose = data?.prevClose ?? null;
+        if (series.length) {
+          minuteCache[el] = { series, day: normalized.day, prevClose };
+          renderSpark(el, series, prevClose);
+          const v = deriveFromSeries(series, prevClose);
+          const slope = deriveSlope(series);
+          const setter = minuteTarget[code];
+          if (setter) setter(v, slope);
+          const lastTime = data?.latest?.time || series[series.length - 1]?.time;
+          const tsRaw = buildTs(normalized.day, lastTime);
+          if (tsRaw) {
+            const t = Date.parse(tsRaw);
+            if (!Number.isNaN(t)) dataTs.value = t;
+          }
+        } else {
+          const cached = minuteCache[el];
+          if (cached?.series?.length) {
+            renderSpark(el, cached.series, cached.prevClose ?? null);
+          } else {
+            minuteCache[el] = { series: [], day: normalized.day, prevClose };
+          }
+        }
+      } catch(e) { console.error(e); }
+    };
+
+    const refreshMinuteAll = async () => {
+      const tasks = Object.entries(minuteMap).map(([el, code]) => fetchMinute(el, code));
+      await Promise.all(tasks);
+    };
+
+    const fetchBreadth = async () => {
+      try {
+        const res = await fetch(`${apiBase}/api/market/breadth`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data) return;
+
+        const container = document.getElementById('market-breadth');
+        if (container) container.classList.remove('hidden');
+
+        const up = Number(data?.up || 0);
+        const down = Number(data?.down || 0);
+        const flat = Number(data?.flat || 0);
+        const total = Number(data?.total || (up + down + flat) || 0);
+
+        const upPct = (total ? (up / total * 100) : 50).toFixed(1) + '%';
+        const downPct = (total ? (down / total * 100) : 50).toFixed(1) + '%';
+
+        const elUp = document.getElementById('breadth-up');
+        if (elUp) elUp.style.width = upPct;
+        const elDown = document.getElementById('breadth-down');
+        if (elDown) elDown.style.width = downPct;
+
+        const elUpCount = document.getElementById('breadth-up-count');
+        if (elUpCount) elUpCount.textContent = `涨 ${up}`;
+        const elDownCount = document.getElementById('breadth-down-count');
+        if (elDownCount) elDownCount.textContent = `跌 ${down}`;
+
+        const ratio = document.getElementById('breadth-ratio');
+        if (ratio) {
+          if (data?.stale) {
+            const src = data?.source_day ? String(data.source_day) : '';
+            ratio.textContent = src ? `数据滞后（${src}）` : '数据滞后';
+            ratio.className = "text-gray-500 font-bold";
+            return;
+          }
+          if (up > down * 2) {
+            ratio.textContent = "普涨 🔥";
+            ratio.className = "text-red-600 font-bold";
+          } else if (down > up * 2) {
+            ratio.textContent = "普跌 ❄️";
+            ratio.className = "text-green-600 font-bold";
+          } else {
+            ratio.textContent = "震荡 ⚖️";
+            ratio.className = "text-gray-600 font-bold";
+          }
+        }
+      } catch (e) { console.error(e); }
+    };
+
+    const parseSectorAiText = (text) => {
+      const raw = (text || '').trim();
+      if (!raw) return { seesaw: '', streak: '' };
+      const pick = (title) => {
+        const reg = new RegExp(`【${title}】([^【]+)`, 'm');
+        const m = raw.match(reg);
+        return m ? m[1].trim() : '';
+      };
+      const seesaw = [pick('跷跷板分析'), pick('共振分析')].filter(Boolean).join('；');
+      const streak = [pick('轮动规律'), pick('主线趋势')].filter(Boolean).join('；');
+      if (!seesaw && !streak) return { seesaw: raw, streak: raw };
+      return { seesaw, streak };
+    };
+
+    const getStageColor = (stage) => {
+      if (!stage) return 'bg-gray-400';
+      if (stage.includes('启动') || stage.includes('加速')) return 'bg-red-500';
+      if (stage.includes('震荡')) return 'bg-yellow-500';
+      if (stage.includes('潜伏')) return 'bg-blue-500';
+      if (stage.includes('衰退') || stage.includes('背离')) return 'bg-green-500';
+      return 'bg-gray-400';
+    };
+
+    const getAdviceColor = (advice) => {
+      if (!advice) return 'text-gray-500';
+      if (advice.includes('建仓') || advice.includes('试探') || advice.includes('低吸') || advice.includes('积极') || advice.includes('增持')) return 'text-red-600';
+      if (advice.includes('持有') || advice.includes('埋伏') || advice.includes('观望')) return 'text-yellow-600';
+      if (advice.includes('减仓') || advice.includes('止盈') || advice.includes('清仓')) return 'text-green-600';
+      return 'text-gray-500';
+    };
+
+    const badgeClass = (kind, val) => {
+      const v = String(val || '').trim();
+      if (kind === 'resonance') {
+        if (val === true || v === '是') return 'bg-green-50 text-green-700 border border-green-200';
+        return 'bg-gray-50 text-gray-600 border border-gray-200';
+      }
+      if (kind === 'seesaw') {
+        if (v === '科技强') return 'bg-red-50 text-red-700 border border-red-200';
+        if (v === '资源强') return 'bg-yellow-50 text-yellow-700 border border-yellow-200';
+        return 'bg-gray-50 text-gray-600 border border-gray-200';
+      }
+      if (kind === 'diffusion') {
+        if (v === '硬件领先') return 'bg-blue-50 text-blue-700 border border-blue-200';
+        if (v === '软件补涨') return 'bg-purple-50 text-purple-700 border border-purple-200';
+        return 'bg-gray-50 text-gray-600 border border-gray-200';
+      }
+      if (kind === 'leader') {
+        if (!v || v === '-') return 'bg-gray-50 text-gray-600 border border-gray-200';
+        return 'bg-indigo-50 text-indigo-700 border border-indigo-200';
+      }
+      if (kind === 'risk') {
+        if (v === '恐慌出逃' || v === '资金撤退' || v === '加速赶顶' || v === '向下') return 'bg-rose-50 text-rose-700 border border-rose-200';
+        if (v === '放量') return 'bg-emerald-50 text-emerald-700 border border-emerald-200';
+        return 'bg-gray-50 text-gray-600 border border-gray-200';
+      }
+      return 'bg-gray-50 text-gray-600 border border-gray-200';
+    };
+
+    const fmtProb = (v) => {
+      const n = Number(v);
+      if (!Number.isFinite(n)) return '-';
+      return `${Math.round(n)}%`;
+    };
+
+    const getImpact = (item) => {
+      const tags = Array.isArray(item?.tags) ? item.tags : [];
+      if (tags.includes('利好')) return '利好';
+      if (tags.includes('利空')) return '利空';
+      return '中性';
+    };
+
+    const getImpactClass = (impact) => {
+      if (impact === '利好') return 'bg-red-100 text-red-700';
+      if (impact === '利空') return 'bg-green-100 text-green-700';
+      return 'bg-gray-100 text-gray-600';
+    };
+
+    const importanceStars = (val) => {
+      const n = Math.min(5, Math.max(1, Number(val) || 1));
+      return '★'.repeat(n);
+    };
+
+    const renderSectorHeatmap = () => {
+      // Use nextTick equivalent
+      setTimeout(() => {
+        const chartDom = document.getElementById('sector-heatmap-chart');
+        if (!chartDom) return;
+        
+        // Dispose old instance if exists to avoid memory leaks or conflicts
+        const oldInstance = window.echarts.getInstanceByDom(chartDom);
+        if (oldInstance) oldInstance.dispose();
+
+        if (!heatmapItems.value.length) return;
+        
+        const myChart = window.echarts.init(chartDom);
+        
+        const data = heatmapItems.value.map(item => {
+          const sentiment = item.sentiment || {};
+          const pos = sentiment['利好'] || 0;
+          const neg = sentiment['利空'] || 0;
+          const net = pos - neg;
+          const total = item.count || 1;
+          const ratio = net / total;
+          
+          let color = '#9ca3af'; // gray-400
+          if (ratio >= 0.3) color = '#ef4444'; // red-500
+          else if (ratio > 0) color = '#fca5a5'; // red-300
+          else if (ratio <= -0.3) color = '#22c55e'; // green-500
+          else if (ratio < 0) color = '#86efac'; // green-300
+          
+          return {
+            name: item.name,
+            value: total,
+            itemStyle: { color },
+            sentiment: sentiment
+          };
+        });
+
+        const option = {
+          tooltip: {
+            formatter: function (info) {
+              const d = info.data;
+              const s = d.sentiment || {};
+              return [
+                `<div style="font-weight:bold">${d.name}</div>`,
+                `热度: ${d.value}`,
+                `<span style="color:#ef4444">利好: ${s['利好']||0}</span>`,
+                `<span style="color:#22c55e">利空: ${s['利空']||0}</span>`,
+                `<span style="color:#6b7280">中性: ${s['中性']||0}</span>`
+              ].join('<br/>');
+            }
+          },
+          series: [{
+            type: 'treemap',
+            width: '100%',
+            height: '100%',
+            roam: false,
+            nodeClick: false,
+            breadcrumb: { show: false },
+            label: {
+              show: true,
+              formatter: '{b}\n{c}',
+              fontSize: 10
+            },
+            itemStyle: {
+              borderColor: '#fff',
+              borderWidth: 1
+            },
+            data: data
+          }]
+        };
+
+        myChart.setOption(option);
+      }, 100);
+    };
+
+    const todayStr = () => {
+      try {
+        return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' });
+      } catch (e) {
+        return new Date().toISOString().slice(0, 10);
+      }
+    };
+
+    const loadNews = async (force = false) => {
+      const nowTs = Date.now();
+      if (!force && newsTs.value && nowTs - newsTs.value < 5 * 60 * 1000) {
+        if (activeTab.value === 'news') renderSectorHeatmap();
+        return;
+      }
+      newsLoading.value = true;
+      try {
+        if (force) {
+          fetch(`${apiBase}/api/news/refresh`, { method: 'POST' }).catch(() => {});
+          await new Promise(r => setTimeout(r, 1000));
+        }
+        const date = latestMarketDay.value || todayStr();
+        const [newsRes, heatRes] = await Promise.all([
+          fetch(`${apiBase}/api/news?date=${encodeURIComponent(date)}&limit=100`).then(r => r.json()).catch(() => ({ news: [] })),
+          fetch(`${apiBase}/api/news/heat?date=${encodeURIComponent(date)}`).then(r => r.json()).catch(() => ({}))
+        ]);
+        
+        newsList.value = (newsRes.news || []).map(item => ({
+          ...item,
+          tags: [
+            item.classify?.type, 
+            item.classify?.sector, 
+            item.classify?.sentiment === 1 ? '利好' : (item.classify?.sentiment === -1 ? '利空' : '中性')
+          ].filter(Boolean),
+          importance: { P0: 5, P1: 4, P2: 3, P3: 2 }[item.classify?.level] || 2
+        }));
+        
+        if (heatRes?.by_sector) {
+          const sentimentMap = heatRes.by_sector_sentiment || {};
+          const items = Object.entries(heatRes.by_sector)
+            .map(([name, count]) => ({ 
+              name, 
+              count,
+              sentiment: sentimentMap[name] || { '利好': 0, '中性': 0, '利空': 0 }
+            }))
+            .sort((a, b) => b.count - a.count);
+          heatmapItems.value = items;
+        } else {
+          heatmapItems.value = [];
+        }
+        
+        newsTs.value = nowTs;
+        if (activeTab.value === 'news') renderSectorHeatmap();
+      } finally {
+        newsLoading.value = false;
+      }
+    };
+
+    const newsItems = computed(() => newsList.value || []);
+    const heatmapItems = ref([]); // Changed from computed to ref
+    
+    const heatmapMax = computed(() => {
+      const vals = heatmapItems.value.map(i => i.count);
+      return vals.length ? Math.max(...vals, 1) : 1;
+    });
+    
+    const classifyNews = (item) => {
+      const type = item.classify?.type;
+      const sector = item.classify?.sector;
+      const watch = new Set(watchList.value || []);
+      
+      if (type === '行业' && sector && watch.has(sector)) return 'focus';
+      if (type === '地缘') return 'geo';
+      if (type === '宏观') return 'macro';
+      
+      // Fallback for items without strict classification
+      // if (type === '行业') return 'focus'; // REMOVED: Do not show unwatched sectors in focus
+      return 'macro';
+    };
+    const sortNews = (arr) => arr.slice().sort((a, b) => {
+      const ai = Number(a?.importance) || 1;
+      const bi = Number(b?.importance) || 1;
+      if (ai !== bi) return bi - ai;
+      const at = a?.publish_time || '';
+      const bt = b?.publish_time || '';
+      return bt.localeCompare(at);
+    });
+    const macroNews = computed(() => sortNews(newsItems.value.filter(i => classifyNews(i) === 'macro')));
+    const geoNews = computed(() => sortNews(newsItems.value.filter(i => classifyNews(i) === 'geo')));
+    const focusNews = computed(() => sortNews(newsItems.value.filter(i => classifyNews(i) === 'focus')));
+
+    const groupedFocusNews = computed(() => {
+      const raw = focusNews.value;
+      // Define standard groups based on sectorGroupOptions plus '未分类'
+      const groups = {};
+      sectorGroupOptions.forEach(opt => groups[opt] = []);
+      groups['未分类'] = [];
+
+      // Default mappings for common sectors if not in profileGroups
+      const defaultMap = {
+        '半导体': '硬件', '芯片': '硬件', '光刻': '硬件', '存储芯片': '硬件',
+        '云计算': '软件', '算力': '软件', '大模型': '软件', 'AI': '软件',
+        '新能源': '硬件', '光伏': '硬件', '风电': '硬件', '储能': '硬件', '电池': '硬件', '锂电': '硬件',
+        '商业航天': '硬件', '卫星': '硬件', '航天': '硬件',
+        '通讯设备': '硬件', '通信': '硬件', '5G': '硬件', '光通信': '硬件', '基站': '硬件',
+        '创新药': '医药', '医药': '医药', '医疗': '医药', '生物': '医药',
+        '有色金属': '资源', '有色': '资源', '稀土': '资源', '黄金': '资源'
+      };
+
+      raw.forEach(item => {
+        const sector = item.classify?.sector;
+        let groupName = '未分类';
+        if (sector) {
+          if (profileGroups.value && profileGroups.value[sector]) {
+            groupName = profileGroups.value[sector];
+          } else {
+            // Try default map partial match
+            for (const [k, v] of Object.entries(defaultMap)) {
+              if (sector.includes(k)) {
+                groupName = v;
+                break;
+              }
+            }
+          }
+        }
+        
+        if (!groups[groupName]) groups[groupName] = [];
+        groups[groupName].push(item);
+      });
+
+      // Fixed order for standard groups, then others
+      const order = [...sectorGroupOptions, '未分类'];
+      const result = [];
+      
+      // Add standard groups first
+      order.forEach(name => {
+        if (groups[name] && groups[name].length > 0) {
+          result.push({ name, items: groups[name] });
+          delete groups[name];
+        }
+      });
+      
+      // Add any remaining dynamic groups
+      Object.keys(groups).forEach(name => {
+        if (groups[name] && groups[name].length > 0) {
+          result.push({ name, items: groups[name] });
+        }
+      });
+      
+      return result;
+    });
+
+    const changeDays = (d) => {
+      currentDays.value = d;
+      const histRes = sectorHistoryPayload.value;
+      if (histRes) {
+        renderSectorHistory(histRes);
+        if (histRes?.indicators) watchIndicators.value = histRes.indicators || {};
+        if (Array.isArray(histRes?.watch)) watchList.value = histRes.watch;
+      }
+      if (sectorLifecyclePayload.value) renderSectorLifecycle(sectorLifecyclePayload.value);
+    };
+
+    const normalizeSectorList = (list) => {
+      const out = [];
+      const seen = new Set();
+      (Array.isArray(list) ? list : []).forEach((s) => {
+        const v = String(s || '').trim();
+        if (!v || seen.has(v)) return;
+        seen.add(v);
+        out.push(v);
+      });
+      return out;
+    };
+
+    const buildSectorQuery = () => {
+      const list = (sectorInput.value || '').split(',').map(s => s.trim()).filter(Boolean);
+      const uniq = Array.from(new Set(list));
+      if (!uniq.length) return '';
+      return 'sectors=' + encodeURIComponent(uniq.join(','));
+    };
+
+    const updateSectorWatch = async () => {
+      const list = (sectorInput.value || '').split(',').map(s => s.trim()).filter(Boolean);
+      const uniq = normalizeSectorList(list);
+      const next = uniq.join(',');
+      sectorInput.value = next;
+      localStorage.setItem('sector_input', next);
+      try {
+        await fetch(`${apiBase}/api/sector/watch-list`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ watch_list: uniq })
+        });
+      } catch (e) { console.error(e); }
+      watchList.value = uniq;
+      await fetchSectorData();
+    };
+
+    const fetchSectorProfile = async () => {
+      try {
+        const res = await fetch(`${apiBase}/api/sector/profile`);
+        if (!res.ok) throw new Error('bad');
+        const data = await res.json();
+        profileGroups.value = data?.groups || {};
+        profileUpdatedAt.value = data?.updated_at || '';
+        taxonomyOrder.value = Array.isArray(data?.category_order) ? data.category_order : [];
+        taxonomyParent.value = (data?.category_parent && typeof data.category_parent === 'object') ? data.category_parent : {};
+      } catch (e) { console.error(e); }
+    };
+
+    const saveSectorProfile = async () => {
+      profileSaving.value = true;
+      profileSaveMsg.value = '保存中...';
+      try {
+        const cleanedParent = {};
+        const parent = taxonomyParent.value && typeof taxonomyParent.value === 'object' ? taxonomyParent.value : {};
+        Object.keys(parent).forEach((k) => {
+          const sub = String(k || '').trim();
+          const top = String(parent[k] || '').trim();
+          if (!sub || !top) return;
+          cleanedParent[sub] = top;
+        });
+        const res = await fetch(`${apiBase}/api/sector/profile`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ groups: profileGroups.value || {}, category_order: taxonomyOrder.value || [], category_parent: cleanedParent })
+        });
+        if (!res.ok) throw new Error('bad');
+        const data = await res.json();
+        profileGroups.value = data?.groups || {};
+        profileUpdatedAt.value = data?.updated_at || '';
+        taxonomyOrder.value = Array.isArray(data?.category_order) ? data.category_order : (taxonomyOrder.value || []);
+        taxonomyParent.value = (data?.category_parent && typeof data.category_parent === 'object') ? data.category_parent : (taxonomyParent.value || {});
+        profileSaveMsg.value = '保存成功';
+      } catch (e) { console.error(e); }
+      profileSaving.value = false;
+    };
+
+    const addTopCategory = () => {
+      const name = String(newTopCategoryName.value || '').trim();
+      if (!name) return;
+      const list = Array.isArray(taxonomyOrder.value) ? taxonomyOrder.value.slice() : [];
+      if (!list.includes(name)) list.push(name);
+      taxonomyOrder.value = list;
+      newTopCategoryName.value = '';
+    };
+
+    const moveTopCategory = (name, dir) => {
+      const nm = String(name || '').trim();
+      if (!nm) return;
+      const list = Array.isArray(taxonomyOrder.value) ? taxonomyOrder.value.slice() : [];
+      const i = list.indexOf(nm);
+      if (i < 0) return;
+      const j = i + (dir === 'up' ? -1 : 1);
+      if (j < 0 || j >= list.length) return;
+      const tmp = list[i];
+      list[i] = list[j];
+      list[j] = tmp;
+      taxonomyOrder.value = list;
+    };
+
+    const removeTopCategory = (name) => {
+      const nm = String(name || '').trim();
+      if (!nm) return;
+      const list = (Array.isArray(taxonomyOrder.value) ? taxonomyOrder.value : []).filter((x) => x !== nm);
+      taxonomyOrder.value = list;
+    };
+
+    const resolveTopCategory = (subgroup) => {
+      const sub = String(subgroup || '').trim() || '未分类';
+      const parent = taxonomyParent.value && typeof taxonomyParent.value === 'object' ? taxonomyParent.value : {};
+      const top = String(parent[sub] || '').trim();
+      return top || sub;
+    };
+
+    const topCategoryIndex = (top) => {
+      const list = Array.isArray(taxonomyOrder.value) ? taxonomyOrder.value : [];
+      const i = list.indexOf(String(top || '').trim());
+      return i >= 0 ? i : 9999;
+    };
+
+    const taxonomySubgroups = computed(() => {
+      const fromSectors = Object.values(profileGroups.value || {}).map(v => String(v || '').trim()).filter(Boolean);
+      const fromMap = Object.keys(taxonomyParent.value || {}).map(v => String(v || '').trim()).filter(Boolean);
+      return Array.from(new Set([...fromSectors, ...fromMap, '未分类'])).filter(Boolean);
+    });
+
+    const fetchSectorProxy = async () => {
+      try {
+        const res = await fetch(`${apiBase}/api/sector/proxy`);
+        if (!res.ok) throw new Error('bad');
+        const data = await res.json();
+        proxyConfig.value = data || null;
+        const vars = data?.variants || {};
+        proxyEtf.value = { ...(vars?.etf || {}) };
+        proxyIndex.value = { ...(vars?.index || {}) };
+      } catch (e) { console.error(e); }
+    };
+
+    const normalizeEtfCode = (raw) => {
+      const v = String(raw || '').trim();
+      if (!v) return '';
+      if (/^(sh|sz)\d{6}$/i.test(v)) return v.toLowerCase();
+      if (/^\d{6}$/.test(v)) {
+        if (v.startsWith('15')) return `sz${v}`;
+        return `sh${v}`;
+      }
+      return v;
+    };
+
+    const saveSectorProxyOne = async (name) => {
+      const nm = String(name || '').trim();
+      if (!nm) return;
+      const etf = normalizeEtfCode(proxyEtf.value?.[nm] || '');
+      const idx = String(proxyIndex.value?.[nm] || '').trim();
+      const variants = {};
+      if (etf) variants.etf = { [nm]: etf };
+      if (idx) variants.index = { [nm]: idx };
+      if (!Object.keys(variants).length) return;
+      try {
+        const res = await fetch(`${apiBase}/api/sector/proxy`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ variants })
+        });
+        if (!res.ok) throw new Error('bad');
+        const data = await res.json();
+        proxyConfig.value = data || null;
+        const vars = data?.variants || {};
+        proxyEtf.value = { ...(vars?.etf || {}) };
+        proxyIndex.value = { ...(vars?.index || {}) };
+      } catch (e) { console.error(e); }
+      await fetchSectorData(true);
+    };
+
+    const sectorGroupSuggestions = computed(() => {
+      const base = Array.isArray(sectorGroupOptions) ? sectorGroupOptions : [];
+      const dyn = Object.values(profileGroups.value || {}).map(v => String(v || '').trim()).filter(Boolean);
+      const custom = Array.isArray(customSectorGroups.value) ? customSectorGroups.value : [];
+      const all = [...base, ...(taxonomyOrder.value || []), ...custom, ...dyn];
+      return Array.from(new Set(all)).filter(Boolean);
+    });
+
+    const addSectorGroupSuggestion = () => {
+      const name = String(newSectorGroupName.value || '').trim();
+      if (!name) return;
+      const list = Array.isArray(customSectorGroups.value) ? customSectorGroups.value.slice() : [];
+      if (!list.includes(name)) list.push(name);
+      customSectorGroups.value = list;
+      localStorage.setItem('sector_custom_groups', JSON.stringify(list));
+      newSectorGroupName.value = '';
+    };
+
+    const openSectorManager = async () => {
+      showSectorManager.value = true;
+      profileSaveMsg.value = '';
+      await fetchWatchList();
+      await fetchSectorProfile();
+      await fetchSectorProxy();
+      try {
+        const raw = localStorage.getItem('sector_custom_groups');
+        const list = raw ? JSON.parse(raw) : [];
+        customSectorGroups.value = Array.isArray(list) ? list.map(s => String(s || '').trim()).filter(Boolean) : [];
+      } catch (e) { customSectorGroups.value = []; }
+    };
+
+    const closeSectorManager = () => {
+      showSectorManager.value = false;
+      manageSectorName.value = '';
+    };
+
+    const addWatchSector = async () => {
+      const name = String(manageSectorName.value || '').trim();
+      if (!name) return;
+      const list = normalizeSectorList([...(watchList.value || []), name]);
+      try {
+        const res = await fetch(`${apiBase}/api/sector/watch-list`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ watch_list: list })
+        });
+        if (!res.ok) throw new Error('bad');
+        const data = await res.json();
+        const next = normalizeSectorList(data?.watch_list || list);
+        watchList.value = next;
+        const joined = next.join(',');
+        sectorInput.value = joined;
+        localStorage.setItem('sector_input', joined);
+      } catch (e) { console.error(e); }
+      manageSectorName.value = '';
+    };
+
+    const fetchRotationSequence = async () => {
+      const nowTs = Date.now();
+      if (rotationSequenceLoading.value) return;
+      if (rotationSequencePayload.value && rotationSequenceTs.value && nowTs - rotationSequenceTs.value < rotationSequenceCacheMs) return;
+      rotationSequenceLoading.value = true;
+      try {
+        const query = buildSectorQuery();
+        const url = `${apiBase}/api/sector/rotation/sequence?days=${rotationSequenceDays.value}${query ? '&' + query : ''}`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('bad');
+        const data = await res.json();
+        rotationSequencePayload.value = data || null;
+        rotationSequenceTs.value = nowTs;
+      } catch (e) { console.error(e); }
+      rotationSequenceLoading.value = false;
+    };
+
+    const warmupSectorCaches = async () => {
+      const nowTs = Date.now();
+      if (warmupTs.value && nowTs - warmupTs.value < warmupCacheMs) return;
+      warmupTs.value = nowTs;
+      try {
+        const query = buildSectorQuery();
+        const days = Math.max(60, currentDays.value || 0);
+        const url = `${apiBase}/api/sector/warmup?days=${days}${query ? '&' + query : ''}`;
+        fetch(url).catch(() => {});
+      } catch (e) { console.error(e); }
+    };
+
+    const forceRefreshSector = async () => {
+      sectorActionLoading.value = true;
+      sectorActionMsg.value = '刷新中...';
+      const mode = String(sectorPrimarySource.value || 'proxy');
+      if (mode !== 'proxy') {
+        try {
+          const query = buildSectorQuery();
+          const days = Math.max(60, currentDays.value || 0);
+          const url = `${apiBase}/api/sector/warmup?days=${days}${query ? '&' + query : ''}`;
+          await fetch(url).catch(() => {});
+        } catch (e) { console.error(e); }
+      }
+      rotationSequenceTs.value = 0;
+      try {
+        await fetchSectorData(true);
+        await fetchRotationSequence();
+        const day = sectorHistoryPayload.value?.day || sectorRotationPayload.value?.day || '';
+        sectorActionMsg.value = day ? `刷新完成 ${day}` : '刷新完成';
+      } catch (e) {
+        sectorActionMsg.value = '刷新失败';
+      }
+      sectorActionLoading.value = false;
+    };
+
+    const removeWatchSector = async (name) => {
+      const list = normalizeSectorList((watchList.value || []).filter((s) => s !== name));
+      try {
+        const res = await fetch(`${apiBase}/api/sector/watch-list`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ watch_list: list })
+        });
+        if (!res.ok) throw new Error('bad');
+        const data = await res.json();
+        const next = normalizeSectorList(data?.watch_list || list);
+        watchList.value = next;
+        const joined = next.join(',');
+        sectorInput.value = joined;
+        localStorage.setItem('sector_input', joined);
+      } catch (e) { console.error(e); }
+      const groups = { ...(profileGroups.value || {}) };
+      if (groups[name]) {
+        delete groups[name];
+        profileGroups.value = groups;
+        await saveSectorProfile();
+      }
+    };
+
+    const fetchRotationIntraday = async () => {
+      const nowTs = Date.now();
+      const cacheMs = isMarketOpen() ? intradayCacheMs : intradayIdleCacheMs;
+      if (sectorIntradayPayload.value && intradayTs.value && nowTs - intradayTs.value < cacheMs) return;
+      try {
+        const query = buildSectorQuery();
+        const intradayUrl = `${apiBase}/api/sector/rotation/intraday?view=${intradayView.value === 'detail' ? 'detail' : 'summary'}${query ? '&' + query : ''}`;
+        const res = await fetch(intradayUrl);
+        if (!res.ok) throw new Error('bad');
+        const intradayRes = await res.json();
+        sectorIntradayPayload.value = intradayRes || null;
+        intradayTs.value = nowTs;
+        if (intradayView.value === 'detail') renderIntradayWatchRank(watchIntradayRows.value);
+      } catch (e) {
+        sectorIntradayPayload.value = null;
+      }
+    };
+
+    const setIntradayView = async (v) => {
+      intradayView.value = v === 'detail' ? 'detail' : 'summary';
+      await fetchRotationIntraday();
+      if (intradayView.value === 'detail') renderIntradayWatchRank(watchIntradayRows.value);
+    };
+
+    const fetchSectorData = async (force = false) => {
+      const nowTs = Date.now();
+      const refreshMs = isMarketOpen() ? 60 * 1000 : 5 * 60 * 1000;
+      if (!force && sectorTs.value && nowTs - sectorTs.value < refreshMs) return;
+      sectorLoading.value = true;
+      try {
+        warmupSectorCaches();
+        const query = buildSectorQuery();
+        const requestedSectors = (() => {
+          try {
+            const params = new URLSearchParams(query || '');
+            const raw = (params.get('sectors') || '').trim();
+            if (!raw) return [];
+            return raw.split(',').map(s => s.trim()).filter(Boolean);
+          } catch (e) {
+            return [];
+          }
+        })();
+        const historyHasEnough = (histRes) => {
+          const history = histRes?.history || {};
+          const names = requestedSectors.length ? requestedSectors : (Array.isArray(histRes?.watch) ? histRes.watch : []);
+          const keys = names.length ? names : Object.keys(history);
+          if (!keys.length) return false;
+          const okCount = keys.filter((n) => Array.isArray(history?.[n]) && history[n].length >= 10).length;
+          const need = Math.max(1, Math.ceil(keys.length * 0.6));
+          return okCount >= need;
+        };
+        const mode = 'proxy';
+        const days = mode === 'proxy' ? Math.max(180, currentDays.value || 0) : Math.max(60, currentDays.value || 0);
+        const realtimeHist = isMarketOpen();
+        const historyUrl = `${apiBase}/api/sector/history?rt=${realtimeHist ? 1 : 0}&days=${days}${query ? '&' + query : ''}`;
+        const historyProxyUrl = `${apiBase}/api/sector/history_proxy?days=${days}&variant=${sectorVariant.value}${query ? '&' + query : ''}`;
+        const lifecycleUrl = mode === 'proxy'
+          ? `${apiBase}/api/sector/lifecycle_proxy?days=${days}&variant=${sectorVariant.value}${query ? '&' + query : ''}`
+          : `${apiBase}/api/sector/lifecycle?rt=0&days=${days}${query ? '&' + query : ''}`;
+        const rotationUrl = `${apiBase}/api/sector/rotation?rt=0&days=${Math.max(90, days)}${query ? '&' + query : ''}`;
+        const rotationProxyUrl = `${apiBase}/api/sector/rotation_proxy?days=${Math.max(90, days)}&variant=${sectorVariant.value}${query ? '&' + query : ''}`;
+        const signalsReq = fetch(`${apiBase}/api/signals`)
+          .then(r => r.json())
+          .then((data) => {
+            const rows = Array.isArray(data) ? data : (Array.isArray(data?.signals) ? data.signals : []);
+            const map = {};
+            (rows || []).forEach((it) => {
+              const sector = String(it?.sector || '').trim();
+              const signal = String(it?.signal || '').trim();
+              if (sector && signal) map[sector] = signal;
+            });
+            signalsMap.value = map;
+            return data;
+          })
+          .catch(() => ({}));
+        const panicReq = fetch(`${apiBase}/api/panic`)
+          .then(r => r.json())
+          .then((data) => {
+            panicPayload.value = data || null;
+            return data;
+          })
+          .catch(() => null);
+        const rankReq = fetch(`${apiBase}/api/sector/rank`)
+          .then(r => r.json())
+          .then((rankRes) => {
+            renderSectorRank(rankRes);
+            return rankRes;
+          });
+        const hasSourceErrors = (histRes) => {
+          const se = histRes?.source_errors || {};
+          const a = se?.daily && typeof se.daily === 'object' ? Object.keys(se.daily).length : 0;
+          const b = se?.minute && typeof se.minute === 'object' ? Object.keys(se.minute).length : 0;
+          return (a + b) > 0;
+        };
+        const fetchJson = (u) => fetch(u).then(r => r.json()).catch(() => null);
+        const histReq = (async () => {
+          let histRes = null;
+          let usedProxy = false;
+          if (mode === 'proxy') {
+            histRes = await fetchJson(historyProxyUrl);
+            usedProxy = true;
+            if (!historyHasEnough(histRes)) {
+              const em = await fetchJson(historyUrl);
+              if (historyHasEnough(em)) { histRes = em; usedProxy = false; }
+            }
+          } else {
+            histRes = await fetchJson(historyUrl);
+            if (mode === 'auto') {
+              if (!historyHasEnough(histRes) || histRes?.data_incomplete || hasSourceErrors(histRes)) {
+                const pr = await fetchJson(historyProxyUrl);
+                if (historyHasEnough(pr)) { histRes = pr; usedProxy = true; }
+              }
+            } else if (mode === 'em') {
+              if (!historyHasEnough(histRes)) {
+                const pr = await fetchJson(historyProxyUrl);
+                if (historyHasEnough(pr)) { histRes = pr; usedProxy = true; }
+              }
+            }
+          }
+          if (!historyHasEnough(histRes)) {
+            histRes = { ...(histRes || {}), data_incomplete: true };
+          } else if (usedProxy && mode !== 'proxy') {
+            histRes = { ...(histRes || {}), data_incomplete: true };
+          }
+          renderSectorHistory(histRes || {});
+          if (histRes?.indicators) watchIndicators.value = histRes.indicators || {};
+          if (Array.isArray(histRes?.watch)) watchList.value = histRes.watch;
+          sectorHistoryPayload.value = histRes || null;
+          return histRes;
+        })();
+        const aiReq = fetch(`${apiBase}/api/ai/sector-analysis`)
+          .then(r => r.json())
+          .catch(() => ({}));
+        const rotationReq = (mode === 'proxy' ? fetch(rotationProxyUrl) : fetch(rotationUrl))
+          .then(r => r.json())
+          .catch(() => null)
+          .then(async (rotRes) => {
+            let ok = rotRes && Array.isArray(rotRes.mainline) && rotRes.mainline.length;
+            if (!ok) {
+              try {
+                const pr = await fetch(mode === 'proxy' ? rotationUrl : rotationProxyUrl).then(x => x.json());
+                rotRes = pr || rotRes;
+              } catch (e) { /* ignore */ }
+            }
+            sectorRotationPayload.value = rotRes || null;
+            return rotRes;
+          });
+        let lifecyclePayload = null;
+        const lifecycleReq = fetch(lifecycleUrl)
+          .then(r => r.json())
+          .then((lifecycleRes) => {
+            lifecyclePayload = lifecycleRes || {};
+            renderSectorLifecycle(lifecycleRes);
+            sectorLifecyclePayload.value = lifecycleRes || null;
+            return lifecycleRes;
+          })
+          .catch(() => ({}));
+        const [rankRes, histRes, aiRes, rotationRes] = await Promise.all([rankReq, histReq, aiReq, rotationReq]);
+        await Promise.all([signalsReq, panicReq]);
+        await fetchRotationIntraday();
+        fetchRotationSequence();
+        const fallback = {
+          seesaw: buildSeesawAi(histRes || {}),
+          streak: buildStreakAi(rankRes || {}, histRes || {})
+        };
+        const parsed = parseSectorAiText(aiRes?.text || '');
+        marketAi.value = {
+          seesaw: parsed.seesaw || fallback.seesaw,
+          streak: parsed.streak || fallback.streak
+        };
+        await lifecycleReq;
+        localStorage.setItem(sectorCacheKey, JSON.stringify({
+          ts: nowTs,
+          rank: rankRes || {},
+          history: histRes || {},
+          lifecycle: lifecyclePayload || null,
+          rotation: rotationRes || null,
+          ai: aiRes || {}
+        }));
+        sectorTs.value = nowTs;
+      } catch (e) {
+        console.error("Sector module init failed", e);
+        marketAi.value = { seesaw: '数据加载失败', streak: '数据加载失败' };
+        sectorRotationPayload.value = null;
+      } finally {
+        sectorLoading.value = false;
+      }
+    };
+
+    const fetchWatchList = async () => {
+      try {
+        const res = await fetch(`${apiBase}/api/sector/watch-list`);
+        if (!res.ok) throw new Error('bad');
+        const data = await res.json();
+        const list = Array.isArray(data?.watch_list) ? data.watch_list : [];
+        if (list.length) {
+          const next = list.join(',');
+          sectorInput.value = next;
+          localStorage.setItem('sector_input', next);
+          watchList.value = list;
+        }
+      } catch (e) { console.error(e); }
+    };
+
+    const lastIndicator = (name) => {
+      const arr = watchIndicators.value[name] || [];
+      return arr.length ? arr[arr.length - 1] : {};
+    };
+
+    const renderSectorRank = (data) => {
+      if (!data) return;
+      
+      const toPct = (v) => {
+        if (v == null) return null;
+        if (typeof v === 'string') {
+          const n = Number(v.replace('%', ''));
+          return Number.isFinite(n) ? n : null;
+        }
+        const n = Number(v);
+        return Number.isFinite(n) ? n : null;
+      };
+
+      const renderChart = (domId, list, color, align) => {
+        const chartDom = document.getElementById(domId);
+        if (!chartDom || !list || list.length === 0) return;
+        
+        const myChart = window.echarts.init(chartDom);
+        const names = list.map(d => d.name);
+        const rawPcts = list.map(d => toPct(d.pct));
+        const barPcts = rawPcts.map(v => (Number.isFinite(v) ? Math.abs(+v.toFixed(1)) : 0));
+        const maxVal = Math.max(1, ...barPcts);
+        const labelFormatter = (params) => {
+          const item = list[params.dataIndex] || {};
+          const name = item.name || '';
+          const v = toPct(item.pct);
+          const pct = Number.isFinite(v) ? v.toFixed(1) : '-';
+          return `${name} ${pct}%`;
+        };
+        
+        const isLeft = align === 'left';
+        const option = {
+          tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+          grid: { left: 0, right: 0, top: 0, bottom: 0, containLabel: false },
+          xAxis: {
+            type: 'value',
+            min: 0,
+            max: maxVal,
+            inverse: isLeft,
+            boundaryGap: [0, 0],
+            axisLabel: { show: false },
+            axisLine: { show: false },
+            axisTick: { show: false },
+            splitLine: { show: false }
+          },
+          yAxis: {
+            type: 'category',
+            data: names,
+            inverse: true,
+            axisLabel: { show: false },
+            axisLine: { show: false },
+            axisTick: { show: false }
+          },
+          series: [
+            {
+              type: 'bar',
+              data: barPcts,
+              itemStyle: { color: color },
+              barWidth: 12,
+              label: {
+                show: true,
+                position: isLeft ? 'insideLeft' : 'insideRight',
+                align: isLeft ? 'left' : 'right',
+                formatter: labelFormatter,
+                distance: 0,
+                fontSize: 10
+              }
+            }
+          ]
+        };
+        myChart.setOption(option);
+      };
+
+      const downList = (data.down || []).slice().sort((a, b) => {
+        const av = toPct(a?.pct);
+        const bv = toPct(b?.pct);
+        if (!Number.isFinite(av) && !Number.isFinite(bv)) return 0;
+        if (!Number.isFinite(av)) return 1;
+        if (!Number.isFinite(bv)) return -1;
+        return av - bv;
+      });
+      const upList = (data.up || []).slice().sort((a, b) => {
+        const av = toPct(a?.pct);
+        const bv = toPct(b?.pct);
+        if (!Number.isFinite(av) && !Number.isFinite(bv)) return 0;
+        if (!Number.isFinite(av)) return 1;
+        if (!Number.isFinite(bv)) return -1;
+        return bv - av;
+      });
+      renderChart('sector-rank-down-chart', downList, '#4ade80', 'left');
+      renderChart('sector-rank-up-chart', upList, '#eb5454', 'right');
+    };
+
+    const renderSectorHistory = (data) => {
+      const chartDom = document.getElementById('sector-trend-chart');
+      const infoDom = document.getElementById('sector-info');
+      if (infoDom) {
+        let infoHtml = '';
+        if (data.watch && data.watch.length) {
+          infoHtml += `<div class="text-xs text-gray-500 mb-1">关注：${data.watch.join(' / ')}</div>`;
+        }
+        if (data.data_incomplete) {
+          infoHtml += `<div class="text-xs text-orange-600 mb-1">数据不全</div>`;
+        }
+        if (data.correlations && data.correlations.length > 0) {
+          const top = data.correlations[0];
+          infoHtml += `
+            <div class="bg-blue-50 border-l-4 border-blue-500 p-2 mb-2">
+              <div class="text-xs font-bold text-blue-700">跷跷板效应发现</div>
+              <div class="text-xs text-blue-600">
+                <span class="font-bold text-red-500">${top.pair[0]}</span> 与 <span class="font-bold text-blue-500">${top.pair[1]}</span> 
+                强负相关 (系数: ${top.val})。
+              </div>
+            </div>
+          `;
+        }
+        const minute = data.minute || {};
+        const items = Object.entries(minute).map(([name, item]) => {
+          const v = deriveFromSeries(item?.series || [], item?.prevClose ?? null);
+          if (v?.pct == null) return '';
+          const cls = pctColor(v.pct);
+          return `<span class="${cls}">${name} ${v.pct.toFixed(2)}%</span>`;
+        }).filter(Boolean);
+        if (items.length) {
+          infoHtml += `<div class="text-xs text-gray-600 mb-2">实时：${items.join(' / ')}</div>`;
+        }
+        infoDom.innerHTML = infoHtml;
+      }
+      
+      if (!chartDom || !data.history) return;
+      
+      const myChart = window.echarts.init(chartDom);
+      const series = [];
+      let dates = [];
+      const days = currentDays.value || 60; // Frontend Slicing Limit
+
+      const axisLabelInterval = (len) => {
+        if (!len || len <= 1) return 0;
+        const step = Math.max(1, Math.ceil(len / 6));
+        return (idx) => idx === 0 || idx === len - 1 || idx % step === 0;
+      };
+
+      if (days === 1) {
+        const minute = data.minute || {};
+        const entries = Object.entries(minute)
+          .map(([name, item]) => ({ name, series: item?.series || [], prevClose: item?.prevClose ?? null }))
+          .filter((it) => Array.isArray(it.series) && it.series.length >= 2);
+        if (entries.length) {
+          const axis = entries[0].series.map((p) => {
+            const t = String(p?.time || '');
+            if (t.includes(' ')) return t.split(' ')[1]?.slice(0, 5) || t.slice(-5);
+            if (t.includes('T')) return t.split('T')[1]?.slice(0, 5) || t.slice(-5);
+            if (t.length >= 5) return t.slice(-5);
+            return t;
+          });
+          entries.forEach((it) => {
+            const map = new Map();
+            it.series.forEach((p) => {
+              const t = String(p?.time || '');
+              const k = t.includes(' ') ? (t.split(' ')[1]?.slice(0, 5) || '') : (t.includes('T') ? (t.split('T')[1]?.slice(0, 5) || '') : (t.length >= 5 ? t.slice(-5) : t));
+              const v = pickPrice(p);
+              if (k && v != null) map.set(k, v);
+            });
+            const first = (typeof it.prevClose === 'number' && it.prevClose > 0) ? it.prevClose : pickPrice(it.series[0]);
+            if (!first) return;
+            const line = axis.map((k) => {
+              const v = map.get(k);
+              if (v == null) return null;
+              return +(((v - first) / first) * 100).toFixed(2);
+            });
+            series.push({ name: it.name, type: 'line', showSymbol: false, smooth: true, data: line, connectNulls: false, emphasis: { focus: 'series' } });
+          });
+          const option = {
+            title: { text: `当日相对走势 (归一化)`, left: 'center', textStyle: { fontSize: 12 } },
+            tooltip: {
+              trigger: 'axis',
+              formatter: function(params) {
+                let res = (params[0]?.axisValue || '') + '<br/>';
+                const rows = (Array.isArray(params) ? params : []).slice().filter(p => p && p.value != null);
+                rows.sort((a, b) => Number(b.value) - Number(a.value));
+                rows.forEach(p => {
+                  const color = p.value > 0 ? 'red' : 'green';
+                  res += `<span style="display:inline-block;margin-right:5px;border-radius:10px;width:9px;height:9px;background-color:${p.color}"></span>`;
+                  res += `${p.seriesName}: <span style="color:${color}">${p.value}%</span><br/>`;
+                });
+                return res;
+              }
+            },
+            legend: { type: 'scroll', bottom: 0, textStyle: { fontSize: 10 }, selectedMode: 'multiple' },
+            grid: { left: '5%', right: '5%', bottom: '20%', top: '20%', containLabel: true },
+            xAxis: { type: 'category', data: axis, axisLabel: { interval: axisLabelInterval(axis.length), showMaxLabel: true, showMinLabel: true } },
+            yAxis: { type: 'value', name: '累计%' },
+            series
+          };
+          myChart.setOption(option, true);
+          return;
+        }
+      }
+      
+      Object.keys(data.history).forEach(name => {
+        let hist = data.history[name];
+        if (!hist || hist.length === 0) return;
+        
+        // Frontend Slicing Logic:
+        // If backend returns more data than needed, slice it here to satisfy user request without backend changes.
+        if (hist.length > days) {
+          hist = hist.slice(-days);
+        }
+        
+        if (dates.length === 0) dates = hist.map(h => h.date);
+        
+        const base = hist[0].close;
+        if (!base) return;
+        const lineData = hist.map(h => +(((h.close - base) / base) * 100).toFixed(2));
+        
+        series.push({
+          name: name,
+          type: 'line',
+          showSymbol: false,
+          smooth: true,
+          data: lineData,
+          emphasis: { focus: 'series' }
+        });
+      });
+
+      const option = {
+        title: { text: `${days}日相对走势 (归一化)`, left: 'center', textStyle: { fontSize: 12 } },
+        tooltip: { 
+          trigger: 'axis',
+          formatter: function(params) {
+            let res = params[0].axisValue + '<br/>';
+            params.sort((a, b) => b.value - a.value);
+            params.forEach(p => {
+              const color = p.value > 0 ? 'red' : 'green';
+              res += `<span style="display:inline-block;margin-right:5px;border-radius:10px;width:9px;height:9px;background-color:${p.color}"></span>`;
+              res += `${p.seriesName}: <span style="color:${color}">${p.value}%</span><br/>`;
+            });
+            return res;
+          }
+        },
+        legend: { 
+          type: 'scroll', 
+          bottom: 0, 
+          textStyle: {fontSize: 10},
+          selectedMode: 'multiple' // Allow toggling
+        },
+        grid: { left: '5%', right: '5%', bottom: '20%', top: '20%', containLabel: true },
+        xAxis: { type: 'category', data: dates, axisLabel: { interval: axisLabelInterval(dates.length), showMaxLabel: true, showMinLabel: true } },
+        yAxis: { type: 'value', name: '累计%' },
+        series: series
+      };
+      myChart.setOption(option);
+    };
+
+    const renderSectorLifecycle = (data) => {
+      lifecycleItems.value = Array.isArray(data?.items) ? data.items : [];
+    };
+
+    const setRotationFilter = (v) => {
+      rotationFilter.value = v || '全部';
+    };
+
+    const setSectorVariant = async () => {
+      const next = 'etf';
+      sectorVariant.value = next;
+      await forceRefreshSector();
+    };
+
+    const setSectorPrimarySource = async () => {
+      const next = 'proxy';
+      sectorPrimarySource.value = next;
+      await fetchSectorData(true);
+    };
+
+    const backfillSectorDaily = async () => {
+      sectorActionLoading.value = true;
+      sectorActionMsg.value = '补全中：拉取ETF代理近6个月...';
+      const mode = String(sectorPrimarySource.value || 'proxy');
+      const query = buildSectorQuery();
+      const days = 180;
+      try {
+        if (mode === 'proxy') {
+          const urls = [
+            `${apiBase}/api/sector/history_proxy?days=${days}&variant=etf${query ? '&' + query : ''}`,
+            `${apiBase}/api/sector/lifecycle_proxy?days=${days}&variant=etf${query ? '&' + query : ''}`,
+            `${apiBase}/api/sector/rotation_proxy?days=${days}&variant=etf${query ? '&' + query : ''}`
+          ];
+          await Promise.all(urls.map(u => fetch(u).then(r => r.json()).catch(() => null)));
+        } else {
+          const url = `${apiBase}/api/sector/warmup?days=${days}${query ? '&' + query : ''}`;
+          await fetch(url).catch(() => {});
+        }
+        await fetchSectorData(true);
+        const day = sectorHistoryPayload.value?.day || sectorRotationPayload.value?.day || '';
+        sectorActionMsg.value = day ? `补全完成 ${day}` : '补全完成';
+      } catch (e) {
+        sectorActionMsg.value = '补全失败';
+      }
+      sectorActionLoading.value = false;
+    };
+
+    const fetchEmProbe = async () => {
+      try {
+        const list = (watchList.value || []).filter(Boolean);
+        const sector = list.length ? list[0] : '云计算';
+        const url = `${apiBase}/api/sector/em_probe?sector=${encodeURIComponent(sector)}&days=30`;
+        const data = await fetch(url).then(r => r.json()).catch(() => null);
+        emProbe.value = data || null;
+      } catch (e) { emProbe.value = null; }
+    };
+
+    const rotationKey = (m, idx) => {
+      const name = String(m?.['板块名称'] || m?.name || '').trim();
+      return name || `idx-${idx}`;
+    };
+
+    const isRotationExpanded = (m, idx) => {
+      const key = rotationKey(m, idx);
+      return !!rotationExpanded.value[key];
+    };
+
+    const toggleRotationExpand = (m, idx) => {
+      const key = rotationKey(m, idx);
+      rotationExpanded.value = {
+        ...rotationExpanded.value,
+        [key]: !rotationExpanded.value[key]
+      };
+    };
+
+    const buildRotationMarkdown = () => {
+      const data = sectorRotationPayload.value;
+      if (!data) return '';
+      const day = data.day || '';
+      const rotation = data.rotation || {};
+      const lines = [];
+      lines.push(`# 主线&轮动盘后报告 ${day}`);
+      lines.push('');
+      lines.push(`- 领先：${rotation.leader || '-'}`);
+      lines.push(`- 跷跷板：${rotation.seesaw || '-'}`);
+      lines.push(`- 扩散：${rotation.diffusion || '-'}`);
+      lines.push(`- 共振：${rotation.resonance ? '是' : '否'}`);
+      lines.push('');
+      lines.push('## 主线列表');
+      const list = data.mainline || [];
+      if (!list.length) {
+        lines.push('- 暂无');
+        return lines.join('\n');
+      }
+      list.forEach((m, idx) => {
+        const name = m?.['板块名称'] || `主线${idx + 1}`;
+        lines.push(`### ${idx + 1}. ${name}`);
+        lines.push(`- 动能：${m?.['动能'] || '-'}`);
+        lines.push(`- 资金行为：${m?.['资金行为'] || '-'}`);
+        lines.push(`- 操作建议：${m?.['操作建议'] || '-'}`);
+        if (Array.isArray(m?.groups) && m.groups.length) {
+          lines.push(`- 组别：${m.groups.join(' / ')}`);
+        }
+        const p3 = m?.prob_view?.['3d'] || {};
+        const p5 = m?.prob_view?.['5d'] || {};
+        lines.push(`- 概率3日：涨${p3.up_prob ?? '-'} 震${p3.range_prob ?? '-'} 回撤${p3.drawdown_risk ?? '-'}`);
+        lines.push(`- 概率5日：涨${p5.up_prob ?? '-'} 震${p5.range_prob ?? '-'} 回撤${p5.drawdown_risk ?? '-'}`);
+        const exec = m?.exec_view || {};
+        const pos = exec.position || {};
+        lines.push(`- 执行：${exec.action || '-'} 仓位${pos.min ?? '-'}-${pos.max ?? '-'} 偏好${exec.horizon_prefer === '3d' ? '3日' : '5日'}`);
+        const triggers = m?.triggers || {};
+        lines.push(`- 确认：${triggers.confirm || '-'}`);
+        lines.push(`- 否决：${triggers.invalidate || '-'}`);
+        const news = m?.news_view || {};
+        if (news?.risk_tags?.length) lines.push(`- 新闻风险：${news.risk_tags.join(' / ')}`);
+        if (news?.top_titles?.length) lines.push(`- 相关新闻：${news.top_titles.join('；')}`);
+        if (m?.['归因说明']) lines.push(`- 归因：${m['归因说明']}`);
+        lines.push('');
+      });
+      return lines.join('\n');
+    };
+
+    const exportRotationJson = () => {
+      const data = sectorRotationPayload.value;
+      if (!data) return;
+      const json = JSON.stringify(data, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `sector-rotation-${data.day || 'latest'}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 500);
+    };
+
+    const copyRotationMarkdown = async () => {
+      const text = buildRotationMarkdown();
+      if (!text) return;
+      if (navigator?.clipboard?.writeText) {
+        try {
+          await navigator.clipboard.writeText(text);
+          return;
+        } catch (e) {
+          return;
+        }
+      }
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    };
+
+    const fetchOverviewHistory = async (force) => {
+      const nowTs = Date.now();
+      if (!force && overviewHistoryTs.value && nowTs - overviewHistoryTs.value < 5 * 60 * 1000) return;
+      try {
+        const res = await fetch(`${apiBase}/api/overview/history`);
+        if (!res.ok) throw new Error('bad');
+        const data = await res.json();
+        if (!data?.series) return;
+        const seriesValues = Object.values(data.series || {});
+        const hasDailySeries = seriesValues.some(arr => Array.isArray(arr) && arr.length);
+        const hasDailyVolume = Array.isArray(data.volume) && data.volume.length;
+        if (!hasDailySeries && !hasDailyVolume) return;
+        overviewHistoryTs.value = nowTs;
+        overviewHistoryDay.value = data?.day || '';
+        overviewDailyReady.value = true;
+        Object.entries(dailyMap).forEach(([el, key]) => {
+          const arr = data.series[key] || [];
+          const len = Array.isArray(arr) ? arr.length : 0;
+          dailySeriesLen[key] = len;
+          const cached = minuteCache[el];
+          if (cached?.series?.length) return;
+          if (lockIndexSparks && indexSparkEls.has(el)) return;
+          if (len >= minDailyPoints) renderDailySpark(el, arr);
+        });
+      } catch (e) { console.error(e); }
+    };
+
+    const refreshAll = async () => {
+      const p1 = fetchSnapshot(false);
+      const p2 = refreshMinuteAll();
+      const p3 = fetchOverviewHistory(false);
+      const p4 = fetchBreadth();
+      await Promise.all([p1, p2, p3, p4]);
+      if (activeTab.value === 'market') await fetchSectorData(false);
+    };
+
+    const getBeijingParts = () => {
+      try {
+        const parts = new Intl.DateTimeFormat('en-GB', {
+          timeZone: 'Asia/Shanghai',
+          hour: '2-digit',
+          minute: '2-digit',
+          weekday: 'short',
+          hour12: false
+        }).formatToParts(new Date());
+        const map = {};
+        parts.forEach((p) => { map[p.type] = p.value; });
+        const hour = Number(map.hour);
+        const minute = Number(map.minute);
+        const dayMap = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 0 };
+        const weekday = dayMap[map.weekday] ?? null;
+        if (!Number.isFinite(hour) || !Number.isFinite(minute) || weekday == null) return null;
+        return { weekday, minutes: hour * 60 + minute };
+      } catch (e) {
+        return null;
+      }
+    };
+
+    const isMarketOpen = () => {
+      const parts = getBeijingParts();
+      if (!parts) return false;
+      const day = parts.weekday;
+      if (day === 0 || day === 6) return false;
+      const minutes = parts.minutes;
+      const morning = minutes >= 570 && minutes <= 690;
+      const afternoon = minutes >= 780 && minutes <= 900;
+      return morning || afternoon;
+    };
+
+    const refreshAi = async (force) => {
+      if (!force && !isMarketOpen()) return;
+      await fetchSnapshot(true);
+    };
+    
+    const selectTab = async (tab) => {
+      activeTab.value = tab;
+      if (tab === 'market') await fetchSectorData(true);
+      if (tab === 'news') await loadNews(false);
+    };
+
+    const init = async () => {
+      try {
+        const cached = localStorage.getItem(sectorCacheKey);
+        if (cached) {
+          const data = JSON.parse(cached);
+          if (data?.rank) renderSectorRank(data.rank);
+          if (data?.history) {
+            renderSectorHistory(data.history);
+            if (data.history?.indicators) watchIndicators.value = data.history.indicators || {};
+            if (Array.isArray(data.history?.watch)) watchList.value = data.history.watch;
+          }
+          if (data?.lifecycle) renderSectorLifecycle(data.lifecycle);
+          if (data?.rotation) sectorRotationPayload.value = data.rotation || null;
+          if (data?.ai) {
+            const parsed = parseSectorAiText(data.ai?.text || '');
+            marketAi.value = {
+              seesaw: parsed.seesaw || marketAi.value.seesaw,
+              streak: parsed.streak || marketAi.value.streak
+            };
+          }
+          if (Number.isFinite(data?.ts)) sectorTs.value = data.ts;
+        }
+      } catch (e) { console.error(e); }
+      fetchPrompt();
+      fetchSectorPrompt();
+      await fetchWatchList();
+      await fetchSectorProfile();
+      await refreshAll();
+      await loadNews(false);
+      await refreshAi(false);
+    };
+    init();
+    const fastTick = async () => {
+      if (!isMarketOpen()) return;
+      const p1 = fetchSnapshot(false);
+      const p2 = refreshMinuteAll();
+      const p3 = fetchBreadth();
+      await Promise.all([p1, p2, p3]).catch(() => {});
+    };
+    const slowTick = async () => {
+      if (!isMarketOpen()) return;
+      await fetchOverviewHistory(false);
+      if (activeTab.value === 'market') await fetchSectorData(false);
+    };
+    setInterval(fastTick, 60 * 1000);
+    setInterval(slowTick, 5 * 60 * 1000);
+    setInterval(() => refreshAi(false), 30 * 60 * 1000);
+
+    return { activeTab, aiBrief, aiUpdatedAt, aiSections, marketAi, promptText, promptOutput, promptLoading, promptError, runPromptDebug, sectorPromptText, sectorPromptOutput, sectorPromptLoading, sectorPromptError, runSectorPromptDebug, refreshAi, market, bonds, extra, sectors, sentiment, pctColor, fmtPct, fmtVolumeCmp, fmtHeatDelta, rotationMonthSpan, setRotationMonthSpan, rotationMatrixAxis, rotationMatrixMonths, rotationMatrixGroups, rotationUpcycleStats6m, refreshAll, dataTs, fmtTime, fmtNewsTime, sectorInput, updateSectorWatch, watchList, watchIndicators, lastIndicator, currentDays, lifecycleItems, sectorRotationPayload, sectorIntradayPayload, sectorLoading, changeDays, getStageColor, getAdviceColor, badgeClass, fmtProb, selectTab, newsItems, newsLoading, heatmapItems, heatmapMax, getImpact, getImpactClass, importanceStars, loadNews, macroNews, geoNews, focusNews, groupedFocusNews, rotationFilters, rotationFilter, rotationMainline, setRotationFilter, toggleRotationExpand, isRotationExpanded, exportRotationJson, copyRotationMarkdown, watchIntradayRows, rotationTopGroups, intradayBars, intradaySignal, intradayReason, intradayMax, intradayView, setIntradayView, rotationSequencePayload, rotationSequenceDays, fetchRotationSequence, riskSummary, panicPayload, showSectorManager, profileGroups, profileUpdatedAt, profileSaveMsg, profileSaving, taxonomyOrder, taxonomyParent, newTopCategoryName, addTopCategory, moveTopCategory, removeTopCategory, taxonomySubgroups, newSectorGroupName, addSectorGroupSuggestion, manageSectorName, sectorGroupOptions, sectorGroupSuggestions, proxyEtf, proxyIndex, saveSectorProxyOne, openSectorManager, closeSectorManager, addWatchSector, removeWatchSector, saveSectorProfile, forceRefreshSector, sectorPrimarySource, setSectorPrimarySource, backfillSectorDaily, emProbe, fetchEmProbe, sectorActionLoading, sectorActionMsg, apiBase, apiBaseInput, applyApiBase, sectorVariant, setSectorVariant, sectorVariantLabel };
+  }
+}).mount('#app');

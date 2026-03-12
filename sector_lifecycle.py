@@ -8,6 +8,30 @@ from sector_lifecycle_config import (
 import pandas as pd
 
 
+METRIC_SCHEMA = [
+    {"key": "Alpha_5", "name": "5日超额收益", "unit": "ratio", "display_unit": "%", "scale": 100, "decimals": 1},
+    {"key": "Alpha_20", "name": "20日超额收益", "unit": "ratio", "display_unit": "%", "scale": 100, "decimals": 1},
+    {"key": "Pct", "name": "当日涨跌", "unit": "%", "display_unit": "%", "scale": 1, "decimals": 2},
+    {"key": "Bias_20", "name": "20日乖离率", "unit": "%", "display_unit": "%", "scale": 1, "decimals": 2},
+    {"key": "Amount_Share", "name": "资金关注度", "unit": "ratio", "display_unit": "%", "scale": 100, "decimals": 2},
+    {"key": "Amount_Share_MA5", "name": "资金关注度(5日)", "unit": "ratio", "display_unit": "%", "scale": 100, "decimals": 2},
+    {"key": "Amount_Share_Change", "name": "资金热度变化", "unit": "ratio", "display_unit": "%", "scale": 100, "decimals": 0},
+    {"key": "MA5", "name": "5日均线", "unit": "price", "display_unit": "", "scale": 1, "decimals": 2},
+    {"key": "MA20", "name": "20日均线", "unit": "price", "display_unit": "", "scale": 1, "decimals": 2},
+    {"key": "MA60", "name": "60日均线", "unit": "price", "display_unit": "", "scale": 1, "decimals": 2},
+    {"key": "MA5_Slope", "name": "5日均线斜率", "unit": "price/day", "display_unit": "", "scale": 1, "decimals": 4},
+    {"key": "MA60_Slope", "name": "60日均线斜率", "unit": "price/day", "display_unit": "", "scale": 1, "decimals": 4},
+]
+
+
+def get_metric_schema() -> List[Dict[str, Any]]:
+    return METRIC_SCHEMA
+
+
+def get_display_name_map() -> Dict[str, str]:
+    return {m["key"]: m["name"] for m in METRIC_SCHEMA if m.get("key") and m.get("name")}
+
+
 def calculate_alpha(sector_return: float, market_return: float) -> float:
     if market_return == 0:
         return sector_return
@@ -139,24 +163,48 @@ def determine_position_area(alpha_20: Optional[float], amount_share_ma5: float) 
     return "冰点区"
 
 
-def determine_momentum(alpha_5: Optional[float], ma5_slope: float, close: float, ma5: float) -> str:
-    a = (alpha_5 or 0) * 100
+def determine_momentum(alpha_5: Optional[float], ma5_slope: float, close: float, ma5: float, alpha_5_q: Optional[float] = None) -> str:
+    """
+    动能判断（使用分位数阈值）
+
+    参数:
+    - alpha_5: 5日超额收益率（百分比，如 0.03 表示 3%）
+    - ma5_slope: 5日均线斜率
+    - close: 当前收盘价
+    - ma5: 5日均线
+    - alpha_5_q: Alpha_5 在历史数据中的分位数位置（0~1），None 时使用绝对值判断
+    """
     above = close > ma5 if ma5 else False
-    if a > 3 and ma5_slope > 0 and above:
-        return "强势向上"
-    if a > 3 and ma5_slope < 0 and not above:
-        return "强势向下"
-    if 1 <= a <= 3 and ma5_slope > 0 and above:
-        return "偏强向上"
-    if 1 <= a <= 3 and ma5_slope < 0 and not above:
-        return "偏强向下"
-    if -1 <= a <= 1:
+
+    if alpha_5_q is not None:
+        # 分位数方案（当前实现：70% 分位数）
+        if alpha_5_q > 0.7 and ma5_slope > 0 and above:
+            return "强势向上"
+        if alpha_5_q > 0.5 and ma5_slope > 0:
+            return "偏强向上"
+        if alpha_5_q < 0.3 and ma5_slope < 0 and not above:
+            return "弱势向下"
+        if alpha_5_q < 0.3:
+            return "弱势反弹"
         return "中性震荡"
-    if a < -1 and ma5_slope < 0 and not above:
-        return "弱势向下"
-    if a < -1 and ma5_slope > 0 and above:
-        return "弱势反弹"
-    return "中性震荡" if above else "弱势向下"
+    else:
+        # 文档原方案（绝对值判断，保留兼容）
+        a = (alpha_5 or 0) * 100
+        if a > 3 and ma5_slope > 0 and above:
+            return "强势向上"
+        if a > 3 and ma5_slope < 0 and not above:
+            return "强势向下"
+        if 1 <= a <= 3 and ma5_slope > 0 and above:
+            return "偏强向上"
+        if 1 <= a <= 3 and ma5_slope < 0 and not above:
+            return "偏强向下"
+        if -1 <= a <= 1:
+            return "中性震荡"
+        if a < -1 and ma5_slope < 0 and not above:
+            return "弱势向下"
+        if a < -1 and ma5_slope > 0 and above:
+            return "弱势反弹"
+        return "中性震荡" if above else "弱势向下"
 
 
 def determine_fund_behavior(
@@ -165,12 +213,35 @@ def determine_fund_behavior(
     amount_share_p80: Optional[float],
     amount_share_high_20: Optional[float],
     bias_20: float,
-    pct: float
+    pct: float,
+    amount_share_change_q80: Optional[float] = None
 ) -> str:
+    """
+    资金行为判断（使用分位数阈值）
+
+    参数:
+    - amount_share_pct: 当前成交占比
+    - amount_share_change: 成交占比相对MA5的变化率
+    - amount_share_p80: Amount_Share的历史80分位
+    - amount_share_high_20: Amount_Share近20日高点
+    - bias_20: 20日乖离率
+    - pct: 日涨跌幅
+    - amount_share_change_q80: Amount_Share_Change的历史80分位，None时使用绝对值0.5
+    """
     if pct < -3 and amount_share_p80 is not None and amount_share_pct > amount_share_p80:
         return "恐慌出逃"
-    if amount_share_change is not None and amount_share_change >= 0.5 and pct > 0:
-        return "放量启动"
+
+    # 分位数方案：Amount_Share_Change > 历史80分位
+    if amount_share_change is not None and pct > 0:
+        if amount_share_change_q80 is not None:
+            # 使用分位数阈值
+            if amount_share_change > amount_share_change_q80:
+                return "放量启动"
+        else:
+            # 使用绝对值阈值（向后兼容）
+            if amount_share_change >= 0.5:
+                return "放量启动"
+
     if amount_share_high_20 is not None and amount_share_high_20 > 0:
         decline = (amount_share_high_20 - amount_share_pct) / amount_share_high_20
         if decline >= 0.20:
@@ -376,6 +447,13 @@ def analyze_sector(
     market_amount_df: Optional[pd.DataFrame] = None,
     history_df: Optional[pd.DataFrame] = None
 ) -> Dict[str, Any]:
+    asof_date = None
+    if sector_df is not None and not sector_df.empty and "date" in sector_df.columns:
+        try:
+            asof_date = pd.to_datetime(sector_df["date"].iloc[-1], errors="coerce")
+            asof_date = asof_date.date().isoformat() if pd.notna(asof_date) else None
+        except Exception:
+            asof_date = None
     alpha_5 = calculate_alpha_n_days(
         list(zip(sector_df["date"], sector_df["close"])),
         list(zip(benchmark_df["date"], benchmark_df["close"])) if benchmark_df is not None else [],
@@ -386,6 +464,37 @@ def analyze_sector(
         list(zip(benchmark_df["date"], benchmark_df["close"])) if benchmark_df is not None else [],
         days=20
     )
+
+    # 计算 Alpha_5 的历史分位数位置
+    alpha_5_q = None
+    if history_df is not None and not history_df.empty and len(history_df) >= 60:
+        try:
+            history_df = history_df.copy()
+            history_df["date"] = pd.to_datetime(history_df["date"], errors="coerce")
+            history_df = history_df.dropna(subset=["date"]).sort_values("date")
+
+            historical_alpha5 = []
+            benchmark_hist_df = benchmark_df if benchmark_df is not None else None
+
+            for i in range(60, min(len(history_df), 300)):
+                hist_cut = history_df.iloc[:i+1]
+                if len(hist_cut) < 6:
+                    continue
+
+                bench_cut = benchmark_hist_df.iloc[:i+1] if benchmark_hist_df is not None else None
+
+                hist_alpha_5 = calculate_alpha_n_days(
+                    list(zip(hist_cut["date"], hist_cut["close"])),
+                    list(zip(bench_cut["date"], bench_cut["close"])) if bench_cut is not None else [],
+                    days=5
+                )
+                if hist_alpha_5 is not None:
+                    historical_alpha5.append(hist_alpha_5)
+
+            if historical_alpha5 and alpha_5 is not None:
+                alpha_5_q = sum(1 for x in historical_alpha5 if x < alpha_5) / len(historical_alpha5)
+        except Exception:
+            alpha_5_q = None
 
     amount_share = sector_df["amount"].iloc[-1] if len(sector_df) else 0
     amount_share_history = sector_df["amount"].tolist() if len(sector_df) else []
@@ -413,12 +522,33 @@ def analyze_sector(
     amount_share_pct = calculate_amount_share(amount_share, total_amount) if total_amount > 0 else 0
     amount_share_ma5_pct = calculate_amount_share_ma5(amount_share_series) if amount_share_series else amount_share_pct
     amount_share_change = amount_share_pct / amount_share_ma5_pct - 1 if amount_share_ma5_pct else None
+
+    # 计算 Amount_Share 的历史80分位
     amount_share_p80 = None
     if amount_share_series:
         try:
             amount_share_p80 = float(pd.Series(amount_share_series).quantile(0.8))
         except:
             amount_share_p80 = None
+
+    # 计算 Amount_Share_Change 的历史80分位
+    amount_share_change_q80 = None
+    if amount_share_series and len(amount_share_series) >= 20:
+        try:
+            # 计算历史 Amount_Share_Change
+            historical_changes = []
+            for i in range(5, len(amount_share_series)):
+                if i >= 5:
+                    ma5 = np.mean(amount_share_series[max(0, i-5):i+1])
+                    if ma5 > 0:
+                        change = amount_share_series[i] / ma5 - 1
+                        historical_changes.append(change)
+
+            if historical_changes:
+                amount_share_change_q80 = float(pd.Series(historical_changes).quantile(0.8))
+        except:
+            amount_share_change_q80 = None
+
     amount_share_high_20 = max(amount_share_series[-20:]) if amount_share_series else None
 
     ma5_series = sector_df["close"].rolling(5).mean() if len(sector_df) else pd.Series()
@@ -481,14 +611,22 @@ def analyze_sector(
 
     combo_info = get_combo_info(position_info["位置"], stage)
     pct_val = sector_df["close"].pct_change().iloc[-1] * 100 if len(sector_df) > 1 else 0
-    momentum = determine_momentum(alpha_5, ma5_slope, close, ma5)
+    try:
+        if pct_val is None or not pd.notna(pct_val):
+            pct_val = 0
+        if abs(float(pct_val)) > 30:
+            pct_val = 0
+    except Exception:
+        pct_val = 0
+    momentum = determine_momentum(alpha_5, ma5_slope, close, ma5, alpha_5_q)
     behavior = determine_fund_behavior(
         amount_share_pct=amount_share_pct,
         amount_share_change=amount_share_change,
         amount_share_p80=amount_share_p80,
         amount_share_high_20=amount_share_high_20,
         bias_20=bias_20,
-        pct=pct_val
+        pct=pct_val,
+        amount_share_change_q80=amount_share_change_q80
     )
     advice = determine_advice(momentum, behavior)
     momentum_reason = build_momentum_reason(momentum, alpha_5)
@@ -505,8 +643,13 @@ def analyze_sector(
 
     return {
         "板块名称": sector_name,
+        "数据日期": asof_date,
         "基准指数": benchmark_name,
         "相关性": round(float(benchmark_corr), 4) if benchmark_corr is not None else None,
+        "name": sector_name,
+        "asof_date": asof_date,
+        "benchmark_name": benchmark_name,
+        "benchmark_corr": round(float(benchmark_corr), 6) if benchmark_corr is not None else None,
         "板块位置": position_area,
         "动能": momentum,
         "资金行为": behavior,
@@ -521,18 +664,25 @@ def analyze_sector(
         "指标数据": {
             "Alpha_5": round(alpha_5, 4) if alpha_5 is not None else None,
             "Alpha_20": round(alpha_20, 4) if alpha_20 is not None else None,
+            "Alpha_5_Pct": round(alpha_5 * 100, 2) if alpha_5 is not None else None,
+            "Alpha_20_Pct": round(alpha_20 * 100, 2) if alpha_20 is not None else None,
             "Amount_Share": round(amount_share_pct, 4),
             "Amount_Share_MA5": round(amount_share_ma5_pct, 4),
             "Amount_Share_Change": round(amount_share_change, 4) if amount_share_change is not None and not pd.isna(amount_share_change) else None,
+            "Amount_Share_Pct": round(amount_share_pct * 100, 2),
+            "Amount_Share_MA5_Pct": round(amount_share_ma5_pct * 100, 2),
+            "Amount_Share_Change_Pct": round(amount_share_change * 100, 2) if amount_share_change is not None and not pd.isna(amount_share_change) else None,
             "MA5": round(ma5, 2) if ma5 else 0,
             "MA20": round(ma20, 2) if ma20 else 0,
             "MA60": round(ma60, 2) if ma60 else 0,
             "MA5_Slope": round(ma5_slope, 4) if ma5_slope else 0,
             "MA60_Slope": round(ma60_slope, 4) if ma60_slope else 0,
             "Bias_20": round(bias_20, 2),
+            "Bias_20_Pct": round(bias_20, 2),
             "Bias_20_History_Max": round(bias_20_history_max, 2) if bias_20_history_max is not None else None,
             "Bias_20_History_Min": round(bias_20_history_min, 2) if bias_20_history_min is not None else None,
             "Pct": round(pct_val, 2),
+            "Pct_Pct": round(pct_val, 2),
             "alpha_5": round(alpha_5 * 100, 2) if alpha_5 is not None else None,
             "alpha_20": round(alpha_20 * 100, 2) if alpha_20 is not None else None,
             "amount_share": round(amount_share_pct * 100, 2),

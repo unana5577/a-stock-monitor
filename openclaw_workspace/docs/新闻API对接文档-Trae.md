@@ -49,6 +49,7 @@
 | `url` | string | 原文链接 | `"https://database.caixin.com/..."` |
 | `tag` | string | 标签 | `"市场动态"` |
 | `fetch_time` | string | 抓取时间 | `"2026-02-25T13:00:16"` |
+| `time_slot` | string \| null | 时间分片 | `"pre_market"` / `"09:10"` / `null` |
 
 ### classify 分类字段
 
@@ -96,6 +97,7 @@
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | `date` | string | ✅ | 日期，格式 `YYYY-MM-DD` |
+| `time_slot` | string | ❌ | 时间分片筛选（`pre_market` / `09:10` 等） |
 | `sector` | string | ❌ | 板块筛选 |
 | `level` | string | ❌ | 等级筛选 `P0`/`P1`/`P2`/`P3` |
 | `limit` | number | ❌ | 返回数量，默认50，最大500 |
@@ -116,6 +118,7 @@ curl "http://localhost:8787/api/news?date=2026-02-25&level=P0&limit=10"
 ```json
 {
   "date": "2026-02-25",
+  "time_slot": null,
   "total": 55,
   "filtered": 55,
   "news": [

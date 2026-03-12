@@ -12,14 +12,17 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list && \
     sed -i 's/security.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list
 
-# 安装系统依赖 (curl_cffi/pandas 可能需要编译环境)
+# 安装系统依赖 + Node.js (需要支持 ?? / ?. 等语法，避免旧版 node 报错)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     g++ \
     make \
     libffi-dev \
-    nodejs \
-    npm \
+    curl \
+    ca-certificates \
+    gnupg \
+    && curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 # 升级 pip
@@ -42,7 +45,5 @@ COPY . .
 # 暴露端口
 EXPOSE 8787
 
-# 启动命令 (先预热数据，再启动服务)
-CMD python fetch_sector_data.py rank && \
-    python fetch_sector_data.py history_dynamic "半导体,云计算,有色金属,煤炭" 20 && \
-    node server.js
+# 启动命令 (仅启动Node.js服务)
+CMD node server.js

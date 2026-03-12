@@ -180,23 +180,23 @@ def analyze_etf_dynamic_benchmark(etf_config, days=60):
         volume_ratio_80 = hist['volume_ratio'].quantile(0.8)
         volume_ratio_20 = hist['volume_ratio'].quantile(0.2)
 
-        # 判断相对强度
-        if rel_strength > 1:
-            rel_status = '强势'
-        elif rel_strength < -1:
-            rel_status = '弱势'
+        # 判断相对强度（直接比较，无阈值）
+        if rel_strength > 0:
+            rel_status = '��势'
+        elif rel_strength < 0:
+            rel_status = '弱于大盘'
         else:
-            rel_status = '持平'
+            rel_status = '与大盘持平'
 
         # 判断量价行为
         if row['volume_ratio'] > volume_ratio_80:
             if row['pct'] > 0:
-                if rel_status == '强势':
+                if rel_status == '强于大盘':
                     behavior = "放量强势上涨"
                 else:
                     behavior = "放量弱势上涨"
             elif row['pct'] < 0:
-                if rel_status == '强势' or rel_status == '持平':
+                if rel_status == '强于大盘' or rel_status == '与大盘持平':
                     behavior = "放量抗跌"
                 else:
                     behavior = "放量下跌"
@@ -204,12 +204,12 @@ def analyze_etf_dynamic_benchmark(etf_config, days=60):
                 behavior = "放量平盘"
         elif row['volume_ratio'] < volume_ratio_20:
             if row['pct'] > 0:
-                if rel_status == '强势':
+                if rel_status == '强于大盘':
                     behavior = "缩量强势上涨"
                 else:
                     behavior = "缩量虚涨"
             elif row['pct'] < 0:
-                if rel_status == '强势':
+                if rel_status == '强于大盘':
                     behavior = "缩量抗跌"
                 else:
                     behavior = "缩量下跌"
