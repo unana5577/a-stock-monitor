@@ -24,7 +24,7 @@ if (fs.existsSync(envPath)) {
 const ai = require('./ai');
 
 const PORT = process.env.PORT || 8787;
-const CACHE_TTL_MS = 60_000;
+const CACHE_TTL_MS = 30_000;  // 修改为30秒，确保每分钟都能获取最新数据
 const OVERVIEW_CACHE_REV = 2;
 const PROXY_FILE = path.join(__dirname, 'data', 'sector-proxy.json');
 const HOLIDAY_FILE = path.join(__dirname, 'config', 'holidays.json');
@@ -595,7 +595,9 @@ async function fetchTencentDaily(code, limit = 180) {
           try {
             const item = JSON.parse(line);
             if (item.date) data.push(item);
-          } catch (e) {}
+          } catch (e) {
+            // 忽略JSON解析错误
+          }
         }
         data.sort((a, b) => a.date.localeCompare(b.date));
         if (data.length > limit) {
@@ -647,7 +649,9 @@ async function fetchTencentDaily(code, limit = 180) {
           try {
             const item = JSON.parse(line);
             if (item.date) data.push(item);
-          } catch (e) {}
+          } catch (e) {
+            // 忽略JSON解析错误
+          }
         }
         data.sort((a, b) => a.date.localeCompare(b.date));
         if (data.length > limit) {
@@ -1037,16 +1041,6 @@ function getPreviousTradingDay(dateStr) {
   let d = dateStr;
   for (let i = 1; i <= 10; i++) {
     d = shiftBeijingDate(dateStr, -i);
-    if (isTradingDay(d)) return d;
-  }
-  return null;
-}
-
-// 获取下一交易日
-function getNextTradingDay(dateStr) {
-  let d = dateStr;
-  for (let i = 1; i <= 10; i++) {
-    d = shiftBeijingDate(dateStr, i);
     if (isTradingDay(d)) return d;
   }
   return null;
@@ -1666,6 +1660,7 @@ function buildIntradayBars(histPayload, lifePayload, profileGroups, view) {
     const heat = heatMap.has(name) ? heatMap.get(name) : null;
     let group = String(groupMap[name] || '').trim();
     // 视图与缺省分组处理：未分类也纳入展示，避免空图
+    const GROUP_OPTIONS = ['资源', '科技', '金融', '消费', '医药', '未分类'];
     if (view === 'detail') {
       if (!GROUP_OPTIONS.includes(group)) group = '未分类';
     } else {
@@ -1884,18 +1879,31 @@ function readVolumeSeries(day) {
 
 function appendVolumePoint(file, time, volume) {
   if (!isNum(volume) || !time) return;
-  let lastTime = null;
+
+  // 读取现有数据，检查时间点是否已存在
   if (fs.existsSync(file)) {
     const txt = fs.readFileSync(file, 'utf-8').trim();
     if (txt) {
-      const lastLine = txt.split('\n').slice(-1)[0];
-      if (lastLine) {
-        const row = JSON.parse(lastLine);
-        lastTime = row?.[0] || null;
+      const lines = txt.split('\n');
+      for (let i = lines.length - 1; i >= Math.max(0, lines.length - 5); i--) {
+        try {
+          const row = JSON.parse(lines[i]);
+          if (row && row[0] === time) {
+            // 时间点已存在，更新数据（如果成交额更大）
+            if (volume > row[1]) {
+              lines[i] = JSON.stringify([time, volume]);
+              fs.writeFileSync(file, lines.join('\n') + '\n');
+            }
+            return;
+          }
+        } catch (e) {
+          // 忽略解析错误
+        }
       }
     }
   }
-  if (lastTime === time) return;
+
+  // 时间点不存在，追加新数据
   fs.appendFileSync(file, JSON.stringify([time, volume]) + '\n');
 }
 
@@ -1932,74 +1940,6 @@ function isTradingDaySession() {
   if (!isTradingDay(parts.date)) return false;
   const minutes = parts.minutes;
   return minutes >= 570 && minutes <= 900; // 9:30-15:00
-}
-
-function findVolumeAtOrBefore(arr, time) {
-  if (!arr.length || !time) return null;
-  const target = minuteToNumber(time);
-  if (target == null) return null;
-  let best = null;
-  for (const p of arr) {
-    const t = minuteToNumber(p.time);
-    if (t == null || t > target) continue;
-    if (!best || t > minuteToNumber(best.time)) best = p;
-  }
-  return best;
-}
-
-function findArchiveVolumeAtOrBefore(day, time) {
-  if (!day || !time) return null;
-  const file = path.join(__dirname, 'data', `archive-${day.replace(/-/g, '')}.jsonl`);
-  if (!fs.existsSync(file)) return null;
-  const txt = fs.readFileSync(file, 'utf-8').trim();
-  if (!txt) return null;
-  const target = minuteToNumber(time);
-  if (target == null) return null;
-  let bestTime = null;
-  let bestVol = null;
-  const lines = txt.split('\n');
-  for (const line of lines) {
-    if (!line) continue;
-    const row = JSON.parse(line);
-    if (!Array.isArray(row) || row.length < 22) continue;
-    const ts = row[0];
-    const vol = row[21];
-    if (!isNum(ts) || !isNum(vol)) continue;
-    const t = minuteToNumber(minuteKeyBeijing(new Date(ts)));
-    if (t == null || t > target) continue;
-    if (bestTime == null || t > bestTime) {
-      bestTime = t;
-      bestVol = vol;
-    }
-  }
-  return bestVol;
-}
-
-function findLastNonZeroVolume(arr) {
-  if (!arr || !arr.length) return null;
-  for (let i = arr.length - 1; i >= 0; i -= 1) {
-    const v = arr[i]?.volume;
-    if (isNum(v) && v > 0) return v;
-  }
-  return null;
-}
-
-function findArchiveLastNonZeroVolume(day) {
-  if (!day) return null;
-  const file = path.join(__dirname, 'data', `archive-${day.replace(/-/g, '')}.jsonl`);
-  if (!fs.existsSync(file)) return null;
-  const txt = fs.readFileSync(file, 'utf-8').trim();
-  if (!txt) return null;
-  const lines = txt.split('\n');
-  let last = null;
-  for (const line of lines) {
-    if (!line) continue;
-    const row = JSON.parse(line);
-    if (!Array.isArray(row) || row.length < 22) continue;
-    const vol = row[21];
-    if (isNum(vol) && vol > 0) last = vol;
-  }
-  return last;
 }
 
 function buildVolumeFromArchive(day) {
@@ -2104,35 +2044,172 @@ function findPreviousTradingDay(day) {
   return null;
 }
 
-function buildVolumeCompare(day, volume, manualYVol) {
+function buildVolumeCompare(day, volume) {
   const marketOpen = isMarketOpenNow();
   const nowTime = marketOpen ? minuteKeyBeijing(new Date()) : '15:00';
   if (day && marketOpen) appendVolumePoint(volumeFilePath(day), nowTime, volume);
-  
+
   const ydayStrict = day ? findPreviousTradingDay(day) : null;
   const yday = ydayStrict;
-  
-  if (yday) ensureVolumeFile(yday);
-  const yArr = yday ? readVolumeSeries(yday) : [];
-  const yPoint = findVolumeAtOrBefore(yArr, nowTime);
-  let yVol = yPoint?.volume || null;
-  if (!isNum(yVol) && yday) {
-    yVol = findArchiveVolumeAtOrBefore(yday, nowTime);
-  }
-  if (!isNum(yVol) || yVol === 0) {
-    yVol = findLastNonZeroVolume(yArr) || (yday ? findArchiveLastNonZeroVolume(yday) : null);
-  }
-  
-  if ((!isNum(yVol) || yVol === 0) && isNum(manualYVol)) {
-    yVol = manualYVol;
+
+  // 获取昨日全天成交额（优先使用日线数据）
+  let yVolFullDay = null;
+
+  // 1. 优先从日线数据文件读取
+  try {
+    const amountDailyFile = path.join(__dirname, 'data', 'market-amount-daily.jsonl');
+    if (fs.existsSync(amountDailyFile)) {
+      const txt = fs.readFileSync(amountDailyFile, 'utf8').trim();
+      const lines = txt.split('\n');
+      if (lines.length > 0) {
+        // 找到昨日或最接近的日期
+        for (let i = lines.length - 1; i >= 0; i--) {
+          const row = JSON.parse(lines[i]);
+          const rowDate = row[0];  // 日期
+          const rowAmount = row[1];  // 总成交额（元）
+
+          if (rowDate < day) {
+            yVolFullDay = rowAmount / 10000;  // 转换为万元
+            break;
+          }
+        }
+      }
+    }
+  } catch (e) {
+    // 忽略错误，继续使用备用方法
   }
 
-  const volumeDelta = (isNum(volume) && isNum(yVol)) ? volume - yVol : null;
-  const volumePct = (isNum(volumeDelta) && isNum(yVol) && yVol !== 0) ? +((volumeDelta / yVol) * 100).toFixed(2) : null;
-  const volumeDir = volumeDelta == null ? null : (volumeDelta >= 0 ? '增量' : '缩量');
-  const missing = (!isNum(yVol) || yVol === 0) ? ['t1_volume'] : [];
+  // 2. 备用：从分时文件的15:00数据读取
+  if (!isNum(yVolFullDay) && yday) {
+    ensureVolumeFile(yday);
+    const yArr = readVolumeSeries(yday);
+    if (yArr.length > 0) {
+      const yLastPoint = yArr[yArr.length - 1];
+      if (yLastPoint && isNum(yLastPoint.volume) && yLastPoint.volume > 0) {
+        yVolFullDay = yLastPoint.volume;  // 使用昨日15:00的成交额
+      }
+    }
+  }
+
+  // 计算预估成交额（交易时间内）或实际成交额（收盘后）
+  let estimatedVolume = null;
+  let lastMinuteDelta = null;
+
+  if (isNum(volume) && volume > 0) {
+    const volumeFile = volumeFilePath(day);
+    if (fs.existsSync(volumeFile)) {
+      const arr = readVolumeFile(volumeFile);
+
+      // 去重数据（按时间）
+      const uniqueMap = new Map();
+      for (const p of arr) {
+        if (!p || !isNum(p.volume)) continue;
+        // 只保留每个时间点的最大成交额
+        const existing = uniqueMap.get(p.time);
+        if (!existing || p.volume > existing.volume) {
+          uniqueMap.set(p.time, p);
+        }
+      }
+      const uniqueArr = Array.from(uniqueMap.values()).sort((a, b) => a.time.localeCompare(b.time));
+
+      // 检查是否已收盘（有15:00的数据）
+      const hasClosed = uniqueArr.some(p => p.time === '15:00');
+
+      if (hasClosed) {
+        // 收盘后，使用实际全天成交额
+        const closePoint = uniqueArr.find(p => p.time === '15:00');
+        if (closePoint && isNum(closePoint.volume)) {
+          estimatedVolume = closePoint.volume;
+        }
+      } else if (marketOpen && uniqueArr.length >= 2) {
+        // 交易时间内，计算预估成交额
+        const lastPoint = uniqueArr[uniqueArr.length - 1];
+        const prevPoint = uniqueArr[uniqueArr.length - 2];
+
+        if (lastPoint && prevPoint && isNum(lastPoint.volume) && isNum(prevPoint.volume)) {
+          lastMinuteDelta = lastPoint.volume - prevPoint.volume;
+
+          // 如果最后一分钟增量 <= 0，使用最近5分钟的平均增量
+          if (lastMinuteDelta <= 0 && uniqueArr.length >= 6) {
+            const recentPoints = uniqueArr.slice(-6);  // 最近6个点（5分钟）
+            let totalDelta = 0;
+            let validPoints = 0;
+
+            for (let i = 1; i < recentPoints.length; i++) {
+              const delta = recentPoints[i].volume - recentPoints[i - 1].volume;
+              if (delta > 0) {
+                totalDelta += delta;
+                validPoints++;
+              }
+            }
+
+            if (validPoints > 0) {
+              lastMinuteDelta = totalDelta / validPoints;  // 平均增量
+            }
+          }
+
+          // 只有当最后一分钟增量 > 0 时才预测
+          if (lastMinuteDelta > 0) {
+            // 计算剩余交易分钟数
+            const elapsedMinutes = uniqueArr.length;  // 已请求的累计分钟数
+            const remainingMinutes = 240 - elapsedMinutes;
+
+            // 预估成交额 = 当前累计 + (最后一分钟增量 × 剩余分钟数)
+            estimatedVolume = volume + (lastMinuteDelta * remainingMinutes);
+          }
+        }
+      }
+    }
+  }
+
+  // 计算增量预测（仅当有预估成交额时）
+  let deltaPredicted = null;
+  let pctPredicted = null;
+  let dirPredicted = null;
+
+  if (isNum(estimatedVolume) && isNum(yVolFullDay) && yVolFullDay > 0) {
+    deltaPredicted = estimatedVolume - yVolFullDay;
+    pctPredicted = (estimatedVolume / yVolFullDay - 1) * 100;
+    dirPredicted = deltaPredicted >= 0 ? '预估增量' : '预估缩量';
+  }
+
+  const missing = (!isNum(yVolFullDay) || yVolFullDay === 0) ? ['t1_volume'] : [];
   const data_incomplete = missing.length > 0;
-  return { dir: volumeDir, pct: volumePct, delta: volumeDelta, yday: yVol, time: nowTime, asOf: yday || null, data_incomplete, missing };
+
+  // 兼容旧字段（使用预估数据）
+  const volumeDelta = isNum(deltaPredicted) ? deltaPredicted : null;
+  const volumePct = isNum(pctPredicted) ? pctPredicted : null;
+  const volumeDir = dirPredicted;
+  const yVol = yVolFullDay;
+
+  return {
+    time: nowTime,
+    asOf: yday || null,
+    data_incomplete,
+    missing,
+
+    // 兼容旧字段
+    dir: volumeDir,
+    pct: volumePct,
+    delta: volumeDelta,
+    yday: yVol,
+
+    // 新增字段：预估成交额相关
+    estimatedVolume,           // 预估全天成交额（万元）
+    estimatedVolumeYi: isNum(estimatedVolume) ? +(estimatedVolume / 10000).toFixed(2) : null,  // 预估全天成交额（亿元）
+    deltaPredicted,            // 预估增量（万元）
+    deltaPredictedYi: isNum(deltaPredicted) ? +(deltaPredicted / 10000).toFixed(2) : null,    // 预估增量（亿元）
+    pctPredicted: isNum(pctPredicted) ? +pctPredicted.toFixed(2) : null,  // 预估增量百分比
+    dirPredicted,              // 预估增量方向
+    ydayFull: yVolFullDay,     // 昨日全天成交额（万元）
+    ydayFullYi: isNum(yVolFullDay) ? +(yVolFullDay / 10000).toFixed(2) : null,  // 昨日全天成交额（亿元）
+
+    // 辅助字段
+    currentVolume: volume,     // 当前累计成交额（万元）
+    currentVolumeYi: isNum(volume) ? +(volume / 10000).toFixed(2) : null,  // 当前累计成交额（亿元）
+    lastMinuteDelta,           // 最后一分钟增量（万元）
+    lastMinuteDeltaYi: isNum(lastMinuteDelta) ? +(lastMinuteDelta / 10000).toFixed(2) : null  // 最后一分钟增量（亿元）
+  };
 }
 
 function appendMinuteFile(file, data, lastTime) {
@@ -2710,16 +2787,8 @@ async function buildSnapshotPayload() {
   ]);
 
   // Get previous trading day volume via Tencent API as fallback
-  let prevVolume = null;
   try {
-    const sseDaily = await fetchTencentDaily('sh000001', 5);
-    if (sseDaily?.data?.length >= 2) {
-      // Find the day before marketDate
-      const prevData = sseDaily.data.filter(d => d.date < marketDate).sort((a, b) => b.date.localeCompare(a.date))[0];
-      if (prevData?.amount) {
-        prevVolume = prevData.amount;
-      }
-    }
+    await fetchTencentDaily('sh000001', 5);
   } catch (e) {
     console.error(e);
   }
@@ -2804,7 +2873,7 @@ async function buildSnapshotPayload() {
       }
     }
   }
-  const volumeCmp = buildVolumeCompare(marketDate, totalAmount, prevVolume);
+  const volumeCmp = buildVolumeCompare(marketDate, totalAmount);
   const t1Day = findPreviousTradingDay(marketDate);
   const missingList = [];
   if (t1Day && isUsableVolumeDay(t1Day)) {
@@ -4798,6 +4867,33 @@ except Exception as e:
 server.listen(PORT, () => {
   console.log(`proxy server on http://localhost:${PORT} [Ashare+Tencent]`);
 });
+
+// ============ 定时写入成交额任务 ============
+// 每分钟准时写入一次成交额数据，确保数据完整性
+setInterval(async () => {
+  try {
+    // 只在交易时间内执行
+    if (!isMarketOpenNow()) return;
+
+    const day = latestTradingDay();
+    const nowTime = minuteKeyBeijing(new Date());
+
+    // 获取当前成交额
+    const snap = await buildSnapshotPayload();
+    const volume = snap?.sentiment?.volume;
+
+    if (!isNum(volume) || volume <= 0) return;
+
+    // 写入成交额数据
+    const file = volumeFilePath(day);
+    appendVolumePoint(file, nowTime, volume);
+
+    // 可选：输出日志（调试用）
+    // console.log(`[VolumeTimer] ${day} ${nowTime}: ${volume / 10000}亿元`);
+  } catch (e) {
+    // 静默失败，避免刷屏
+  }
+}, 30 * 1000);  // 每30秒执行一次
 
 // 启动时的数据补全流程
 setTimeout(async () => {
