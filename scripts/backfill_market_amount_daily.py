@@ -16,8 +16,9 @@ def main() -> int:
         return 0
 
     try:
-        sh = ak.stock_zh_index_daily_tx(symbol="sh000001")
-        sz = ak.stock_zh_index_daily_tx(symbol="sz399001")
+        # 使用新浪API获取指数日线数据（注意：不是腾讯API）
+        sh = ak.fund_etf_hist_sina(symbol="sh000001")
+        sz = ak.fund_etf_hist_sina(symbol="sz399001")
         if sh is None or sh.empty or sz is None or sz.empty:
             print(json.dumps({"ok": False, "error": "empty index data"}), file=sys.stdout)
             return 0
@@ -38,23 +39,14 @@ def main() -> int:
             df = df[df["day"] <= end]
         df = df[df["total_amount"] > 0]
 
+        # 禁用自动缩放（分时数据和日线数据源不同，��应混用）
         scale = None
         if scale_arg:
             try:
                 scale = float(scale_arg)
             except Exception:
                 scale = None
-        if scale is None:
-            try:
-                import requests
-                snap = requests.get("http://localhost:8787/api/snapshot/latest?ai=0", timeout=5).json()
-                vol_wan = float(((snap.get("sentiment") or {}).get("volume")) or 0.0)
-                target_yuan = vol_wan * 10000.0
-                last_total = float(df["total_amount"].iloc[-1])
-                if last_total > 0 and target_yuan > 0:
-                    scale = target_yuan / last_total
-            except Exception:
-                scale = None
+        # 删除了自动从快照获取scale的逻辑
         if scale is not None and scale > 0:
             df["sh_amount"] = df["sh_amount"] * scale
             df["sz_amount"] = df["sz_amount"] * scale
