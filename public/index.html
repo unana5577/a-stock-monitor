@@ -61,21 +61,22 @@
           <div class="text-sm text-gray-500 mb-2 font-semibold">大盘情绪（量能=沪深主板成交额）</div>
           <div class="grid grid-cols-1 gap-3">
             <!-- Market Breadth -->
-            <div id="market-breadth" class="border rounded-lg p-3 hidden">
+            <div class="border rounded-lg p-3">
               <div class="flex justify-between text-sm mb-1">
                 <span>涨跌家数</span>
-                <span id="breadth-ratio" class="font-bold"></span>
+                <span class="font-bold">{{ breadth ? breadth.ratio?.toFixed(2) : '加载中...' }}</span>
               </div>
               <div class="w-full bg-gray-200 rounded-full h-2.5 flex overflow-hidden">
-                <div id="breadth-up" class="bg-red-500 h-2.5" style="width: 50%"></div>
-                <div id="breadth-down" class="bg-green-500 h-2.5" style="width: 50%"></div>
+                <div class="bg-red-500 h-2.5" :style="{width: ((breadth?.up || 0) / (breadth?.total || 1) * 100) + '%'}"></div>
+                <div class="bg-green-500 h-2.5" :style="{width: ((breadth?.down || 0) / (breadth?.total || 1) * 100) + '%'}"></div>
               </div>
               <div class="flex justify-between text-xs text-gray-500 mt-1">
-                <span id="breadth-up-count" class="text-red-500"></span>
-                <span id="breadth-down-count" class="text-green-500"></span>
+                <span class="text-red-500">上涨 {{ breadth?.up || '-' }}</span>
+                <span class="text-green-500">下跌 {{ breadth?.down || '-' }}</span>
               </div>
+              <div class="text-xs text-gray-400 mt-1">情绪：{{ breadth?.sentiment || '-' }}</div>
             </div>
-            
+
             <div class="border rounded-lg p-3">
               <div class="flex items-center justify-between text-sm">
                 <span>成交额</span>

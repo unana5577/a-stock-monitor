@@ -26,6 +26,7 @@ createApp({
     const market = ref({ sse:{price:null,pct:null}, szi:{price:null,pct:null}, chinaext:{price:null,pct:null}, star:{price:null,pct:null} });
     const extra = ref({ avg:{price:null,pct:null}, hs300:{price:null,pct:null}, csi2000:{price:null,pct:null} });
     const bonds = ref({ gov:{pct:null,slope:null}, tl:{price:null,pct:null}, t:{price:null,pct:null} });
+    const breadth = ref(null);
     const sectors = ref({ bank:{price:null,pct:null}, broker:{price:null,pct:null}, insure:{price:null,pct:null} });
     const sentiment = ref({ volume:0, volumeStr:'-', upCount:'-', downCount:'-', volumeCmp:null });
     const overviewDailyReady = ref(false);
@@ -1026,6 +1027,7 @@ createApp({
         if (aiChanged && withAi) aiUpdatedAt.value = Date.now();
         if (data?.sentiment) sentiment.value = { ...sentiment.value, ...data.sentiment };
         if (data?.sentiment?.volumeCmp) sentiment.value.volumeCmp = data.sentiment.volumeCmp;
+        if (data?.breadth) breadth.value = data.breadth;
         const arrToday = data?.sentiment?.volumeSeries || [];
         const ydayArr = data?.sentiment?.volumeSeriesYday || [];
         sentiment.value.volumeSeries = arrToday;
@@ -2207,6 +2209,6 @@ createApp({
     setInterval(refreshAll, 15000);
     setInterval(() => refreshAi(false), 30 * 60 * 1000);
 
-    return { activeTab, aiBrief, aiUpdatedAt, aiSections, marketAi, promptText, promptOutput, promptLoading, promptError, runPromptDebug, sectorPromptText, sectorPromptOutput, sectorPromptLoading, sectorPromptError, runSectorPromptDebug, refreshAi, market, bonds, extra, sectors, sentiment, pctColor, fmtPct, fmtVolumeCmp, fmtHeatDelta, rotationMonthSpan, setRotationMonthSpan, rotationMatrixAxis, rotationMatrixMonths, rotationMatrixGroups, refreshAll, dataTs, fmtTime, sectorInput, updateSectorWatch, watchList, watchIndicators, lastIndicator, currentDays, lifecycleItems, sectorRotationPayload, sectorIntradayPayload, sectorLoading, changeDays, getStageColor, getAdviceColor, badgeClass, fmtProb, selectTab, newsItems, newsLoading, heatmapItems, heatmapMax, getImpact, getImpactClass, importanceStars, loadNews, macroNews, geoNews, focusNews, rotationFilters, rotationFilter, rotationMainline, setRotationFilter, toggleRotationExpand, isRotationExpanded, exportRotationJson, copyRotationMarkdown, watchIntradayRows, rotationTopGroups, intradayBars, intradaySignal, intradayReason, intradayMax, intradayView, setIntradayView, rotationSequencePayload, rotationSequenceDays, fetchRotationSequence, riskSummary, panicPayload, showSectorManager, profileGroups, profileUpdatedAt, manageSectorName, sectorGroupOptions, openSectorManager, closeSectorManager, addWatchSector, removeWatchSector, saveSectorProfile, calcForecastVolume, forecastVolume: computed(calcForecastVolume) };
+    return { activeTab, aiBrief, aiUpdatedAt, aiSections, marketAi, promptText, promptOutput, promptLoading, promptError, runPromptDebug, sectorPromptText, sectorPromptOutput, sectorPromptLoading, sectorPromptError, runSectorPromptDebug, refreshAi, market, bonds, breadth, extra, sectors, sentiment, pctColor, fmtPct, fmtVolumeCmp, fmtHeatDelta, rotationMonthSpan, setRotationMonthSpan, rotationMatrixAxis, rotationMatrixMonths, rotationMatrixGroups, refreshAll, dataTs, fmtTime, sectorInput, updateSectorWatch, watchList, watchIndicators, lastIndicator, currentDays, lifecycleItems, sectorRotationPayload, sectorIntradayPayload, sectorLoading, changeDays, getStageColor, getAdviceColor, badgeClass, fmtProb, selectTab, newsItems, newsLoading, heatmapItems, heatmapMax, getImpact, getImpactClass, importanceStars, loadNews, macroNews, geoNews, focusNews, rotationFilters, rotationFilter, rotationMainline, setRotationFilter, toggleRotationExpand, isRotationExpanded, exportRotationJson, copyRotationMarkdown, watchIntradayRows, rotationTopGroups, intradayBars, intradaySignal, intradayReason, intradayMax, intradayView, setIntradayView, rotationSequencePayload, rotationSequenceDays, fetchRotationSequence, riskSummary, panicPayload, showSectorManager, profileGroups, profileUpdatedAt, manageSectorName, sectorGroupOptions, openSectorManager, closeSectorManager, addWatchSector, removeWatchSector, saveSectorProfile, calcForecastVolume, forecastVolume: computed(calcForecastVolume) };
   }
 }).mount('#app');

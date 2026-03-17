@@ -848,6 +848,24 @@ function etfAmountTotalPath() {
   return path.join(dir, 'etf-amount-total.jsonl');
 }
 
+function breadthCachePath() {
+  const dir = path.join(__dirname, 'data');
+  fs.mkdirSync(dir, { recursive: true });
+  return path.join(dir, 'breadth-cache.json');
+}
+
+function readBreadthCache() {
+  const file = breadthCachePath();
+  if (!fs.existsSync(file)) return null;
+  try {
+    const txt = fs.readFileSync(file, 'utf8').trim();
+    if (!txt) return null;
+    return JSON.parse(txt);
+  } catch (e) {
+    return null;
+  }
+}
+
 function readEtfAmountTotalMap() {
   const file = etfAmountTotalPath();
   if (!fs.existsSync(file)) return new Map();
@@ -2720,6 +2738,7 @@ function readLatestArchivePayload() {
       data_incomplete: missing.length > 0,
       missing: Array.from(new Set(missing))
     },
+    breadth: readBreadthCache(),
     ts: ts || Date.now()
   };
   payload.aiBrief = ai.analyze(payload);
@@ -3436,6 +3455,20 @@ const server = http.createServer(async (req, res) => {
     const latest = items.length ? items[items.length - 1] : null;
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.end(JSON.stringify({ ok: true, updated, latest, items }));
+    return;
+  }
+  if (url.pathname === '/api/market/breadth') {
+    const refresh = url.searchParams.get('refresh') === '1';
+    if (refresh) {
+      const obj = await execPythonJson(['scripts/market_breadth_spot.py'], 120000);
+      if (obj && obj.ok) {
+        const file = breadthCachePath();
+        fs.writeFileSync(file, JSON.stringify(obj), 'utf8');
+      }
+    }
+    const data = readBreadthCache();
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.end(JSON.stringify({ ok: true, data }));
     return;
   }
   // 市场日期 API
@@ -4935,9 +4968,12 @@ async function updateWarmupIfNeeded() {
     const warmupDay = warmupData.day;
     const gap = warmupDay ? dateDiffDays(today, warmupDay) : null;
 
-    // 如果warmup数据过期（超过1天），重新生成
-    if (gap != null && gap > 1) {
-      console.log(`[Warmup] 数据过期 (${warmupDay} → ${today}, 差距${gap}天)，开始更新...`);
+    // 判断是否需要更新：数据过期 或 收盘后且不是今天的数据
+    const isAfterClose = isAfterCloseNow();
+    const shouldUpdate = (gap != null && gap > 1) || (isAfterClose && warmupDay !== today);
+
+    if (shouldUpdate) {
+      console.log(`[Warmup] 数据需要更新 (${warmupDay} → ${today}, 差距${gap}天, 收盘后:${isAfterClose})，开始更新...`);
       await regenerateWarmup(days);
     } else {
       console.log(`[Warmup] ✅ 数据最新 (${warmupDay})，无需更新`);
