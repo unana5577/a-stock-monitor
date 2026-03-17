@@ -79,11 +79,15 @@
             <div class="border rounded-lg p-3">
               <div class="flex items-center justify-between text-sm">
                 <span>成交额</span>
-                <span class="text-xs" v-if="sentiment.volumeCmp && sentiment.volumeCmp.pct!=null && sentiment.volumeCmp.delta!=null" :class="pctColor(sentiment.volumeCmp?.pct)">{{ fmtVolumeCmp(sentiment.volumeCmp) }}</span>
+                <span class="text-xs" v-if="forecastVolume" :class="forecastVolume.delta >= 0 ? 'text-red-500' : 'text-green-500'">
+                  预估 {{ forecastVolume.delta >= 0 ? '增量' : '缩量' }} {{ Math.abs(forecastVolume.pct).toFixed(1) }}% / {{ (Math.abs(forecastVolume.delta) / 10000).toFixed(1) }}亿
+                </span>
+                <span class="text-xs" v-else-if="sentiment.volumeCmp && sentiment.volumeCmp.pct!=null && sentiment.volumeCmp.delta!=null" :class="pctColor(sentiment.volumeCmp?.pct)">{{ fmtVolumeCmp(sentiment.volumeCmp) }}</span>
                 <span class="text-xs text-gray-400" v-else>昨日缺失</span>
               </div>
               <div class="text-gray-800 font-bold mt-1">{{ sentiment.volumeStr || '-' }}</div>
-              <div id="spark-volume" class="mt-2" style="height:60px;"></div>
+              <div class="text-xs text-gray-400 mt-1" v-if="forecastVolume">预估全天 {{ (forecastVolume.forecast / 10000).toFixed(0) }}亿</div>
+              <div id="spark-volume" class="mt-2" style="height:100px;"></div>
             </div>
           </div>
         </div>

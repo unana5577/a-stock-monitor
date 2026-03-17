@@ -463,46 +463,57 @@ createApp({
     };
     
     const renderVolumeSpark = (el, arr, ydayArr) => {
-      const buildVolumeVals = (series, axis) => {
+      const buildTodayVolume = (series, axis) => {
         if (!series || !series.length || !axis.length) return { vals: [], raw: [] };
         const map = new Map();
+        // 先存储累计成交量
         series.forEach((p) => {
           const t = toHM(p.time);
           const v = p.volume ?? p.value;
           if (!t || v == null || v === 0) return;
           map.set(t, v);
         });
-        const rawVals = axis.map(t => map.has(t) ? map.get(t) : null);
-        const firstIdx = rawVals.findIndex(v => v != null);
-        const lastIdx = (() => {
-          if (firstIdx === -1) return -1;
-          for (let i = rawVals.length - 1; i >= 0; i -= 1) {
-            if (rawVals[i] != null) return i;
+
+        // 计算每分钟成交量（当前累计 - 前一分钟累计）
+        const minuteMap = new Map();
+        let prevVolume = 0;
+        axis.forEach(t => {
+          const currVolume = map.get(t) ?? null;
+          if (currVolume != null) {
+            const minuteVolume = currVolume - prevVolume;
+            if (minuteVolume >= 0) {
+              minuteMap.set(t, minuteVolume);
+            }
+            prevVolume = currVolume;
           }
-          return -1;
-        })();
-        let lastSeen = null;
-        const filled = rawVals.map((v, i) => {
-          if (v != null) { lastSeen = v; return v; }
-          if (firstIdx !== -1 && i > firstIdx && i < lastIdx) return lastSeen;
-          return null;
         });
-        const base = filled.find(v => v != null);
-        const vals = base ? filled.map(v => (v == null ? null : +(((v - base) / base) * 100).toFixed(2))) : filled.map(() => null);
-        return { vals, raw: filled };
+
+        const rawVals = axis.map(t => minuteMap.get(t) ?? null);
+        return { vals: rawVals, raw: rawVals };
       };
+
+      const buildYdayAvg = (series) => {
+        if (!series || !series.length) return null;
+        // 获取昨日全天成交额（最后一个时间点的累计值）
+        const lastPoint = series[series.length - 1];
+        if (!lastPoint || !lastPoint.volume) return null;
+
+        const ydayTotal = lastPoint.volume; // 万元
+        const avgPerMinute = ydayTotal / 240; // 240分钟
+        return { avgPerMinute };
+      };
+
       const axis = buildTradingAxis();
-      const today = buildVolumeVals(arr, axis);
-      const yday = buildVolumeVals(ydayArr, axis);
-      const hasAny = today.raw.some(v => v != null) || yday.raw.some(v => v != null);
+      const ydayAvg = buildYdayAvg(ydayArr);
+      const today = buildTodayVolume(arr, axis);
+      const hasAny = today.raw.some(v => v != null) || ydayAvg;
       if (!axis.length || !hasAny) {
         if (sparks.value[el]) sparks.value[el].clear();
         return;
       }
+
       const series = [];
       if (today.vals.length) {
-        const latest = [...today.vals].reverse().find(v => v != null) ?? 0;
-        const color = latest >= 0 ? '#f87171' : '#4ade80';
         series.push({
           name: '今日量能',
           type:'line',
@@ -510,25 +521,28 @@ createApp({
           smooth:true,
           symbol:'none',
           connectNulls:false,
-          lineStyle:{width:1.2, color}
+          lineStyle:{width:1.2, color:'#f97316'}
         });
       }
-      if (yday.vals.length) {
+
+      // 昨日均线
+      if (ydayAvg && ydayAvg.avgPerMinute) {
+        const refLineValue = ydayAvg.avgPerMinute;
         series.push({
-          name: '昨日量能',
+          name: '昨日均线',
           type:'line',
-          data: yday.vals.map((v, i) => v == null ? null : ({ value: v, raw: yday.raw[i] })),
-          smooth:true,
+          data: new Array(axis.length).fill(refLineValue),
+          smooth:false,
           symbol:'none',
-          connectNulls:false,
           lineStyle:{width:1, color:'#60a5fa', type:'dashed'}
         });
       }
+
       if (!sparks.value[el]) { sparks.value[el] = window.echarts.init(document.getElementById(el)); }
       sparks.value[el].setOption({
         grid:{left:0,right:0,top:0,bottom:0},
         xAxis:{type:'category',data:axis,show:false},
-        yAxis:{type:'value',show:false, min:(v)=>Math.min(0, v.min), max:(v)=>Math.max(0, v.max)},
+        yAxis:{type:'value',show:false},
         tooltip: {
           trigger: 'axis',
           formatter: (params)=>{
@@ -607,6 +621,62 @@ createApp({
       const pct = Math.abs(pctNum).toFixed(2);
       const delta = Math.abs(deltaNum);
       return `${dir} ${pct}% / ${fmtVolume(delta)}`;
+    };
+
+    // 计算预估全天量能
+    const calcForecastVolume = () => {
+      const series = sentiment.value.volumeSeries || [];
+      const volumeCmp = sentiment.value.volumeCmp;
+
+      if (!series.length || series.length < 2) return null;
+
+      // 当前累计成交量（最后一分钟的累计值，单位：万元）
+      const currentAccumulated = series[series.length - 1].volume;
+
+      // 前一分钟成交量（单位：万元）
+      const prevMinuteVolume = series[series.length - 1].volume - series[series.length - 2].volume;
+
+      // 已交易分钟数（从9:30开始）
+      const lastTime = series[series.length - 1].time; // "HH:MM"
+      const [lastHour, lastMin] = lastTime.split(':').map(Number);
+
+      // 计算已交易分钟数
+      let tradedMinutes = 0;
+      if (lastHour < 12) {
+        // 上午：9:30-11:30
+        tradedMinutes = (lastHour - 9) * 60 + (lastMin - 30);
+      } else if (lastHour < 13) {
+        // 午休：11:30之后算到11:30为止
+        tradedMinutes = (11 - 9) * 60 + (30 - 30); // 120分钟
+      } else {
+        // 下午：已过上午120分钟 + 下午时间
+        tradedMinutes = 120 + (lastHour - 13) * 60 + (lastMin - 0);
+      }
+
+      // 剩余分钟数（全天240分钟：上午120 + 下午120）
+      const remainingMinutes = 240 - tradedMinutes;
+
+      // 预估全天量能（万元）
+      const forecast = currentAccumulated + prevMinuteVolume * remainingMinutes;
+
+      // 计算预估增量（需要昨日成交额，单位：万元）
+      let delta = 0;
+      let pct = 0;
+      if (volumeCmp && volumeCmp.ydayFull != null) {
+        // volumeCmp.ydayFull 单位是万元
+        const yesterdayTotal = Number(volumeCmp.ydayFull);
+        delta = forecast - yesterdayTotal;
+        pct = yesterdayTotal > 0 ? (delta / yesterdayTotal) * 100 : 0;
+      }
+
+      return {
+        forecast, // 预估全天量能（万元）
+        current: currentAccumulated, // 当前累计（万元）
+        delta, // 预估增量（万元）
+        pct, // 预估增量百分比
+        remainingMinutes,
+        tradedMinutes
+      };
     };
 
     const fmtHeatDelta = (raw) => {
@@ -960,7 +1030,7 @@ createApp({
         const ydayArr = data?.sentiment?.volumeSeriesYday || [];
         sentiment.value.volumeSeries = arrToday;
         sentiment.value.volumeSeriesYday = ydayArr;
-        if (!overviewDailyReady.value) renderVolumeSpark('spark-volume', arrToday, ydayArr);
+        renderVolumeSpark('spark-volume', arrToday, ydayArr);
         if (data?.bonds?.gov?.pct != null) bonds.value.gov = { ...bonds.value.gov, pct: data.bonds.gov.pct };
         if (data?.bonds?.tl) {
           const v = data.bonds.tl;
@@ -2137,6 +2207,6 @@ createApp({
     setInterval(refreshAll, 15000);
     setInterval(() => refreshAi(false), 30 * 60 * 1000);
 
-    return { activeTab, aiBrief, aiUpdatedAt, aiSections, marketAi, promptText, promptOutput, promptLoading, promptError, runPromptDebug, sectorPromptText, sectorPromptOutput, sectorPromptLoading, sectorPromptError, runSectorPromptDebug, refreshAi, market, bonds, extra, sectors, sentiment, pctColor, fmtPct, fmtVolumeCmp, fmtHeatDelta, rotationMonthSpan, setRotationMonthSpan, rotationMatrixAxis, rotationMatrixMonths, rotationMatrixGroups, refreshAll, dataTs, fmtTime, sectorInput, updateSectorWatch, watchList, watchIndicators, lastIndicator, currentDays, lifecycleItems, sectorRotationPayload, sectorIntradayPayload, sectorLoading, changeDays, getStageColor, getAdviceColor, badgeClass, fmtProb, selectTab, newsItems, newsLoading, heatmapItems, heatmapMax, getImpact, getImpactClass, importanceStars, loadNews, macroNews, geoNews, focusNews, rotationFilters, rotationFilter, rotationMainline, setRotationFilter, toggleRotationExpand, isRotationExpanded, exportRotationJson, copyRotationMarkdown, watchIntradayRows, rotationTopGroups, intradayBars, intradaySignal, intradayReason, intradayMax, intradayView, setIntradayView, rotationSequencePayload, rotationSequenceDays, fetchRotationSequence, riskSummary, panicPayload, showSectorManager, profileGroups, profileUpdatedAt, manageSectorName, sectorGroupOptions, openSectorManager, closeSectorManager, addWatchSector, removeWatchSector, saveSectorProfile };
+    return { activeTab, aiBrief, aiUpdatedAt, aiSections, marketAi, promptText, promptOutput, promptLoading, promptError, runPromptDebug, sectorPromptText, sectorPromptOutput, sectorPromptLoading, sectorPromptError, runSectorPromptDebug, refreshAi, market, bonds, extra, sectors, sentiment, pctColor, fmtPct, fmtVolumeCmp, fmtHeatDelta, rotationMonthSpan, setRotationMonthSpan, rotationMatrixAxis, rotationMatrixMonths, rotationMatrixGroups, refreshAll, dataTs, fmtTime, sectorInput, updateSectorWatch, watchList, watchIndicators, lastIndicator, currentDays, lifecycleItems, sectorRotationPayload, sectorIntradayPayload, sectorLoading, changeDays, getStageColor, getAdviceColor, badgeClass, fmtProb, selectTab, newsItems, newsLoading, heatmapItems, heatmapMax, getImpact, getImpactClass, importanceStars, loadNews, macroNews, geoNews, focusNews, rotationFilters, rotationFilter, rotationMainline, setRotationFilter, toggleRotationExpand, isRotationExpanded, exportRotationJson, copyRotationMarkdown, watchIntradayRows, rotationTopGroups, intradayBars, intradaySignal, intradayReason, intradayMax, intradayView, setIntradayView, rotationSequencePayload, rotationSequenceDays, fetchRotationSequence, riskSummary, panicPayload, showSectorManager, profileGroups, profileUpdatedAt, manageSectorName, sectorGroupOptions, openSectorManager, closeSectorManager, addWatchSector, removeWatchSector, saveSectorProfile, calcForecastVolume, forecastVolume: computed(calcForecastVolume) };
   }
 }).mount('#app');
