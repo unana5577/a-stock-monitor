@@ -355,6 +355,47 @@ def generate_advice(risk_level: str, fund_status: str, ma5_slope: float) -> tupl
         return "观望", "等待信号"
 
 
+def calculate_momentum(alpha_5: float, ma5_slope: float, close: float, ma5: float) -> str:
+    """计算动能标签（简化版）"""
+    import numpy as np
+    above = close > ma5 if not np.isnan(ma5) else False
+    a = alpha_5
+
+    if a > 3 and ma5_slope > 0 and above:
+        return "强势向上"
+    elif 1 <= a <= 3 and ma5_slope > 0 and above:
+        return "偏强向上"
+    elif -1 <= a <= 1:
+        return "中性震荡"
+    elif a < -1 and ma5_slope < 0 and not above:
+        return "弱势向下"
+    elif a < -1 and ma5_slope > 0 and above:
+        return "弱势反弹"
+    else:
+        return "中性震荡"
+
+
+def calculate_fund_behavior(
+    amount_share_pct: float,
+    amount_share_change: float,
+    pct: float,
+    bias_20: float = 0
+) -> str:
+    """计算资金行为标签（简化版）"""
+    if pct < -3 and amount_share_pct > 0.3:
+        return "恐慌出逃"
+    elif pct > 0 and amount_share_change >= 0.5:
+        return "放量启动"
+    elif amount_share_change < 0.8:
+        return "资金撤退"
+    elif bias_20 > 8 and pct > 0:
+        return "加速赶顶"
+    elif bias_20 < -8 and pct < 0:
+        return "超跌反弹"
+    else:
+        return "横盘整理"
+
+
 # ==================== 主程序 ====================
 
 def main():
@@ -364,6 +405,26 @@ def main():
     print("=" * 80)
 
     results = []
+
+    # ========== 数据新鲜度检查 ==========
+    stale_count = 0
+    for etf in ETF_LIST:
+        etf_df = load_etf_data(etf['file'])
+        if etf_df.empty:
+            print(f"⚠️  {etf['name']}: 数据为空")
+            stale_count += 1
+            continue
+        latest_date = etf_df.iloc[-1]['date']
+        today = datetime.now().date()
+        days_diff = (today - latest_date.date()).days
+        if days_diff > 1:
+            print(f"⚠️  {etf['name']}: 数据过期 {days_diff} 天（最新: {latest_date.date()}）")
+            stale_count += 1
+
+    if stale_count > 0:
+        print(f"\n⚠️  警告: {stale_count}个ETF数据已过期")
+        print(f"   建议运行: python3 data_maintenance.py")
+        print(f"   继续使用过期数据进行分析...\n")
 
     # 加载全市场ETF成交额数据
     market_amount_data = load_etf_amount_data()
@@ -444,12 +505,33 @@ def main():
         print(f"\n✅ 操作建议：{advice}")
         print(f"📝 原因：{reason}")
 
+        # ========== 新增字段计算 ==========
+        # 昨日涨跌幅
+        yesterday_pct = etf_df.iloc[-2].get('pct', 0) if len(etf_df) >= 2 else 0
+
+        # 计算MA5（用于动能判断）
+        etf_df_copy = etf_df.copy()
+        etf_df_copy['ma5'] = etf_df_copy['close'].rolling(window=5).mean()
+        ma5 = etf_df_copy.iloc[-1]['ma5'] if len(etf_df_copy) >= 5 else close
+
+        # 计算动能
+        momentum = calculate_momentum(alpha_5, ma5_slope, close, ma5)
+
+        # 计算资金行为
+        bias_20 = 0  # 简化版暂不使用bias_20
+        fund_behavior = calculate_fund_behavior(fund_heat, fund_heat_change, pct, bias_20)
+
+        print(f"   昨日涨跌幅：{yesterday_pct:+.2f}%")
+        print(f"   动能：{momentum}")
+        print(f"   资金行为：{fund_behavior}")
+
         # 保存结果
         results.append({
             "etf_name": name,
             "etf_code": code,
             "close": close,
             "pct": pct,
+            "yesterday_pct": round(yesterday_pct, 2),
             "benchmark": benchmark_info['benchmark'],
             "alpha_5": alpha_5,
             "alpha_20": alpha_20,
@@ -462,9 +544,37 @@ def main():
             "fund_status": fund_status,
             "fund_heat": fund_heat,
             "fund_heat_change": fund_heat_change,
+            "momentum": momentum,
+            "fund_behavior": fund_behavior,
             "advice": advice,
             "reason": reason
         })
+
+    # ========== 添加评分和排序 ==========
+    # 计算综合得分
+    momentum_map = {
+        "强势向上": 3, "偏强向上": 2, "中性震荡": 1,
+        "弱势反弹": 1, "偏强向下": -1, "弱势向下": -2, "强势向下": -3
+    }
+    behavior_map = {
+        "放量启动": 3, "横盘整理": 1, "超跌反弹": 1,
+        "资金撤退": -1, "加速赶顶": -1, "恐慌出逃": -3
+    }
+
+    for r in results:
+        base = momentum_map.get(r.get("momentum", ""), 0) + behavior_map.get(r.get("fund_behavior", ""), 0)
+        score = base + r.get("alpha_5", 0) * 0.15 + r.get("alpha_20", 0) * 0.05 + r.get("fund_heat_change", 0) * 2.0
+        # 操作建议惩罚
+        if "回避" in r.get("advice", "") or "离场" in r.get("advice", "") or "止损" in r.get("advice", ""):
+            score -= 4
+        elif "止盈" in r.get("advice", ""):
+            score -= 1
+        r["_score"] = round(score, 4)
+
+    # 排序并标记Top1-3
+    results.sort(key=lambda x: x.get("_score", 0), reverse=True)
+    for idx, r in enumerate(results):
+        r["_rank"] = idx + 1 if idx < 3 else None
 
     # 保存结果
     output_json = Path("logs/operation_simple_20260318.json")

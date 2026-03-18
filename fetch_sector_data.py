@@ -7,8 +7,10 @@ import importlib.util
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from urllib.request import urlopen, Request
-from sector_lifecycle import analyze_sector, select_dynamic_benchmark
 from typing import List
+
+# 注意：sector_lifecycle 是业务分析层，禁止在此模块导入
+# 如需使用，在具体函数内部延迟导入
 
 # User-defined sector mapping
 SECTOR_MAPPING = [
@@ -234,7 +236,7 @@ def _normalize_etf_code(code):
             # 默认返回上交所
             return f"sh{code_str}"
 
-def _fetch_akshare_sina_etf(etf_code, limit=365):
+def _fetch_akshare_sina_etf(etf_code, limit=365, start_date=None, end_date=None):
     """
     使用AkShare的东财ETF接口获取ETF日线数据（支持复权）
 
@@ -243,7 +245,12 @@ def _fetch_akshare_sina_etf(etf_code, limit=365):
     - 代码格式：必须包含sh/sz前缀（如sh512480、sz159995）
     - 数据源：东财接口 fund_etf_hist_em()（支持前复权）
     - 优势：✅ 提供涨跌幅字段  ✅ 支持复权  ✅ 除权日正常
-    - 请求策略：仅warmup时调用，平时读缓存，避免封号
+    - 请求策略：支持增量请求（start_date/end_date）或全量请求（limit）
+
+    :param etf_code: ETF代码，如 sh512480
+    :param limit: 请求天数限制（如365）
+    :param start_date: 起始日期，如 20260314（可选，用于增量请求）
+    :param end_date: 结束日期，如 20260318（可选，用于增量请求）
     """
     try:
         from io import StringIO
@@ -254,12 +261,22 @@ def _fetch_akshare_sina_etf(etf_code, limit=365):
         normalized_code = _normalize_etf_code(etf_code)
         clean_code = normalized_code.replace('sh', '').replace('sz', '')
 
+        # 确定日期范围
+        if start_date and end_date:
+            # 增量请求：使用指定的日期范围
+            s_date = start_date if len(start_date) == 8 else start_date.replace('-', '')
+            e_date = end_date if len(end_date) == 8 else end_date.replace('-', '')
+        else:
+            # 全量请求：使用默认范围
+            s_date = "20200101"
+            e_date = "21231231"
+
         # 调用AkShare的东财ETF接口（前复权）
         df = ak.fund_etf_hist_em(
             symbol=clean_code,
             period="daily",
-            start_date="20200101",
-            end_date="21231231",
+            start_date=s_date,
+            end_date=e_date,
             adjust="qfq"  # 前复权，消除除权跳变
         )
         sys.stderr = old_stderr
@@ -267,8 +284,9 @@ def _fetch_akshare_sina_etf(etf_code, limit=365):
         if df is None or df.empty:
             return {"date": None, "data": []}
 
-        # 取最近limit条数据,增加默认值到365天以满足MA60计算需求
-        df = df.tail(limit)
+        # 取最近limit条数据（如果指定了日期范围，可能不需要截取）
+        if not (start_date and end_date):
+            df = df.tail(limit)
 
         data = []
         for _, row in df.iterrows():
@@ -2052,14 +2070,25 @@ def get_sector_lifecycle(sector_items, days=60):
                 continue
             sector_df = proxy_df
             sector_full = proxy_full
-        bench_name, bench_corr = select_dynamic_benchmark(sector_df, benchmark_map, 60)
+        # 延迟导入业务分析模块
+        import importlib
+        spec = importlib.util.spec_from_file_location("sector_lifecycle_module", "sector_lifecycle.py")
+        sector_lifecycle_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(sector_lifecycle_module)
+        bench_name, bench_corr = sector_lifecycle_module.select_dynamic_benchmark(sector_df, benchmark_map, 60)
         if not bench_name:
             bench_name = DEFAULT_BENCHMARK if DEFAULT_BENCHMARK in benchmark_map else list(benchmark_map.keys())[0]
         bench_df = benchmark_map.get(bench_name)
         if bench_df is None:
             bench_df = benchmark_map.get(DEFAULT_BENCHMARK) if DEFAULT_BENCHMARK in benchmark_map else list(benchmark_map.values())[0]
         amount_df = market_amount_df if market_amount_df is not None else benchmark_map.get(DEFAULT_BENCHMARK)
-        items.append(analyze_sector(sector_df, bench_df, display, bench_name, bench_corr, amount_df, sector_full))
+        items.append(sector_lifecycle_module.analyze_sector(sector_df, bench_df, display, bench_name, bench_corr, amount_df, sector_full))
+
+    # 按_score排序并添加_rank字段（Top1-3）
+    items.sort(key=lambda x: x.get("_score", 0), reverse=True)
+    for idx, item in enumerate(items):
+        item["_rank"] = idx + 1 if idx < 3 else None
+
     latest = None
     for it in items:
         d = it.get("数据日期") or it.get("asof_date")

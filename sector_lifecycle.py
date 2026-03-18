@@ -610,6 +610,7 @@ def analyze_sector(
     )
 
     combo_info = get_combo_info(position_info["位置"], stage)
+    # 今日涨跌幅（最新交易日）
     pct_val = sector_df["close"].pct_change().iloc[-1] * 100 if len(sector_df) > 1 else 0
     try:
         if pct_val is None or not pd.notna(pct_val):
@@ -618,6 +619,17 @@ def analyze_sector(
             pct_val = 0
     except Exception:
         pct_val = 0
+
+    # 昨日涨跌幅（倒数第二个交易日）
+    yesterday_pct = sector_df["close"].pct_change().iloc[-2] * 100 if len(sector_df) > 2 else 0
+    try:
+        if yesterday_pct is None or not pd.notna(yesterday_pct):
+            yesterday_pct = 0
+        if abs(float(yesterday_pct)) > 30:
+            yesterday_pct = 0
+    except Exception:
+        yesterday_pct = 0
+
     momentum = determine_momentum(alpha_5, ma5_slope, close, ma5, alpha_5_q)
     behavior = determine_fund_behavior(
         amount_share_pct=amount_share_pct,
@@ -641,6 +653,23 @@ def analyze_sector(
     attribution = f"以{benchmark_name}为基准，{momentum_reason}，{behavior_reason}。" if benchmark_name else f"{momentum_reason}，{behavior_reason}。"
     bias_compare = build_bias_compare(bias_20, bias_20_history_max, bias_20_history_min)
 
+    # 计算评分（用于排序）
+    momentum_map = {
+        "强势向上": 3, "偏强向上": 2, "中性震荡": 1,
+        "弱势反弹": 1, "偏强向下": -1, "弱势向下": -2, "强势向下": -3
+    }
+    behavior_map = {
+        "放量启动": 3, "横盘整理": 1, "超跌反弹": 1,
+        "资金撤退": -1, "加速赶顶": -1, "恐慌出逃": -3
+    }
+    base_score = momentum_map.get(momentum, 0) + behavior_map.get(behavior, 0)
+    score = base_score + (alpha_5 or 0) * 0.15 + (alpha_20 or 0) * 0.05 + (amount_share_change or 0) * 2.0
+    # 操作建议惩罚
+    if advice and ("回避" in advice or "离场" in advice or "止损" in advice):
+        score -= 4
+    elif advice and "止盈" in advice:
+        score -= 1
+
     return {
         "板块名称": sector_name,
         "数据日期": asof_date,
@@ -661,6 +690,8 @@ def analyze_sector(
         "操作建议": advice,
         "归因说明": attribution,
         "乖离对比": bias_compare,
+        "昨日涨跌幅": round(yesterday_pct, 2),
+        "_score": round(score, 4),
         "指标数据": {
             "Alpha_5": round(alpha_5, 4) if alpha_5 is not None else None,
             "Alpha_20": round(alpha_20, 4) if alpha_20 is not None else None,
