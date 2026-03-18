@@ -2872,7 +2872,16 @@ async function buildSnapshotPayload() {
   const volumeSeries = readVolumeSeries(marketDate);
   let volumeSeriesYday = [];
   let breadth = await fetchBreadthRealtime();
-  if (!breadth || !isNum(breadth?.up) || !isNum(breadth?.down)) {
+  // ���果获取到实时数据，写入缓存文件
+  if (breadth && isNum(breadth?.up) && isNum(breadth?.down)) {
+    try {
+      const file = breadthCachePath();
+      fs.writeFileSync(file, JSON.stringify(breadth), 'utf8');
+    } catch (e) {
+      console.error('写入涨跌家数缓存失败:', e);
+    }
+  } else {
+    // 如果没有获取到实时数据，尝试从缓存读取
     const cacheFile = cacheJsonPath('market-breadth', marketDate);
     const cached = readJsonCache(cacheFile);
     if (cached && isJsonText(cached)) {
@@ -4607,6 +4616,41 @@ const server = http.createServer(async (req, res) => {
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.end(out || '{}');
     });
+    return;
+  }
+
+  if (url.pathname === '/api/sector/lifecycle/frontend') {
+    const today = new Date().toISOString().split('T')[0].replace(/-/g, '');
+    const frontendFile = path.join(__dirname, 'logs', `operation_frontend_${today}.json`);
+
+    // 尝试读取今天的文件
+    if (fs.existsSync(frontendFile)) {
+      const data = fs.readFileSync(frontendFile, 'utf-8');
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.end(data);
+      return;
+    }
+
+    // 如果今天的文件不存在，查找最新的文件
+    const logsDir = path.join(__dirname, 'logs');
+    if (fs.existsSync(logsDir)) {
+      const files = fs.readdirSync(logsDir)
+        .filter(f => f.startsWith('operation_frontend_') && f.endsWith('.json'))
+        .sort()
+        .reverse();
+
+      if (files.length > 0) {
+        const latestFile = path.join(logsDir, files[0]);
+        const data = fs.readFileSync(latestFile, 'utf-8');
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.end(data);
+        return;
+      }
+    }
+
+    // 如果没有任何文件，返回空结果
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.end(JSON.stringify({ date: today, items: [] }));
     return;
   }
 

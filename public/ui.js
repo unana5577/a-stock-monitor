@@ -1640,7 +1640,7 @@ createApp({
         const days = Math.max(60, currentDays.value || 0);
         const realtimeHist = isMarketOpen();
         const historyUrl = `${apiBase}/api/sector/history?rt=${realtimeHist ? 1 : 0}&days=${days}${query ? '&' + query : ''}`;
-        const lifecycleUrl = `${apiBase}/api/sector/lifecycle?rt=0&days=${days}${query ? '&' + query : ''}`;
+        const lifecycleUrl = `${apiBase}/api/sector/lifecycle/frontend`;
         const rotationUrl = `${apiBase}/api/sector/rotation?rt=0&days=${Math.max(90, days)}${query ? '&' + query : ''}`;
         const signalsReq = fetch(`${apiBase}/api/signals`)
           .then(r => r.json())

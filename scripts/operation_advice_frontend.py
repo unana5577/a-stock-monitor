@@ -68,6 +68,11 @@ def main():
     market_amount_data = loader.load_etf_amount_data()
     print(f"\n📈 全市场ETF成交额数据已加载: {len(market_amount_data)} 天")
 
+    # 加载市场广度数据（用于错杀检测）
+    market_breadth = loader.load_market_breadth_latest()
+    market_return = loader.load_market_return_latest()
+    print(f"📊 市场广度数据：下跌{market_breadth.get('down', 0)}家（占比{market_breadth.get('down_ratio', 0)*100:.1f}%），大盘涨跌幅{market_return:+.2f}%")
+
     for etf in ETF_LIST:
         name = etf['name']
         code = etf['code']
@@ -151,6 +156,27 @@ def main():
         print(f"✅ 操作建议：{action}")
         print(f"📝 原因：{reason}")
 
+        # ========== 新增：评分计算 ==========
+        item_score = indicators.calculate_score(
+            momentum=momentum,
+            fund_behavior=fund_behavior,
+            alpha_5=alpha_5,
+            alpha_20=alpha_20,
+            amount_share_change=fund_heat_change,
+            action=action
+        )
+
+        # ========== 新增：错杀检测 ==========
+        is_false_kill = indicators.detect_false_kill(
+            alpha_20=alpha_20,
+            amount_share_pct=fund_heat,
+            market_down_ratio=market_breadth.get('down_ratio', 0),
+            market_return=market_return
+        )
+        sig = "false_kill" if is_false_kill else "neutral"
+
+        print(f"📊 综合得分：{item_score:.2f}  信号：{sig}")
+
         # ========== 保存结果（前端兼容格式）==========
         results.append({
             "板块名称": name,
@@ -159,6 +185,8 @@ def main():
             "动能": momentum,
             "资金行为": fund_behavior,
             "操作建议": action,
+            "_score": item_score,
+            "sig": sig,
             "指标数据": {
                 "Amount_Share_Change": round(fund_heat_change, 3),
                 "Alpha_5": round(alpha_5, 2),
@@ -174,7 +202,15 @@ def main():
             }
         })
 
-    # 保存结果（前端兼容格式）
+    # ========== 按得分排序，标记Top1-3 ==========
+    results.sort(key=lambda x: x.get("_score", 0), reverse=True)
+    for idx, item in enumerate(results):
+        if idx < 3:
+            item["topRank"] = idx + 1
+        else:
+            item["topRank"] = None
+
+    # 保存结���（前端兼容格式）
     today = datetime.now().strftime('%Y%m%d')
     output_json = Path(f"logs/operation_frontend_{today}.json")
     output_json.parent.mkdir(exist_ok=True)

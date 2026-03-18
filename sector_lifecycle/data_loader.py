@@ -90,3 +90,44 @@ class DataLoader:
                     amount_data[date] = amount
 
         return amount_data
+
+    def load_market_breadth_latest(self) -> Dict[str, float]:
+        """加载最新的市场广度数据
+
+        Returns:
+            字典，格式：{"up": 866, "down": 4541, "flat": 81, "total": 5488, "down_ratio": 0.827}
+        """
+        filepath = self.data_dir / "breadth-history.jsonl"
+        if not filepath.exists():
+            return {}
+
+        latest_data = {}
+        with open(filepath, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+            if lines:
+                latest = json.loads(lines[-1].strip())
+                # 格式：[timestamp, date, up, down, flat, total]
+                if len(latest) >= 6:
+                    latest_data = {
+                        "up": latest[2],
+                        "down": latest[3],
+                        "flat": latest[4],
+                        "total": latest[5],
+                        "down_ratio": latest[3] / latest[5] if latest[5] > 0 else 0
+                    }
+
+        return latest_data
+
+    def load_market_return_latest(self) -> float:
+        """加载最新的大盘涨跌幅
+
+        从上证指数数据中获取最新涨跌幅
+
+        Returns:
+            最新涨跌幅（百分比）
+        """
+        df = self.load_index_data("index_000001.jsonl")
+        if df.empty:
+            return 0
+
+        return df.iloc[-1].get('pct', 0)
