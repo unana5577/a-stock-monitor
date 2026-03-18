@@ -1,0 +1,72 @@
+[
+  {
+    "etf_name": "云计算",
+    "etf_code": "516510",
+    "date": "2026-03-16",
+    "close": 1.755,
+    "pct": 1.09,
+    "bias_5": -2.49,
+    "risk_level": "低风险",
+    "percentile_range": "5%-20%",
+    "volume_ratio": 1.31,
+    "volume_level": "放量",
+    "operation": "强力买入",
+    "reason": "低风险+放量上涨"
+  },
+  {
+    "etf_name": "商业航天",
+    "etf_code": "563530",
+    "date": "2026-03-16",
+    "close": 1.471,
+    "pct": -0.34,
+    "bias_5": -3.71,
+    "risk_level": "低风险",
+    "percentile_range": "5%-20%",
+    "volume_ratio": 1.41,
+    "volume_level": "放量",
+    "operation": "可能企稳",
+    "reason": "低风险+放量抗跌"
+  },
+  {
+    "etf_name": "创新药",
+    "etf_code": "515120",
+    "date": "2026-03-16",
+    "close": 0.601,
+    "pct": 1.01,
+    "bias_5": -0.23,
+    "risk_level": "中位风险",
+    "percentile_range": "40%-60%",
+    "volume_ratio": 1.47,
+    "volume_level": "放量",
+    "operation": "观望",
+    "reason": "中位风险，正常波动"
+  },
+  {
+    "etf_name": "游戏",
+    "etf_code": "516010",
+    "date": "2026-03-16",
+    "close": 1.37,
+    "pct": 0.66,
+    "bias_5": -1.92,
+    "risk_level": "中低位风险",
+    "percentile_range": "20%-40%",
+    "volume_ratio": 1.13,
+    "volume_level": "正常",
+    "operation": "观望",
+    "reason": "中低位风险，正常波动"
+  },
+  {
+    "etf_name": "机器人",
+    "etf_code": "562500",
+    "date": "2026-03-16",
+    "close": 1.004,
+    "pct": 0.2,
+    "bias_5": -1.67,
+    "risk_level": "低风险",
+    "percentile_range": "5%-20%",
+    "volume_ratio": 1.76,
+    "volume_level": "放量",
+    "operation": "强力买入",
+    "reason": "低风险+放量上涨"
+  }
+]

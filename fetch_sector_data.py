@@ -4,10 +4,11 @@ import json
 import sys
 import os
 import importlib.util
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from urllib.request import urlopen, Request
 from sector_lifecycle import analyze_sector, select_dynamic_benchmark
+from typing import List
 
 # User-defined sector mapping
 SECTOR_MAPPING = [
@@ -80,6 +81,88 @@ def _is_trading_day_session():
             pass
     minutes = now.hour * 60 + now.minute
     return 570 <= minutes <= 900  # 9:30-15:00
+
+def _is_market_open() -> bool:
+    """
+    判断当前是否在交易时段（9:30 - 15:00）
+    注意：只判断时间，不判断日期（周末/节假日）
+
+    :return: True=交易时段（15:00前）, False=非交易时段
+    """
+    # 支持环境变量模拟时间
+    mock_hour = os.getenv("MOCK_TIME_HOUR")
+    if mock_hour is not None:
+        hour = int(mock_hour)
+        minute = int(os.getenv("MOCK_TIME_MINUTE", "0"))
+    else:
+        now = datetime.now(ZoneInfo("Asia/Shanghai"))
+        hour = now.hour
+        minute = now.minute
+
+    # 交易时段：9:30-15:00（15:00及以前都算交易时间）
+    total_minutes = hour * 60 + minute
+    return 570 <= total_minutes <= 900  # 9:30-15:00
+
+def _is_trading_day(date_str: str) -> bool:
+    """
+    判断指定日期是否为交易日
+
+    :param date_str: YYYY-MM-DD
+    :return: True=交易日, False=非交易日
+    """
+    try:
+        dt = datetime.strptime(date_str, "%Y-%m-%d")
+
+        # 1. 检查周末
+        if dt.weekday() >= 5:  # 周六日
+            return False
+
+        # 2. 检查节假日（从data/holiday.txt读取）
+        holiday_file = os.path.join("data", "holiday.txt")
+        if os.path.exists(holiday_file):
+            try:
+                with open(holiday_file, "r", encoding="utf-8") as f:
+                    holidays = set(line.strip() for line in f if line.strip())
+                if date_str in holidays:
+                    return False
+            except:
+                pass
+
+        return True
+    except:
+        return False
+
+def _get_latest_trading_day(allow_today: bool = False) -> str:
+    """
+    获取最新可交易日
+
+    :param allow_today: 是否允许返回今天
+                         - True: 非交易时间，可以返回今天
+                         - False: 交易时间，只能返回昨天（默认）
+    :return: YYYY-MM-DD
+    """
+    now = datetime.now(ZoneInfo("Asia/Shanghai"))
+    today_str = now.strftime("%Y-%m-%d")
+
+    # 今天是交易日
+    if _is_trading_day(today_str):
+        if allow_today:
+            return today_str
+        # 不允许返回今天，返回昨天
+        for i in range(1, 8):
+            prev_date = now - timedelta(days=i)
+            prev_str = prev_date.strftime("%Y-%m-%d")
+            if _is_trading_day(prev_str):
+                return prev_str
+
+    # 今天是节假日，回退到最近交易日
+    for i in range(1, 8):
+        prev_date = now - timedelta(days=i)
+        prev_str = prev_date.strftime("%Y-%m-%d")
+        if _is_trading_day(prev_str):
+            return prev_str
+
+    return today_str
 
 def _read_json_file(path):
     if not path or not os.path.exists(path):
@@ -234,7 +317,10 @@ def _fetch_tencent_daily(code, limit=180):
         if etf_result.get("data"):
             return etf_result
 
-    url = f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={code},day,,,{int(limit)},qfq"
+    url = f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={code},day,{limit},qfq"
+    txt = requests.get(url, headers=USER_AGENT, timeout=10).text
+    obj = json.loads(txt)
+    rows = (((obj.get("data") or {}).get(code) or {}).get("day") or [])
     txt = _http_get_text(url)
     obj = json.loads(txt)
     rows = (((obj.get("data") or {}).get(code) or {}).get("day") or [])
@@ -429,24 +515,16 @@ def _proxy_history_payload(sectors, days=60, variant=None):
         is_etf = len(clean_code) == 6 and clean_code.isdigit() and clean_code[0] in ['5', '1']
 
         if is_etf:
-            # ✅ ETF优先从本地读取
+            # ✅ ETF数据维护（自动补全缺失数据）
+            maintain_result = maintain_etf_data(code)
+
+            # 读取本地数据（此时已是最新）
             local_data = _load_etf_from_disk(code, days=int(days))
-            if local_data:
-                # 本地有数据，直接使用
-                history[name] = local_data
-                print(f"[ETF本地] {name}: 读取本地 {len(local_data)} 条数据")
-            else:
-                # 本地没有数据，从网络请求并保存
-                normalized_code = _normalize_etf_code(code)
-                daily = _fetch_akshare_sina_etf(normalized_code, limit=1000)  # 获取完整历史
-                data_list = daily.get("data") or []
-                if data_list:
-                    _save_etf_to_disk(code, data_list)  # 保存到本地
-                    # 只返回需要的days天
-                    history[name] = data_list[-int(days):] if len(data_list) > int(days) else data_list
-                    print(f"[ETF网络] {name}: 请求并保存 {len(data_list)} 条数据到本地")
-                else:
-                    history[name] = []
+            history[name] = local_data
+
+            # 打印日志
+            if maintain_result['updated']:
+                print(f"[ETF维护] {code}: 补全 {maintain_result['added_count']} 条 ({maintain_result['missing_days']})")
         else:
             # 板块代码：从网络请求
             normalized_code = code
@@ -558,6 +636,222 @@ def _get_latest_etf_date(etf_code):
     data = _load_etf_from_disk(etf_code, days=1)
     return data[-1].get('date') if data else None
 
+def _calculate_missing_trading_days(from_date: str, to_date: str) -> List[str]:
+    """
+    计算两个日期之间的所有交易日
+
+    :param from_date: 起始日期（不含，如"2026-03-13"）
+    :param to_date: 结束日期（含，如"2026-03-16"）
+    :return: 交易日列表 ["2026-03-14", "2026-03-15", "2026-03-16"]
+    """
+    try:
+        from_dt = datetime.strptime(from_date, "%Y-%m-%d")
+        to_dt = datetime.strptime(to_date, "%Y-%m-%d")
+
+        missing = []
+        current = from_dt + timedelta(days=1)  # 从下一天开始
+
+        while current <= to_dt:
+            date_str = current.strftime("%Y-%m-%d")
+            if _is_trading_day(date_str):
+                missing.append(date_str)
+            current += timedelta(days=1)
+
+        return missing
+    except:
+        return []
+
+def _fetch_etf_date_range(etf_code: str, start_date: str, end_date: str) -> List[dict]:
+    """
+    请求指定日期范围的ETF数据（增量请求）
+
+    :param etf_code: ETF代码（sh512480）
+    :param start_date: 起始日期（YYYYMMDD，如"20260314"）
+    :param end_date: 结束日期（YYYYMMDD，如"20260316"）
+    :return: 数据列表
+    """
+    # 方法1：尝试东财接口
+    try:
+        from io import StringIO
+        old_stderr = sys.stderr
+        sys.stderr = StringIO()
+
+        # 标准化代码（去掉sh/sz前缀）
+        clean_code = etf_code.replace('sh', '').replace('sz', '')
+
+        # 转换日期格式（YYYY-MM-DD → YYYYMMDD）
+        start = start_date.replace('-', '')
+        end = end_date.replace('-', '')
+
+        # 调用AkShare东财接口
+        df = ak.fund_etf_hist_em(
+            symbol=clean_code,
+            period="daily",
+            start_date=start,      # 如 "20260314"
+            end_date=end,          # 如 "20260316"
+            adjust="qfq"
+        )
+
+        sys.stderr = old_stderr
+
+        if df is not None and not df.empty:
+            # 转换为标准格式
+            data = []
+            for _, row in df.iterrows():
+                try:
+                    data.append({
+                        "date": str(row.get('日期', '')),
+                        "open": float(row.get('开盘', 0)),
+                        "close": float(row.get('收盘', 0)),
+                        "high": float(row.get('最高', 0)),
+                        "low": float(row.get('最低', 0)),
+                        "volume": float(row.get('成交量', 0)),
+                        "amount": float(row.get('成交额', 0)),
+                        "pct": float(row.get('涨跌幅', 0))
+                    })
+                except:
+                    continue
+
+            print(f"[ETF增量] 东财接口请求到 {len(data)} 条数据 ({start_date} ~ {end_date})")
+            return data
+
+    except Exception as e:
+        print(f"[ETF增量] 东财接口失败: {str(e)[:80]}")
+
+    # 方法2：降级到腾讯接口
+    try:
+        # 腾讯接口需要的是 YYYY-MM-DD 格式的日期
+        start_ymd = start_date.replace('-', '')  # 确保是 YYYYMMDD
+        end_ymd = end_date.replace('-', '')
+
+        # 计算需要请求的天数
+        start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+        end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+        days_needed = (end_dt - start_dt).days + 1
+        limit = max(days_needed + 10, 60)  # 多请求一些确保覆盖
+
+        # 使用腾讯接口
+        result = _fetch_tencent_daily(etf_code, limit=limit)
+
+        if result.get("data"):
+            # 过滤出指定日期范围的数据
+            filtered_data = [
+                item for item in result["data"]
+                if start_ymd <= item.get('date', '').replace('-', '') <= end_ymd
+            ]
+
+            if filtered_data:
+                print(f"[ETF增量] 腾讯接口请求到 {len(filtered_data)} 条数据 ({start_date} ~ {end_date})")
+                return filtered_data
+
+    except Exception as e:
+        print(f"[ETF增量] 腾讯接口失败: {str(e)[:80]}")
+
+    print(f"[ETF增量] ❌ 所有数据源均失败 ({start_date} ~ {end_date})")
+    return []
+
+def _append_etf_to_disk(etf_code: str, new_data: List[dict]) -> bool:
+    """
+    追加新数据到ETF文件（幂等性保证）
+
+    :param etf_code: ETF代码
+    :param new_data: 新数据列表
+    :return: True=成功, False=失败
+    """
+    if not new_data:
+        return False
+
+    filepath = _get_etf_file_path(etf_code)
+
+    # 读取现有数据的日期集合（用于去重）
+    existing_dates = set()
+    if os.path.exists(filepath):
+        with open(filepath, 'r', encoding='utf-8') as f:
+            for line in f:
+                try:
+                    item = json.loads(line.strip())
+                    if item.get('date'):
+                        existing_dates.add(item['date'])
+                except:
+                    pass
+
+    # 过滤掉已存在的数据（幂等性）
+    to_append = [item for item in new_data
+                 if item.get('date') not in existing_dates]
+
+    if not to_append:
+        print(f"[ETF增量] {etf_code}: 数据已存在，跳过追加")
+        return False
+
+    # 追加新数据
+    with open(filepath, 'a', encoding='utf-8') as f:
+        for item in to_append:
+            f.write(json.dumps(item, ensure_ascii=False) + '\n')
+
+    print(f"[ETF增量] {etf_code}: ✅ 追加 {len(to_append)} 条新数据")
+    return True
+
+def _update_etf_incremental(etf_code, required_days=60):
+    """
+    ETF增量更新核心函数
+
+    :param etf_code: ETF代码（如sh512480）
+    :param required_days: 需要的天数
+    :return: ETF数据列表
+    """
+
+    # 步骤1：读取本地数据
+    local_data = _load_etf_from_disk(etf_code, days=required_days)
+
+    # 步骤2：本地无数据，全量请求
+    if not local_data:
+        print(f"[ETF增量] {etf_code}: 本地无数据，全量请求")
+        daily = _fetch_akshare_sina_etf(etf_code, limit=1000)
+        data_list = daily.get("data") or []
+        if data_list:
+            _save_etf_to_disk(etf_code, data_list)
+            return data_list[-required_days:] if len(data_list) > required_days else data_list
+        return []
+
+    # 步骤3：检查数据是否过期
+    latest_date_str = local_data[-1]['date']
+    latest_trading_day = _get_latest_trading_day()
+
+    if latest_date_str >= latest_trading_day:
+        # 数据是最新的，直接返回
+        print(f"[ETF增量] {etf_code}: 数据最新 ({latest_date_str})")
+        return local_data
+
+    # 步骤4：计算需要增量请求的天数
+    missing_days = _calculate_missing_trading_days(
+        from_date=latest_date_str,
+        to_date=latest_trading_day
+    )
+
+    if not missing_days:
+        print(f"[ETF增量] {etf_code}: 无缺失交易日")
+        return local_data
+
+    print(f"[ETF增量] {etf_code}: 增量更新 {latest_date_str} → {latest_trading_day} ({len(missing_days)}个交易日)")
+
+    # 步骤5：增量请求（只请求缺失的日期范围）
+    incremental_data = _fetch_etf_date_range(
+        etf_code,
+        start_date=missing_days[0],
+        end_date=missing_days[-1]
+    )
+
+    if not incremental_data:
+        print(f"[ETF增量] {etf_code}: ❌ 增量请求失败")
+        return local_data
+
+    # 步骤6：追加到本地文件
+    _append_etf_to_disk(etf_code, incremental_data)
+
+    # 步骤7：返回完整数据
+    updated_data = local_data + incremental_data
+    return updated_data[-required_days:] if len(updated_data) > required_days else updated_data
+
 def _append_etf_daily(etf_code, data_list):
     """
     追加新的ETF日线数据
@@ -565,6 +859,107 @@ def _append_etf_daily(etf_code, data_list):
     :param data_list: 新数据列表
     """
     return _save_etf_to_disk(etf_code, data_list)
+
+def maintain_etf_data(etf_code: str) -> dict:
+    """
+    ETF数据维护主入口（被warmup调用）
+
+    :param etf_code: ETF代码，如 sh512480
+    :return: {
+        "code": "sh512480",
+        "latest_date": "2026-03-17",
+        "updated": True/False,
+        "added_count": 3,
+        "missing_days": ["2026-03-14", "2026-03-16", "2026-03-17"]
+    }
+    """
+    # 步骤1：读取本地数据
+    local_data = _load_etf_from_disk(etf_code, days=1000)
+    local_latest = local_data[-1]['date'] if local_data else None
+
+    print(f"[ETF维护] {etf_code}: 本地最新={local_latest}, 数据量={len(local_data) if local_data else 0}")
+
+    # 步骤2：判断时间窗口
+    is_trading_hours = _is_market_open()
+
+    # 步骤3：计算最新可交易日
+    latest_available = _get_latest_trading_day(allow_today=not is_trading_hours)
+
+    print(f"[ETF维护] {etf_code}: 当前时段={'交易中' if is_trading_hours else '非交易'}, 可补至={latest_available}")
+
+    # 步骤4：检查是否需要补全
+    if local_latest and local_latest >= latest_available:
+        print(f"[ETF维护] {etf_code}: 本地数据已是最新，无需补全")
+        return {
+            "code": etf_code,
+            "latest_date": local_latest,
+            "updated": False,
+            "added_count": 0,
+            "missing_days": []
+        }
+
+    # 步骤5：计算缺失交易日
+    if not local_latest:
+        # 本地无数据，从2025-05-19开始请求
+        start_date = "2025-05-19"
+        missing_days = _calculate_missing_trading_days(
+            from_date=(datetime.strptime(start_date, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d"),
+            to_date=latest_available
+        )
+    else:
+        missing_days = _calculate_missing_trading_days(
+            from_date=local_latest,
+            to_date=latest_available
+        )
+
+    if not missing_days:
+        return {
+            "code": etf_code,
+            "latest_date": local_latest,
+            "updated": False,
+            "added_count": 0,
+            "missing_days": []
+        }
+
+    # 步骤6：增量请求
+    print(f"[ETF维护] {etf_code}: 请求网络数据 {missing_days[0]} → {missing_days[-1]} ({len(missing_days)}个交易日)")
+
+    incremental_data = _fetch_etf_date_range(
+        etf_code,
+        start_date=missing_days[0],
+        end_date=missing_days[-1]
+    )
+
+    # 区分空响应和请��失败
+    if not incremental_data:
+        print(f"[ETF维护] {etf_code}: ⚠️ 网络请求返回空数据，保留本地数据（local_latest={local_latest}）")
+        return {
+            "code": etf_code,
+            "latest_date": local_latest,
+            "updated": False,
+            "added_count": 0,
+            "missing_days": missing_days,
+            "error": "网络请求返回空数据（可能接口限流或ETF代码不支持）",
+            "note": "本地数据未受影响，可稍后重试或手动更新"
+        }
+
+    print(f"[ETF维护] {etf_code}: ✅ 网络请求成功，返回 {len(incremental_data)} 条数据")
+
+    # 步骤7：幂等追加
+    added_count = _append_etf_to_disk(etf_code, incremental_data)
+
+    # 步骤8：返回结果
+    new_latest = _get_latest_etf_date(etf_code)
+
+    print(f"[ETF维护] {etf_code}: ✅ 补全成功，新增 {added_count} 条，最新={new_latest}")
+
+    return {
+        "code": etf_code,
+        "latest_date": new_latest,
+        "updated": True,
+        "added_count": added_count,
+        "missing_days": missing_days
+    }
 
 def warmup_proxy_files(sectors, days=60, variant=None):
     """

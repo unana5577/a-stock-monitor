@@ -1,0 +1,11 @@
+{
+  "date": "2026-03-17",
+  "buy_signals": [],
+  "sell_signals": [],
+  "summary": {
+    "total_buy": 0,
+    "buy_accuracy": 0,
+    "total_sell": 0,
+    "sell_accuracy": 0
+  }
+}

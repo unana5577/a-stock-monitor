@@ -513,7 +513,8 @@ async function fetchEastmoneyBreadth() {
     const up = Number(json?.data?.f104);
     const down = Number(json?.data?.f105);
     const flat = Number(json?.data?.f106);
-    if (!isNum(up) || !isNum(down)) return null;
+    // 非交易时间返回0/0/100，需要排除这种情况
+    if (!isNum(up) || !isNum(down) || (up === 0 && down === 0)) return null;
     const total = Number.isFinite(flat) ? up + down + flat : up + down;
     return { up, down, flat: Number.isFinite(flat) ? flat : 0, total };
   } catch (e) {
@@ -1948,7 +1949,18 @@ function isAfterCloseNow() {
   if (!parts) return false;
   if (!isTradingDay(parts.date)) return false;
   const minutes = parts.minutes;
-  return minutes >= 930;
+  // 下午收盘后：15:00之后（900分钟）
+  return minutes >= 900;
+}
+
+// 判断是否在午休时间（11:30-13:00）
+function isLunchBreakNow() {
+  const parts = getBeijingParts();
+  if (!parts) return false;
+  if (!isTradingDay(parts.date)) return false;
+  const minutes = parts.minutes;
+  // 午休：11:30-13:00（690-780分钟）
+  return minutes >= 690 && minutes < 780;
 }
 
 // 判断是否在交易日内（9:30-15:00，含午休）
@@ -2729,8 +2741,10 @@ function readLatestArchivePayload() {
     sentiment: {
       volume: volume || 0,
       volumeStr: volume ? (volume / 10000).toFixed(1) + '亿' : '-',
-      upCount: upCount || '-',
-      downCount: downCount || '-',
+      // 优先使用实时缓存的涨跌家数
+      // 优先使用实时缓存的涨跌家数
+      upCount: (readBreadthCache()?.up) || upCount || '-',
+      downCount: (readBreadthCache()?.down) || downCount || '-',
       volumeCmp,
       volumeSeries,
       volumeSeriesYday,
@@ -3070,6 +3084,14 @@ const server = http.createServer(async (req, res) => {
       const body = raw ? JSON.parse(raw) : {};
       const prompt = body.prompt || fs.readFileSync(PROMPT_PATH, 'utf-8');
       const snap = readLatestArchivePayload() || await buildSnapshotPayload();
+      // 调试：打印喂给AI的关键数据
+      console.log('[AI Debug] 喂给AI的数据:', JSON.stringify({
+        upCount: snap?.sentiment?.upCount,
+        downCount: snap?.sentiment?.downCount,
+        volume: snap?.sentiment?.volume,
+        volumeStr: snap?.sentiment?.volumeStr,
+        indices: snap?.indices ? Object.keys(snap.indices) : []
+      }));
       const text = await callBailian(prompt, snap);
       lastAiText = text || '';
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -3494,10 +3516,12 @@ const server = http.createServer(async (req, res) => {
     let snap = readLatestArchivePayload();
     const missing = !snap || !isNum(snap.bonds?.gov?.pct) || !isNum(snap.sectors?.bank?.pct) || !isNum(snap.sectors?.broker?.pct) || !isNum(snap.sectors?.insure?.pct);
     const stale = forceRefresh || !snap || !isNum(snap.ts) || (now() - snap.ts > CACHE_TTL_MS);
+    // 午休时间也需要获取当日数据
+    const needFresh = isMarketOpenNow() || isLunchBreakNow();
     if (stale || missing) {
       let fresh = null;
       try {
-        if (isMarketOpenNow()) fresh = await withTimeout(buildSnapshotPayload(), 6000);
+        if (needFresh) fresh = await withTimeout(buildSnapshotPayload(), 6000);
       } catch (e) {
         fresh = null;
       }
@@ -3516,7 +3540,8 @@ const server = http.createServer(async (req, res) => {
         fixed.aiText = needAi ? await ensureAiText(fixed) : (lastAiText || '');
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         res.end(JSON.stringify(fixed));
-        if (isMarketOpenNow()) {
+        // 开盘时间或午休时间都触发后台更新
+        if (needFresh) {
           buildSnapshotPayload().then((v) => {
             if (!v) return;
             lastGoodSnapshot.payload = v;

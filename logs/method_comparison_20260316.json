@@ -1,0 +1,55 @@
+{
+  "date": "2026-03-16",
+  "summary": [
+    {
+      "method": "A",
+      "buy_signals": 14,
+      "buy_up": 8,
+      "buy_accuracy": 0.5714285714285714,
+      "sell_signals": 27,
+      "sell_down": 11,
+      "sell_accuracy": 0.4074074074074074
+    },
+    {
+      "method": "B",
+      "buy_signals": 2,
+      "buy_up": 1,
+      "buy_accuracy": 0.5,
+      "sell_signals": 4,
+      "sell_down": 2,
+      "sell_accuracy": 0.5
+    },
+    {
+      "method": "C",
+      "buy_signals": 168,
+      "buy_up": 84,
+      "buy_accuracy": 0.5,
+      "sell_signals": 193,
+      "sell_down": 90,
+      "sell_accuracy": 0.46632124352331605
+    }
+  ],
+  "details": {
+    "A": {
+      "buy_signals": 14,
+      "buy_up": 8,
+      "sell_signals": 27,
+      "sell_down": 11,
+      "method": "A"
+    },
+    "B": {
+      "buy_signals": 2,
+      "buy_up": 1,
+      "sell_signals": 4,
+      "sell_down": 2,
+      "method": "B"
+    },
+    "C": {
+      "buy_signals": 168,
+      "buy_up": 84,
+      "sell_signals": 193,
+      "sell_down": 90,
+      "method": "C"
+    }
+  }
+}

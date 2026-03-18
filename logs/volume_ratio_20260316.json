@@ -1,0 +1,67 @@
+[
+  {
+    "etf_name": "云计算",
+    "etf_code": "516510",
+    "date": "2026-03-16",
+    "close": 1.755,
+    "volume": 853606.0,
+    "ma3_volume": 649241.3333333334,
+    "volume_ratio": 1.315,
+    "vr_80": 1.159,
+    "vr_20": 0.831,
+    "volume_level": "放量",
+    "volume_percentile": 88.3
+  },
+  {
+    "etf_name": "商业航天",
+    "etf_code": "563530",
+    "date": "2026-03-16",
+    "close": 1.471,
+    "volume": 775772.0,
+    "ma3_volume": 550277.6666666666,
+    "volume_ratio": 1.41,
+    "vr_80": 1.175,
+    "vr_20": 0.884,
+    "volume_level": "放量",
+    "volume_percentile": 95.0
+  },
+  {
+    "etf_name": "创新药",
+    "etf_code": "515120",
+    "date": "2026-03-16",
+    "close": 0.601,
+    "volume": 3854564.0,
+    "ma3_volume": 2616612.6666666665,
+    "volume_ratio": 1.473,
+    "vr_80": 1.183,
+    "vr_20": 0.817,
+    "volume_level": "放量",
+    "volume_percentile": 95.0
+  },
+  {
+    "etf_name": "游戏",
+    "etf_code": "516010",
+    "date": "2026-03-16",
+    "close": 1.37,
+    "volume": 489426.0,
+    "ma3_volume": 432901.6666666667,
+    "volume_ratio": 1.131,
+    "vr_80": 1.232,
+    "vr_20": 0.759,
+    "volume_level": "正常",
+    "volume_percentile": 70.0
+  },
+  {
+    "etf_name": "机器人",
+    "etf_code": "562500",
+    "date": "2026-03-16",
+    "close": 1.004,
+    "volume": 7336472.0,
+    "ma3_volume": 4177287.3333333335,
+    "volume_ratio": 1.756,
+    "vr_80": 1.176,
+    "vr_20": 0.84,
+    "volume_level": "放量",
+    "volume_percentile": 98.3
+  }
+]

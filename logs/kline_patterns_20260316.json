@@ -1,0 +1,42 @@
+[
+  {
+    "etf_name": "云计算",
+    "etf_code": "516510",
+    "date": "2026-03-16",
+    "close": 1.755,
+    "pct": 1.09,
+    "kline_pattern": "普通"
+  },
+  {
+    "etf_name": "商业航天",
+    "etf_code": "563530",
+    "date": "2026-03-16",
+    "close": 1.471,
+    "pct": -0.34,
+    "kline_pattern": "锤子线"
+  },
+  {
+    "etf_name": "创新药",
+    "etf_code": "515120",
+    "date": "2026-03-16",
+    "close": 0.601,
+    "pct": 1.01,
+    "kline_pattern": "普通"
+  },
+  {
+    "etf_name": "游戏",
+    "etf_code": "516010",
+    "date": "2026-03-16",
+    "close": 1.37,
+    "pct": 0.66,
+    "kline_pattern": "普通"
+  },
+  {
+    "etf_name": "机器人",
+    "etf_code": "562500",
+    "date": "2026-03-16",
+    "close": 1.004,
+    "pct": 0.2,
+    "kline_pattern": "锤子线"
+  }
+]
