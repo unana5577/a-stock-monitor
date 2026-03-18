@@ -1027,7 +1027,6 @@ createApp({
         if (aiChanged && withAi) aiUpdatedAt.value = Date.now();
         if (data?.sentiment) sentiment.value = { ...sentiment.value, ...data.sentiment };
         if (data?.sentiment?.volumeCmp) sentiment.value.volumeCmp = data.sentiment.volumeCmp;
-        if (data?.breadth) breadth.value = data.breadth;
         const arrToday = data?.sentiment?.volumeSeries || [];
         const ydayArr = data?.sentiment?.volumeSeriesYday || [];
         sentiment.value.volumeSeries = arrToday;
@@ -1171,43 +1170,11 @@ createApp({
       try {
         const res = await fetch(`${apiBase}/api/market/breadth`);
         if (!res.ok) return;
-        const data = await res.json();
-        if (!data) return;
+        const json = await res.json();
+        if (!json) return;
+        const data = json.data;
 
-        const container = document.getElementById('market-breadth');
-        if (container) container.classList.remove('hidden');
-
-        const up = Number(data?.up || 0);
-        const down = Number(data?.down || 0);
-        const flat = Number(data?.flat || 0);
-        const total = Number(data?.total || (up + down + flat) || 0);
-
-        const upPct = (total ? (up / total * 100) : 50).toFixed(1) + '%';
-        const downPct = (total ? (down / total * 100) : 50).toFixed(1) + '%';
-
-        const elUp = document.getElementById('breadth-up');
-        if (elUp) elUp.style.width = upPct;
-        const elDown = document.getElementById('breadth-down');
-        if (elDown) elDown.style.width = downPct;
-
-        const elUpCount = document.getElementById('breadth-up-count');
-        if (elUpCount) elUpCount.textContent = `涨 ${up}`;
-        const elDownCount = document.getElementById('breadth-down-count');
-        if (elDownCount) elDownCount.textContent = `跌 ${down}`;
-
-        const ratio = document.getElementById('breadth-ratio');
-        if (ratio) {
-          if (up > down * 2) {
-            ratio.textContent = "普涨 🔥";
-            ratio.className = "text-red-600 font-bold";
-          } else if (down > up * 2) {
-            ratio.textContent = "普跌 ❄️";
-            ratio.className = "text-green-600 font-bold";
-          } else {
-            ratio.textContent = "震荡 ⚖️";
-            ratio.className = "text-gray-600 font-bold";
-          }
-        }
+        breadth.value = data;
       } catch (e) { console.error(e); }
     };
 
@@ -1640,7 +1607,7 @@ createApp({
         const days = Math.max(60, currentDays.value || 0);
         const realtimeHist = isMarketOpen();
         const historyUrl = `${apiBase}/api/sector/history?rt=${realtimeHist ? 1 : 0}&days=${days}${query ? '&' + query : ''}`;
-        const lifecycleUrl = `${apiBase}/api/sector/lifecycle/frontend`;
+        const lifecycleUrl = `${apiBase}/api/sector/lifecycle?rt=0&days=${days}${query ? '&' + query : ''}`;
         const rotationUrl = `${apiBase}/api/sector/rotation?rt=0&days=${Math.max(90, days)}${query ? '&' + query : ''}`;
         const signalsReq = fetch(`${apiBase}/api/signals`)
           .then(r => r.json())

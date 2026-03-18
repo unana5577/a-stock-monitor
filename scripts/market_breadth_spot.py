@@ -18,6 +18,7 @@
 """
 import json
 import sys
+import os
 
 
 def main() -> int:
@@ -57,7 +58,7 @@ def main() -> int:
         else:
             sentiment = "正常"
 
-        print(json.dumps({
+        result = {
             "ok": True,
             "up": up,
             "down": down,
@@ -65,7 +66,22 @@ def main() -> int:
             "total": total,
             "ratio": ratio,
             "sentiment": sentiment
-        }, ensure_ascii=False), file=sys.stdout)
+        }
+
+        # 输出到标准输出
+        print(json.dumps(result, ensure_ascii=False), file=sys.stdout)
+
+        # 写入缓存文件
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        project_dir = os.path.dirname(script_dir)
+        cache_file = os.path.join(project_dir, 'data', 'breadth-cache.json')
+        try:
+            with open(cache_file, 'w', encoding='utf-8') as f:
+                json.dump(result, f, ensure_ascii=False)
+        except Exception as e:
+            print(json.dumps({"ok": False, "error": f"write cache failed: {e}"}), file=sys.stderr)
+            return 1
+
         return 0
 
     except Exception as e:

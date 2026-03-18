@@ -2741,10 +2741,8 @@ function readLatestArchivePayload() {
     sentiment: {
       volume: volume || 0,
       volumeStr: volume ? (volume / 10000).toFixed(1) + '亿' : '-',
-      // 优先使用实时缓存的涨跌家数
-      // 优先使用实时缓存的涨跌家数
-      upCount: (readBreadthCache()?.up) || upCount || '-',
-      downCount: (readBreadthCache()?.down) || downCount || '-',
+      upCount: upCount || '-',
+      downCount: downCount || '-',
       volumeCmp,
       volumeSeries,
       volumeSeriesYday,
@@ -2752,7 +2750,6 @@ function readLatestArchivePayload() {
       data_incomplete: missing.length > 0,
       missing: Array.from(new Set(missing))
     },
-    breadth: readBreadthCache(),
     ts: ts || Date.now()
   };
   payload.aiBrief = ai.analyze(payload);
