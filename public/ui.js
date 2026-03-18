@@ -1024,7 +1024,7 @@ createApp({
         const aiChanged = !!(data?.aiBrief || data?.aiText);
         if (data?.aiBrief) aiBrief.value = data.aiBrief;
         if (data?.aiText) aiText.value = data.aiText;
-        if (aiChanged && withAi) aiUpdatedAt.value = Date.now();
+        if (aiChanged) aiUpdatedAt.value = Date.now();
         if (data?.sentiment) sentiment.value = { ...sentiment.value, ...data.sentiment };
         if (data?.sentiment?.volumeCmp) sentiment.value.volumeCmp = data.sentiment.volumeCmp;
         const arrToday = data?.sentiment?.volumeSeries || [];

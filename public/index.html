@@ -17,10 +17,6 @@
   <div id="app" class="max-w-7xl mx-auto p-4" v-cloak>
     <div class="flex items-center justify-between mb-4">
       <h1 class="text-2xl font-bold">快捷看盘 + AI 分析</h1>
-      <div class="flex items-center gap-2">
-        <div class="text-xs text-gray-500 mr-2" v-if="dataTs">更新: {{ fmtTime(dataTs) }}</div>
-        <button @click="refreshAll" class="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition">刷新</button>
-      </div>
     </div>
     <div class="flex items-center gap-2 mb-4">
       <button @click="selectTab('overview')" class="px-3 py-2 rounded" :class="activeTab==='overview' ? 'bg-blue-600 text-white' : 'bg-white border text-gray-600'">概览</button>
