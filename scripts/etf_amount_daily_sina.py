@@ -78,7 +78,7 @@ def main() -> int:
 
         # 追加写入文件
         with open(out_path, "a", encoding="utf-8") as f:
-            row = [day, total, count]
+            row = {"date": day, "amount": total, "count": count}
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
         print(json.dumps({

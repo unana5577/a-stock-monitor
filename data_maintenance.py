@@ -434,8 +434,12 @@ def update_market_amount_daily():
 
     if os.path.exists(file_path):
         last_data = load_jsonl(file_path)
-        if last_data and len(last_data) > 0:
-            latest_date = last_data[0]
+        if last_data:
+            # 支持两种格式：数组["2026-03-18", ...] 或 字典{"date": "2026-03-18", ...}
+            if isinstance(last_data, dict):
+                latest_date = last_data.get('date')
+            elif isinstance(last_data, (list, tuple)) and len(last_data) > 0:
+                latest_date = last_data[0]
 
     print(f"本地最新数据: {latest_date or '无'}")
 
@@ -476,6 +480,147 @@ def update_market_amount_daily():
 
     except subprocess.TimeoutExpired:
         print("❌ 脚本执行超时（180秒）")
+        return False
+    except Exception as e:
+        print(f"❌ 执行异常: {e}")
+        return False
+
+
+def update_etf_amount_daily():
+    """更新ETF成交额日线"""
+    import subprocess
+
+    print("\n" + "="*50)
+    print("📊 更新ETF成交额日线")
+    print("="*50)
+
+    script_path = "scripts/etf_amount_daily_sina.py"
+    if not os.path.exists(script_path):
+        print(f"❌ 脚本不存在: {script_path}")
+        return False
+
+    print("📊 执行ETF成交额抓取...")
+
+    try:
+        result = subprocess.run(
+            [sys.executable, script_path],
+            capture_output=True,
+            text=True,
+            timeout=60
+        )
+
+        if result.returncode == 0:
+            try:
+                output = json.loads(result.stdout.strip())
+                if output.get("ok"):
+                    if output.get("exists"):
+                        print(f"⏭️ 今日数据已存在: {output.get('day')}")
+                    else:
+                        print(f"✅ 更新成功: {output.get('day')}, 成交额: {output.get('total_yi', 0):.2f}亿, ETF数量: {output.get('count')}")
+                    return True
+                else:
+                    print(f"❌ 更新失败: {output.get('error')}")
+                    return False
+            except json.JSONDecodeError:
+                print(f"❌ JSON解析失败: {result.stdout[:200]}")
+                return False
+        else:
+            print(f"❌ 脚本执行失败: {result.stderr[:200]}")
+            return False
+
+    except subprocess.TimeoutExpired:
+        print("❌ 脚本执行超时（60秒）")
+        return False
+    except Exception as e:
+        print(f"❌ 执行异常: {e}")
+        return False
+
+
+def update_breadth_history():
+    """更新涨跌家数历史"""
+    import subprocess
+
+    print("\n" + "="*50)
+    print("📈 更新涨跌家数历史")
+    print("="*50)
+
+    script_path = "scripts/save_breadth_history.py"
+    if not os.path.exists(script_path):
+        # 如果脚本不存在，尝试直接读取缓存
+        cache_file = "data/breadth-cache.json"
+        if os.path.exists(cache_file):
+            try:
+                with open(cache_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                if data.get('ok'):
+                    day = datetime.now().strftime("%Y-%m-%d")
+                    history_file = "data/breadth-history.jsonl"
+
+                    # 检查是否已存在
+                    existing = False
+                    if os.path.exists(history_file):
+                        with open(history_file, 'r', encoding='utf-8') as f:
+                            for line in f:
+                                row = json.loads(line.strip())
+                                if isinstance(row, dict) and row.get('date') == day:
+                                    existing = True
+                                    break
+
+                    if existing:
+                        print(f"⏭️ 今日涨跌家数已存在: {day}")
+                        return True
+
+                    # 写入
+                    with open(history_file, 'a', encoding='utf-8') as f:
+                        row = {
+                            "timestamp": int(datetime.now().timestamp() * 1000),
+                            "date": day,
+                            "up": data.get('up', 0),
+                            "down": data.get('down', 0),
+                            "flat": data.get('flat', 0),
+                            "total": data.get('total', 0)
+                        }
+                        f.write(json.dumps(row, ensure_ascii=False) + '\n')
+
+                    print(f"✅ 涨跌家数已更新: {day}")
+                    return True
+            except Exception as e:
+                print(f"❌ 读取缓存失败: {e}")
+                return False
+        print(f"❌ 脚本不存在: {script_path}")
+        return False
+
+    print("📊 执行涨跌家数保存...")
+
+    try:
+        result = subprocess.run(
+            [sys.executable, script_path],
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+
+        if result.returncode == 0:
+            try:
+                output = json.loads(result.stdout.strip())
+                if output.get("ok"):
+                    if output.get("exists"):
+                        print(f"⏭️ 今日涨跌家数已存在: {output.get('day')}")
+                    else:
+                        print(f"✅ 涨跌家数已更新: {output.get('day')}, 上涨: {output.get('up')}, 下跌: {output.get('down')}")
+                    return True
+                else:
+                    print(f"❌ 更新失败: {output.get('error')}")
+                    return False
+            except json.JSONDecodeError:
+                print(f"❌ JSON解析失败: {result.stdout[:200]}")
+                return False
+        else:
+            print(f"❌ 脚本执行失败: {result.stderr[:200]}")
+            return False
+
+    except subprocess.TimeoutExpired:
+        print("❌ 脚本执行超时（30秒）")
         return False
     except Exception as e:
         print(f"❌ 执行异常: {e}")
@@ -774,10 +919,16 @@ def main():
     # 3. 更新市场日线成交额
     amount_ok = update_market_amount_daily()
 
-    # 4. 更新分时数据（交易时间内）并写入日线
+    # 4. 更新ETF成交额
+    etf_amount_ok = update_etf_amount_daily()
+
+    # 5. 更新涨跌家数历史
+    breadth_ok = update_breadth_history()
+
+    # 6. 更新分时数据（交易时间内）并写入日线
     update_minute_data()
 
-    # 5. 同步更新warmup缓存
+    # 7. 同步更新warmup缓存
     print("\n" + "="*50)
     print("🔄 同步更新Warmup缓存")
     print("="*50)
@@ -793,6 +944,8 @@ def main():
     print(f"指数数据:     {'✅ 成功' if index_ok else '❌ 失败'}")
     print(f"ETF数据:      {'✅ 成功' if etf_ok else '❌ 失败'}")
     print(f"日线成交额:   {'✅ 成功' if amount_ok else '❌ 失败'}")
+    print(f"ETF成交额:    {'✅ 成功' if etf_amount_ok else '❌ 失败'}")
+    print(f"涨跌家数:     {'✅ 成功' if breadth_ok else '❌ 失败'}")
     print(f"Warmup缓存:   ✅ 已同步")
     print(f"执行时间:     {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("="*50 + "\n")

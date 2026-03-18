@@ -47,8 +47,10 @@ def main():
             for line in f:
                 try:
                     row = json.loads(line.strip())
-                    if row and len(row) > 1:
-                        existing_days.add(row[1])  # 日期
+                    if isinstance(row, dict) and row.get('date'):
+                        existing_days.add(row['date'])
+                    elif isinstance(row, list) and len(row) > 1:
+                        existing_days.add(row[1])  # 旧格式：日期在第2位
                 except:
                     pass
 
@@ -62,15 +64,15 @@ def main():
         return 0
 
     # 写入历史记录
-    # 格式: [时间戳, 日期, 上涨, 下跌, 平盘, 总数]
-    row = [
-        timestamp,
-        day,
-        data.get('up', 0),
-        data.get('down', 0),
-        data.get('flat', 0),
-        data.get('total', 0)
-    ]
+    # 格式: {"timestamp": xxx, "date": "YYYY-MM-DD", "up": xxx, "down": xxx, "flat": xxx, "total": xxx}
+    row = {
+        "timestamp": timestamp,
+        "date": day,
+        "up": data.get('up', 0),
+        "down": data.get('down', 0),
+        "flat": data.get('flat', 0),
+        "total": data.get('total', 0)
+    }
 
     with open(history_file, 'a', encoding='utf-8') as f:
         f.write(json.dumps(row, ensure_ascii=False) + '\n')
