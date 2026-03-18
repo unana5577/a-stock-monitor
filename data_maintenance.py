@@ -544,6 +544,23 @@ def minute_to_daily_for_etf(etf_code, today, etf_name=None):
         print(f"    ⏭️ {etf_code} 无分时数据")
         return None
 
+    # 获取昨日收盘价（用于计算pct）
+    prev_close = None
+    etf_code_only = etf_code.replace('sh', '').replace('sz', '')
+    etf_file = f"data/etf_daily/etf_{etf_code_only}.jsonl"
+    if os.path.exists(etf_file):
+        try:
+            with open(etf_file, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+                for line in reversed(lines):
+                    item = json.loads(line.strip())
+                    if item.get('date') and item['date'] != today:
+                        prev_close = item.get('close')
+                        if prev_close:
+                            break
+        except:
+            pass
+
     try:
         # 解析并聚合
         prices = []
@@ -576,7 +593,10 @@ def minute_to_daily_for_etf(etf_code, today, etf_name=None):
         total_volume = sum(volumes)
         total_amount = sum(amounts)
 
-        if open_price > 0:
+        # pct应基于昨日收盘价计算，而非当日开盘价
+        if prev_close and prev_close > 0:
+            pct = (close_price - prev_close) / prev_close * 100
+        elif open_price > 0:
             pct = (close_price - open_price) / open_price * 100
         else:
             pct = 0
