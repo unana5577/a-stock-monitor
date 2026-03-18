@@ -477,8 +477,13 @@ result = _fetch_akshare_sina_etf(full_code, start_date=start_date, end_date=end_
 - low: 所有分时最低价
 - volume: 累加所有成交量
 - amount: 累加所有成交额
-- pct: (close - open) / open * 100
+- pct: (close - 昨日收盘价) / 昨日收盘价 * 100  ← 基于昨收计算，��非开盘价
 ```
+
+**pct计算说明**：
+- 从昨日日线文件读取昨收价
+- pct = (今日收盘价 - 昨日收盘价) / 昨日收盘价 × 100
+- 如无昨收价，才降级到 (今日收盘 - 今日开盘) / 今日开盘 × 100
 
 ### 10.3 对账覆盖机制
 
@@ -514,7 +519,7 @@ result = _fetch_akshare_sina_etf(full_code, start_date=start_date, end_date=end_
 ---
 
 **更新记录**:
-- 2026-03-18: v2.2 - 实现增量更新逻辑（只请求缺失交易日）+ 分时数据Fallback机制 + 对账覆盖机制
+- 2026-03-18: v2.2 - 实现增量更新逻辑（只请求缺失交易日）+ 分时数据Fallback机制 + 修正pct计算（基于昨收而非开盘）
 - 2026-03-12: v2.1 - 建立大盘指数持久化存储（index_daily），清理archive等旧文件
 - 2026-03-12: v2.0 - 实施三层持久化架构：固定文件名warmup + ETF日线文件 + 自动启动更新；修复历史日期显示问题（2026-03-09→2026-03-12）
 - 2026-03-10: 添加ETF分时数据支持，实现/api/minute/{code}路由；修复/api/sector/history_proxy接口ETF分���获取；前端【当日】模式支持分时曲线显示；批量获取9个ETF分时数据（各241条）
