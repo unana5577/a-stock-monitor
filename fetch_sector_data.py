@@ -1,4 +1,3 @@
-import akshare as ak
 import pandas as pd
 import json
 import sys
@@ -310,13 +309,13 @@ def _normalize_etf_code(code):
 
 def _fetch_akshare_sina_etf(etf_code, limit=365, start_date=None, end_date=None):
     """
-    使用AkShare的东财ETF接口获取ETF日线数据（支持复权）
+    使用AkShare的新浪ETF日线接口获取数据
 
     ⚠️ CRITICAL: 此函数是所有ETF的专用数据源，不得修改或绕过 ⚠️
     - ETF定义：6位数字代码，5开头(上交所)或1开头(深交所)
     - 代码格式：必须包含sh/sz前缀（如sh512480、sz159995）
-    - 数据源：东财接口 fund_etf_hist_em()（支持前复权）
-    - 优势：✅ 提供涨跌幅字段  ✅ 支持复权  ✅ 除权日正常
+    - 数据源：新浪接口 ak.fund_etf_hist_sina()
+    - 注意：新浪接口返回的date列为datetime.date对象，需转换
     - 请求策略：支持增量请求（start_date/end_date）或全量请求（limit）
 
     :param etf_code: ETF代码，如 sh512480
@@ -325,55 +324,49 @@ def _fetch_akshare_sina_etf(etf_code, limit=365, start_date=None, end_date=None)
     :param end_date: 结束日期，如 20260318（可选，用于增量请求）
     """
     try:
-        from io import StringIO
-        old_stderr = sys.stderr
-        sys.stderr = StringIO()
+        import akshare as ak
 
-        # 标准化ETF代码,去掉sh/sz前缀（东财接口不需要）
+        # 标准化ETF代码
         normalized_code = _normalize_etf_code(etf_code)
-        clean_code = normalized_code.replace('sh', '').replace('sz', '')
+        # 新浪接口需要sh前缀
+        sina_code = normalized_code if normalized_code.startswith('sh') else 'sh' + normalized_code.replace('sz', '')
 
-        # 确定日期范围
-        if start_date and end_date:
-            # 增量请求：使用指定的日期范围
-            s_date = start_date if len(start_date) == 8 else start_date.replace('-', '')
-            e_date = end_date if len(end_date) == 8 else end_date.replace('-', '')
-        else:
-            # 全量请求：使用默认范围
-            s_date = "20200101"
-            e_date = "21231231"
-
-        # 调用AkShare的东财ETF接口（前复权）
-        df = ak.fund_etf_hist_em(
-            symbol=clean_code,
-            period="daily",
-            start_date=s_date,
-            end_date=e_date,
-            adjust="qfq"  # 前复权，消除除权跳变
-        )
-        sys.stderr = old_stderr
+        # 调用新浪ETF日线接口
+        df = ak.fund_etf_hist_sina(symbol=sina_code)
 
         if df is None or df.empty:
             return {"date": None, "data": []}
 
-        # 取最近limit条数据（如果指定了日期范围，可能不需要截取）
-        if not (start_date and end_date):
-            df = df.tail(limit)
+        # date列为datetime.date对象，转字符串（YYYY-MM-DD格式）
+        df['date'] = df['date'].astype(str)
+
+        # 增量请求：按日期过滤
+        if start_date and end_date:
+            # 转换为YYYY-MM-DD格式进行比较
+            s_date = start_date if '-' in start_date else f"{start_date[0:4]}-{start_date[4:6]}-{start_date[6:8]}"
+            e_date = end_date if '-' in end_date else f"{end_date[0:4]}-{end_date[4:6]}-{end_date[6:8]}"
+            df = df[(df['date'] >= s_date) & (df['date'] <= e_date)]
+
+        # 取最近limit条
+        df = df.tail(limit)
 
         data = []
+        prev_close = None
         for _, row in df.iterrows():
             try:
-                # 东财返回的列名：日期, 开盘, 收盘, 最高, 最低, 成交量, 成交额, 振幅, 涨跌幅, 涨跌额, 换手率
-                date_str = str(row.get('日期', ''))
-                open_price = float(row.get('开盘', 0))
-                close_price = float(row.get('收盘', 0))
-                high_price = float(row.get('最高', 0))
-                low_price = float(row.get('最低', 0))
-                volume = float(row.get('成交量', 0))
-                amount = float(row.get('成交额', 0))
-                pct = row.get('涨跌幅')  # 直接使用东财提供的涨跌幅
-                if pct is not None:
-                    pct = float(pct)
+                date_str = str(row['date'])
+                open_price = float(row['open'])
+                close_price = float(row['close'])
+                high_price = float(row['high'])
+                low_price = float(row['low'])
+                volume = float(row['volume'])
+                amount = float(row['amount'])
+                # 计算涨跌幅
+                if prev_close is not None and prev_close != 0:
+                    pct = round((close_price - prev_close) / prev_close * 100, 2)
+                else:
+                    pct = None
+                prev_close = close_price
 
                 data.append({
                     "date": date_str,
@@ -391,7 +384,6 @@ def _fetch_akshare_sina_etf(etf_code, limit=365, start_date=None, end_date=None)
         last_date = data[-1]["date"] if data else None
         return {"date": last_date, "data": data}
     except Exception as e:
-        sys.stderr = sys.__stderr__
         return {"date": None, "data": []}
 
 def _fetch_tencent_daily(code, limit=180):
@@ -761,53 +753,19 @@ def _fetch_etf_date_range(etf_code: str, start_date: str, end_date: str) -> List
     :param end_date: 结束日期（YYYYMMDD，如"20260316"）
     :return: 数据列表
     """
-    # 方法1：尝试东财接口
+    # 方法1：尝试新浪接口（主数据源）
     try:
-        from io import StringIO
-        old_stderr = sys.stderr
-        sys.stderr = StringIO()
-
-        # 标准化代码（去掉sh/sz前缀）
-        clean_code = etf_code.replace('sh', '').replace('sz', '')
-
-        # 转换日期格式（YYYY-MM-DD → YYYYMMDD）
-        start = start_date.replace('-', '')
-        end = end_date.replace('-', '')
-
-        # 调用AkShare东财接口
-        df = ak.fund_etf_hist_em(
-            symbol=clean_code,
-            period="daily",
-            start_date=start,      # 如 "20260314"
-            end_date=end,          # 如 "20260316"
-            adjust="qfq"
+        # 新浪接口支持增量请求（内部按日期过滤）
+        result = _fetch_akshare_sina_etf(
+            etf_code,
+            start_date=start_date,
+            end_date=end_date
         )
-
-        sys.stderr = old_stderr
-
-        if df is not None and not df.empty:
-            # 转换为标准格式
-            data = []
-            for _, row in df.iterrows():
-                try:
-                    data.append({
-                        "date": str(row.get('日期', '')),
-                        "open": float(row.get('开盘', 0)),
-                        "close": float(row.get('收盘', 0)),
-                        "high": float(row.get('最高', 0)),
-                        "low": float(row.get('最低', 0)),
-                        "volume": float(row.get('成交量', 0)),
-                        "amount": float(row.get('成交额', 0)),
-                        "pct": float(row.get('涨跌幅', 0))
-                    })
-                except:
-                    continue
-
-            print(f"[ETF增量] 东财接口请求到 {len(data)} 条数据 ({start_date} ~ {end_date})")
-            return data
-
+        if result.get("data"):
+            print(f"[ETF增量] 新浪接口请求到 {len(result['data'])} 条数据 ({start_date} ~ {end_date})")
+            return result["data"]
     except Exception as e:
-        print(f"[ETF增量] 东财接口失败: {str(e)[:80]}")
+        print(f"[ETF增量] 新浪接口失败: {str(e)[:80]}")
 
     # 方法2：降级到腾讯接口
     try:
