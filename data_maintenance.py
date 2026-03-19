@@ -188,8 +188,8 @@ def minute_to_daily(etf_code, date):
                     close_price = prices[-1]
                     high_price = max(prices)
                     low_price = min(prices)
-                    total_volume = sum(volumes)
-                    total_amount = sum(amounts)
+                    total_volume = volumes[-1] if volumes else 0  # 取累计值
+                    total_amount = amounts[-1] if amounts else 0  # 取累计值
 
                     if open_price > 0:
                         pct = (close_price - open_price) / open_price * 100
@@ -260,8 +260,8 @@ def minute_to_daily(etf_code, date):
                     close_price = prices[-1]
                     high_price = max(prices) if prices else 0
                     low_price = min(prices) if prices else 0
-                    total_volume = sum(volumes)
-                    total_amount = sum(amounts)
+                    total_volume = volumes[-1] if volumes else 0  # 取累计值
+                    total_amount = amounts[-1] if amounts else 0  # 取累计值
 
                     if open_price > 0:
                         pct = (close_price - open_price) / open_price * 100
@@ -731,12 +731,13 @@ def minute_to_daily_for_etf(etf_code, today, etf_name=None):
             return None
 
         # 聚合计算
+        # 分时数据是累计值，volume/amount取最后一笔（15:00）
         open_price = prices[0]
         close_price = prices[-1]
         high_price = max(prices)
         low_price = min(prices)
-        total_volume = sum(volumes)
-        total_amount = sum(amounts)
+        total_volume = volumes[-1] if volumes else 0  # 取累计值
+        total_amount = amounts[-1] if amounts else 0  # 取累计值
 
         # pct应基于昨日收盘价计算，而非当日开盘价
         if prev_close and prev_close > 0:
@@ -815,31 +816,54 @@ def update_minute_data():
 
     today = datetime.now().strftime("%Y-%m-%d")
 
-    # 只获取分时数据用于展示
-    display_targets = {
-        "sh512480": "半导体",
-        "sh515120": "创新药",
-    }
+    # 所有9个ETF都需要获取分时数据（用于生成日线的volume/amount）
+    minute_targets = etf_targets  # 使用上面的完整列表
 
-    # 更新展示用的分时数据
-    for code, name in display_targets.items():
+    # 获取所有ETF的分时数据
+    for code, name in minute_targets:
         file_path = f"data/minute_data/minute_{code}_{today}.jsonl"
 
-        # 检查是否已有今日数据
+        # 检查文件是否存在及完整性
+        last_time = None
         if os.path.exists(file_path):
-            print(f"⏭️  {name} 分时数据已存在")
-            continue
+            with open(file_path, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+                if lines:
+                    try:
+                        last_record = json.loads(lines[-1])
+                        last_time = last_record.get('time')
+                    except:
+                        pass
 
-        print(f"📊 获取 {name} 分时数据...")
+            # 判断是否已收盘（15:05后）
+            now = datetime.now()
+            if now.hour > 15 or (now.hour == 15 and now.minute >= 5):
+                print(f"⏭️  {name} 分时数据已完成（收盘后）")
+                continue
+            elif last_time:
+                print(f"📊 {name} 分时数据更新")
+                os.remove(file_path)
+            else:
+                print(f"⚠️  {name} 文件异常，删除重建")
+                os.remove(file_path)
+        else:
+            print(f"📊 获取 {name} 分时数据...")
         result = get_etf_minute_data(code)
 
         if result and result['data']:
-            # 写入分时数据
+            # 写入分时数据（带volume/amount）
             for item in result['data']:
                 save_jsonl(file_path, item)
-            print(f"  ✅ {name} 分时数据更新完成 ({len(result['data'])} 条)")
+
+            # 写入prevClose到文件头（下一行）
+            if result.get('prevClose'):
+                prev_file = file_path.replace('.jsonl', '_prev.jsonl')
+                with open(prev_file, 'w', encoding='utf-8') as f:
+                    f.write(json.dumps({"prevClose": result['prevClose']}, ensure_ascii=False) + '\n')
+
+            print(f"  ✅ {name} 分时数据更新完成 ({len(result['data'])} 条), prevClose={result.get('prevClose')}")
         else:
-            print(f"  ❌ {name} 分时数据获取失败")
+            print(f"  ⚠️  {name} 分时数据获取失败，将使用warmup")
 
     # 遍历所有ETF，用分时数据写入日线（15:00数据）
     print("\n📝 用分时15:00数据写入ETF日线...")

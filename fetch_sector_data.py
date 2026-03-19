@@ -20,10 +20,9 @@ SECTOR_MAPPING = [
     {"name": "商业航天", "display": "商业航天", "code": "BK_商业航天"},
     {"name": "创新药", "display": "创新药", "code": "BK_创新药"},
     {"name": "有色金属", "display": "有色金属", "code": "BK_有色金属"},
-    {"name": "煤炭行业", "display": "煤炭", "code": "BK_煤炭"},
-    {"name": "电力行业", "display": "电力", "code": "BK_电力"},
     {"name": "通信设备", "display": "通讯设备", "code": "BK_通讯设备"},
-    {"name": "银行", "display": "银行", "code": "BK_银行"}
+    {"name": "游戏", "display": "游戏", "code": "BK_游戏"},
+    {"name": "机器人", "display": "机器人", "code": "BK_机器人"}
 ]
 
 START_DATE = "20150527"
@@ -34,14 +33,14 @@ TRIGGER_RULES_FILE = os.path.join("data", "trigger-rules.json")
 ROTATION_CALIB_PATH = os.path.join("data", "rotation-calibration.json")
 ROTATION_REPORT_PATH = os.path.join("data", "rotation-backtest-report.json")
 NEWS_DIR = os.path.join("data", "news")
-DEFAULT_SECTORS = ["半导体", "云计算", "新能源", "商业航天", "创新药", "有色金属", "煤炭", "电力", "通讯设备", "游戏", "机器人"]
+DEFAULT_SECTORS = ["半导体", "云计算", "新能源", "商业航天", "创新药", "有色金属", "通讯设备", "游戏", "机器人"]
 DEFAULT_BENCHMARK = "上证"
 DEFAULT_GROUPS = {
     "科技:硬件": ["半导体", "通讯设备"],
     "科技:软件": ["云计算"],
-    "资源:上游": ["有色金属", "煤炭", "电力"],
+    "资源:上游": ["有色金属"],
     "科技:成长": ["商业航天", "创新药"],
-    "金融": ["银行"]
+    "新兴:消费": ["游戏", "机器人"]
 }
 
 _FETCH_ERRORS = {"daily": {}, "minute": {}}
@@ -52,46 +51,45 @@ PROXY_FILE = os.path.join("data", "sector-proxy.json")
 CACHE_ONLY = os.getenv("CACHE_ONLY") == "1"
 FORCE_SECTOR_ETF = os.getenv("FORCE_SECTOR_ETF") == "1"
 
-def _is_trading_day_session():
-    """判断是否在交易日内（9:30-15:00，含午休），用于午休时仍获取分钟线"""
-    # 优先读取环境变量（模拟时间），否则使用真实时间
-    mock_date = os.getenv("MOCK_TIME_DATE")
-    if mock_date:
-        try:
-            hour = int(os.getenv("MOCK_TIME_HOUR", "14"))
-            minute = int(os.getenv("MOCK_TIME_MINUTE", "0"))
-            # 假设模拟日期是交易日（简化判断，因为模拟主要用于测试盘中数据获取）
-            minutes = hour * 60 + minute
-            return 570 <= minutes <= 900  # 9:30-15:00
-        except:
-            pass
+def _is_trading_day(date_str: str = None) -> bool:
+    """
+    判断指定日期是否为交易日
+    如果不提供日期，则判断当前日期
 
-    # 原有逻辑：使用真实时间
-    now = datetime.now(ZoneInfo("Asia/Shanghai"))
-    weekday = now.weekday()
-    if weekday >= 5:  # 周末
+    :param date_str: YYYY-MM-DD 格式，默认为当前日期
+    :return: True=交易日, False=非交易日（周末/节假日）
+    """
+    if date_str:
+        try:
+            target_date = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=ZoneInfo("Asia/Shanghai"))
+        except:
+            return False
+    else:
+        target_date = datetime.now(ZoneInfo("Asia/Shanghai"))
+
+    weekday = target_date.weekday()
+    if weekday >= 5:  # 周六、周日
         return False
+
     # 简单节假日判断：读取节假日文件
     holiday_file = os.path.join("data", "holiday.txt")
     if os.path.exists(holiday_file):
         try:
             with open(holiday_file, "r", encoding="utf-8") as f:
                 holidays = set(line.strip() for line in f if line.strip())
-            if now.strftime("%Y-%m-%d") in holidays:
+            if target_date.strftime("%Y-%m-%d") in holidays:
                 return False
         except:
             pass
-    minutes = now.hour * 60 + now.minute
-    return 570 <= minutes <= 900  # 9:30-15:00
+    return True
 
-def _is_market_open() -> bool:
-    """
-    判断当前是否在交易时段（9:30 - 15:00）
-    注意：只判断时间，不判断日期（周末/节假日）
 
-    :return: True=交易时段（15:00前）, False=非交易时段
+def _get_current_time():
     """
-    # 支持环境变量模拟时间
+    获取当前时间（支持环境变量模拟）
+
+    :return: (hour, minute) 元组
+    """
     mock_hour = os.getenv("MOCK_TIME_HOUR")
     if mock_hour is not None:
         hour = int(mock_hour)
@@ -100,39 +98,113 @@ def _is_market_open() -> bool:
         now = datetime.now(ZoneInfo("Asia/Shanghai"))
         hour = now.hour
         minute = now.minute
+    return hour, minute
 
-    # 交易时段：9:30-15:00（15:00及以前都算交易时间）
+
+def _is_pre_market() -> bool:
+    """
+    判断当前是否在盘前时段
+    时间：09:15-09:30
+    条件：交易日 + 09:15-09:30
+
+    :return: True=盘前时段, False=非盘前时段
+    """
+    if not _is_trading_day():
+        return False
+
+    hour, minute = _get_current_time()
+    total_minutes = hour * 60 + minute
+    return 555 <= total_minutes < 570  # 09:15-09:30
+
+
+def _is_trading_time() -> bool:
+    """
+    判断当前是否在交易时段
+    上午：09:30-11:30
+    下午：13:00-15:00
+    条件：交易日 + (09:30-11:30 或 13:00-15:00)
+
+    :return: True=交易时段, False=非交易时段
+    """
+    if not _is_trading_day():
+        return False
+
+    hour, minute = _get_current_time()
+    total_minutes = hour * 60 + minute
+
+    # 上午：09:30-11:30 (570-690)
+    # 下午：13:00-15:00 (780-900)
+    return (570 <= total_minutes < 690) or (780 <= total_minutes < 900)
+
+
+def _is_lunch_break() -> bool:
+    """
+    判断当前是否在午休时段
+    时间：11:30-13:00
+    条件：交易日 + 11:30-13:00
+
+    :return: True=午休时段, False=非午休时段
+    """
+    if not _is_trading_day():
+        return False
+
+    hour, minute = _get_current_time()
+    total_minutes = hour * 60 + minute
+    return 690 <= total_minutes < 780  # 11:30-13:00
+
+
+def _is_after_market() -> bool:
+    """
+    判断当前是否在盘后时段
+    时间：15:00-24:00（按自然日，到当日24:00为止）
+    条件：交易日 + 15:00-24:00
+
+    :return: True=盘后时段, False=非盘后时段
+    """
+    if not _is_trading_day():
+        return False
+
+    hour, minute = _get_current_time()
+    total_minutes = hour * 60 + minute
+    return 900 <= total_minutes < 1440  # 15:00-24:00
+
+
+def _is_non_trading_time() -> bool:
+    """
+    判断当前是否在非交易时段
+    时间：00:00-09:15（交易日）
+    全天：周末/节假日
+
+    :return: True=非交易时段, False=交易相关时段
+    """
+    if not _is_trading_day():
+        return True  # 周末/节假日全天都是非交易时段
+
+    hour, minute = _get_current_time()
+    total_minutes = hour * 60 + minute
+    return total_minutes < 555  # 00:00-09:15
+
+
+def _is_trading_day_session():
+    """
+    判断是否在交易日内（9:30-15:00，含午休），用于午休时仍获取分钟线
+    此函数保持向后兼容
+    """
+    if not _is_trading_day():
+        return False
+
+    hour, minute = _get_current_time()
     total_minutes = hour * 60 + minute
     return 570 <= total_minutes <= 900  # 9:30-15:00
 
-def _is_trading_day(date_str: str) -> bool:
+def _is_market_open() -> bool:
     """
-    判断指定日期是否为交易日
+    判断当前是否在交易时段（9:30 - 15:00）
+    使用统一的时间判断系统
 
-    :param date_str: YYYY-MM-DD
-    :return: True=交易日, False=非交易日
+    :return: True=交易时段（15:00前）, False=非交易时段
     """
-    try:
-        dt = datetime.strptime(date_str, "%Y-%m-%d")
-
-        # 1. 检查周末
-        if dt.weekday() >= 5:  # 周六日
-            return False
-
-        # 2. 检查节假日（从data/holiday.txt读取）
-        holiday_file = os.path.join("data", "holiday.txt")
-        if os.path.exists(holiday_file):
-            try:
-                with open(holiday_file, "r", encoding="utf-8") as f:
-                    holidays = set(line.strip() for line in f if line.strip())
-                if date_str in holidays:
-                    return False
-            except:
-                pass
-
-        return True
-    except:
-        return False
+    return _is_trading_time()
 
 def _get_latest_trading_day(allow_today: bool = False) -> str:
     """
@@ -561,6 +633,7 @@ def _proxy_history_payload(sectors, days=60, variant=None):
                 day = d
             if d and d < day:
                 day = max(day, d)
+
     return {"day": day, "history": history, "minute": minute, "watch": sectors, "variant": v}
 
 def _write_json(path, obj):
@@ -2038,38 +2111,109 @@ def get_sector_lifecycle(sector_items, days=60):
     if not sectors:
         sectors = _normalize_sectors(DEFAULT_SECTORS)
     force_etf = FORCE_SECTOR_ETF
-    df = _load_cache()
-    if (df is None or df.empty or _need_cache_refresh(df)) and not CACHE_ONLY and not force_etf:
-        df = _update_sector_cache(sectors, ensure_days=days)
-    df_with_bench = _append_benchmark_rows(df, days=max(days, 60))
     bench_days = max(days, 60)
-    benchmark_map = {
-        "上证": _build_lifecycle_df(df_with_bench, "上证", bench_days),
-        "深证": _build_lifecycle_df(df_with_bench, "深证", bench_days),
-        "创业板": _build_lifecycle_df(df_with_bench, "创业板", bench_days),
-        "科创板": _build_lifecycle_df(df_with_bench, "科创板", bench_days)
-    }
-    market_amount_df = _build_lifecycle_df(df_with_bench, "沪深成交额", None)
+
+    # ⭐ 优先级1：读取 warmup 缓存（最新数据）
+    warmup_path = os.path.join("data", "sector-history-warmup-60.json")
+    warmup_data = None
+    if os.path.exists(warmup_path):
+        try:
+            with open(warmup_path, 'r', encoding='utf-8') as f:
+                warmup_data = json.load(f)
+        except Exception:
+            pass
+
+    if warmup_data:
+        # 从 warmup 缓存获取 ETF 数据
+        history = warmup_data.get("history", {})
+        warmup_day = warmup_data.get("day", "")
+
+        # ⭐ 从 index_daily 目录读取指数数据
+        benchmark_map = {}
+        index_files = {
+            "上证": "data/index_daily/index_000001.jsonl",
+            "深证": "data/index_daily/index_399001.jsonl",
+            "创业板": "data/index_daily/index_399006.jsonl",
+            "科创板": "data/index_daily/index_000688.jsonl"
+        }
+        for idx_name, idx_path in index_files.items():
+            if os.path.exists(idx_path):
+                idx_df = pd.read_json(idx_path, lines=True)
+                idx_df['date'] = pd.to_datetime(idx_df['date'])
+                idx_df = idx_df.tail(bench_days)  # 只取最近N天
+                benchmark_map[idx_name] = idx_df
+            else:
+                benchmark_map[idx_name] = None
+
+        # ⭐ 从 index_daily 聚合沪深成交额
+        if os.path.exists(index_files["上证"]) and os.path.exists(index_files["深证"]):
+            sh_df = pd.read_json(index_files["上证"], lines=True)
+            sz_df = pd.read_json(index_files["深证"], lines=True)
+            sh_df['date'] = pd.to_datetime(sh_df['date'])
+            sz_df['date'] = pd.to_datetime(sz_df['date'])
+            merged = pd.merge(sh_df[['date', 'amount']], sz_df[['date', 'amount']],
+                            on='date', how='inner', suffixes=('_sh', '_sz'))
+            merged['amount'] = merged['amount_sh'].fillna(0) + merged['amount_sz'].fillna(0)
+            market_amount_df = merged[['date', 'amount']].tail(bench_days)
+        else:
+            market_amount_df = None
+    else:
+        # ⭐ 优先级2：备选方案（warmup 不可用时）
+        print("⚠️ Warmup缓存不可用，使用备选方案")
+        df = _load_cache()
+        if (df is None or df.empty or _need_cache_refresh(df)) and not CACHE_ONLY and not force_etf:
+            df = _update_sector_cache(sectors, ensure_days=days)
+        df_with_bench = _append_benchmark_rows(df, days=bench_days)
+        benchmark_map = {
+            "上证": _build_lifecycle_df(df_with_bench, "上证", bench_days),
+            "深证": _build_lifecycle_df(df_with_bench, "深证", bench_days),
+            "创业板": _build_lifecycle_df(df_with_bench, "创业板", bench_days),
+            "科创板": _build_lifecycle_df(df_with_bench, "科创板", bench_days)
+        }
+        market_amount_df = _build_lifecycle_df(df_with_bench, "沪深成交额", None)
+        history = df_with_bench.set_index("sector").to_dict("index") if df_with_bench is not None else {}
+        warmup_day = None
+
+    # 检查指数基准是否有效（warmup模式下不需要pool_bench）
     if all(v is None for v in benchmark_map.values()):
+        # warmup模式下应该已有指数数据，如果全为空则返回空
+        if warmup_data:
+            print("⚠️ Warmup中缺少指数数据")
+            return {"items": [], "watch": [s["display"] for s in sectors], "day": warmup_day}
+        # 备选方案：从原始缓存构建
         pool_bench = _build_pool_benchmark(df, [s["display"] for s in sectors], days=bench_days)
         if pool_bench is None or pool_bench.empty:
             return {"items": [], "watch": [s["display"] for s in sectors]}
         benchmark_map = {"池内等权": pool_bench}
         market_amount_df = pool_bench[["date", "amount"]].copy()
+
     items = []
     for item in sectors:
         display = item["display"]
-        sector_df = None
-        sector_full = None
-        if not force_etf:
+
+        # 从 warmup 缓存获取板块数据
+        if warmup_data and display in history:
+            sector_records = history[display]
+            sector_df = pd.DataFrame(sector_records)
+            sector_df['date'] = pd.to_datetime(sector_df['date'])
+            sector_full = sector_df.copy()
+            # 取最后 bench_days 条
+            sector_df = sector_df.tail(bench_days) if len(sector_df) > bench_days else sector_df
+        elif not force_etf and 'df_with_bench' in dir():
+            # 尝试从 df 构建
             sector_df = _build_lifecycle_df(df_with_bench, display, bench_days)
             sector_full = _build_lifecycle_df(df_with_bench, display, None)
+        else:
+            sector_df = None
+            sector_full = None
+
         if sector_df is None or sector_df.empty:
             proxy_df, proxy_full = _build_proxy_lifecycle_pair(display, bench_days)
             if proxy_df is None or proxy_df.empty:
                 continue
             sector_df = proxy_df
             sector_full = proxy_full
+
         # 延迟导入业务分析模块
         import importlib
         spec = importlib.util.spec_from_file_location("sector_lifecycle_module", "sector_lifecycle.py")
@@ -2094,6 +2238,11 @@ def get_sector_lifecycle(sector_items, days=60):
         d = it.get("数据日期") or it.get("asof_date")
         if d and (latest is None or str(d) > str(latest)):
             latest = str(d)
+
+    # 优先使用 warmup 的日期
+    if warmup_day:
+        latest = warmup_day
+
     return {"day": latest, "items": items, "watch": [s["display"] for s in sectors]}
 
 def _num(v, default=0.0):
@@ -2403,7 +2552,7 @@ def get_sector_rotation(sector_items, days=90):
             it.pop("主线得分", None)
     ranked = sorted(items, key=_mainline_priority)
     groups = load_sector_groups()
-    by_name = {str(it.get("板块名称") or ""): it for it in items}
+    by_name = {str(it.get("ETF名称") or ""): it for it in items}
     group_rows = []
     sector_to_groups = {}
     for gname, glist in groups.items():
@@ -2423,10 +2572,10 @@ def get_sector_rotation(sector_items, days=90):
             "均值Alpha_5": round(float(sum(a5s) / max(1, len(a5s))), 2),
             "均值资金变化": round(float(sum(chs) / max(1, len(chs))), 4),
             "样本数": len(hits),
-            "板块": [it.get("板块名称") for it in hits if it.get("板块名称")]
+            "ETF列表": [it.get("ETF名称") for it in hits if it.get("ETF名称")]
         })
         for it in hits:
-            n = str(it.get("板块名称") or "").strip()
+            n = str(it.get("ETF名称") or "").strip()
             if not n:
                 continue
             sector_to_groups.setdefault(n, [])
@@ -2456,12 +2605,12 @@ def get_sector_rotation(sector_items, days=90):
         action = _advice_to_action(it.get("操作建议"))
         horizon = _pick_horizon(it.get("动能"), it.get("资金行为"))
         tags = _risk_tags(it.get("动能"), it.get("资金行为"))
-        sector_name = str(it.get("板块名称") or "").strip()
+        sector_name = str(it.get("ETF名称") or "").strip()
         gs = sector_to_groups.get(sector_name) or []
         triggers = _build_triggers(it, gs, trigger_rules)
         news_view = news_factor.get(sector_name) or {"news_score": 0.0, "risk_tags": [], "top_titles": []}
         mainline.append({
-            "板块名称": it.get("板块名称"),
+            "ETF名称": it.get("ETF名称"),
             "_score": it.get("_score"),
             "动能": it.get("动能"),
             "资金行为": it.get("资金行为"),
