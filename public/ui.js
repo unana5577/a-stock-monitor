@@ -158,7 +158,7 @@ createApp({
       const items = Array.isArray(lifecycle?.items) ? lifecycle.items : [];
       const byName = new Map();
       items.forEach((it) => {
-        const name = String(it?.['板块名称'] || '').trim();
+        const name = String(it?.['ETF名称'] || '').trim();
         if (name) byName.set(name, it);
       });
       const list = Array.isArray(hist?.watch) && hist.watch.length ? hist.watch : (watchList.value || []);
@@ -2114,15 +2114,15 @@ createApp({
       } catch (e) { console.error(e); }
     };
 
-    const refreshAll = async () => {
-      await fetchSnapshot(false);
-      await refreshMinuteAll();
-      await fetchOverviewHistory(false);
-      await fetchBreadth();
-      if (activeTab.value === 'market') await fetchSectorData(false);
+    const isLunchBreak = () => {
+      const d = new Date();
+      const day = d.getDay();
+      if (day === 0 || day === 6) return false;
+      const minutes = d.getHours() * 60 + d.getMinutes();
+      return minutes >= 690 && minutes < 780;
     };
 
-    const isMarketOpen = () => {
+    const isTradingHours = () => {
       const d = new Date();
       const day = d.getDay();
       if (day === 0 || day === 6) return false;
@@ -2131,6 +2131,17 @@ createApp({
       const afternoon = minutes >= 780 && minutes <= 900;
       return morning || afternoon;
     };
+
+    const refreshAll = async () => {
+      if (isLunchBreak()) return;
+      await fetchSnapshot(false);
+      await refreshMinuteAll();
+      await fetchOverviewHistory(false);
+      await fetchBreadth();
+      if (activeTab.value === 'market') await fetchSectorData(false);
+    };
+
+    const isMarketOpen = () => isTradingHours();
 
     const refreshAi = async (force) => {
       if (!force && !isMarketOpen()) return;

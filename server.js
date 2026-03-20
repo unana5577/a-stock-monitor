@@ -4557,7 +4557,16 @@ const server = http.createServer(async (req, res) => {
     const cacheFile = !realtime ? sectorCacheFile('sector-lifecycle', day, list, days) : null;
     if (cacheFile) {
       const cached = readJsonCache(cacheFile);
-      if (cached) {
+      if (cached && isJsonText(cached)) {
+        const obj = JSON.parse(cached);
+        const dataDay = obj.day || '';
+        const today = latestTradingDay();
+        if (dataDay !== today) {
+          console.warn(`交易日验证失败(缓存): 数据=${dataDay}, 预期=${today}，返回空数据`);
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          res.end(JSON.stringify({ day: today, items: [], data_incomplete: true, reason: 'trading_day_mismatch' }));
+          return;
+        }
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         res.end(cached);
         return;
@@ -4579,10 +4588,15 @@ const server = http.createServer(async (req, res) => {
         const latestFile = findLatestCacheFileOnOrBefore('sector-lifecycle', null);
         if (latestFile) {
           const txt = readJsonCache(latestFile);
-          if (txt) {
-            res.setHeader('Content-Type', 'application/json; charset=utf-8');
-            res.end(txt);
-            return;
+          if (txt && isJsonText(txt)) {
+            const obj = JSON.parse(txt);
+            const dataDay = obj.day || '';
+            const today = latestTradingDay();
+            if (dataDay === today) {
+              res.setHeader('Content-Type', 'application/json; charset=utf-8');
+              res.end(txt);
+              return;
+            }
           }
         }
       }
@@ -4590,9 +4604,18 @@ const server = http.createServer(async (req, res) => {
       execFile('python3', args, opts, (err, stdout) => {
         const out = (stdout || '').trim();
         if (!err && out && isJsonText(out)) {
-          if (cacheFile) writeJsonCache(cacheFile, out);
+          const obj = JSON.parse(out);
+          const dataDay = obj.day || '';
+          const today = latestTradingDay();
+          if (dataDay !== today) {
+            console.warn(`交易日验证失败(CACHE_ONLY): 数据=${dataDay}, 预期=${today}`);
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.end(JSON.stringify({ day: today, items: [], data_incomplete: true, reason: 'trading_day_mismatch' }));
+            return;
+          }
+          if (cacheFile) writeJsonCache(cacheFile, JSON.stringify(obj));
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
-          res.end(out);
+          res.end(JSON.stringify(obj));
           return;
         }
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -4609,9 +4632,31 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const out = (stdout || '').trim();
-      if (cacheFile && out && isJsonText(out)) writeJsonCache(cacheFile, out);
-      res.setHeader('Content-Type', 'application/json; charset=utf-8');
-      res.end(out || '{}');
+      if (out && isJsonText(out)) {
+        const obj = JSON.parse(out);
+        // 交易日验证：数据日期必须匹配最新交易日
+        const dataDay = obj.day || '';
+        const today = latestTradingDay();
+        if (dataDay !== today) {
+          console.warn(`交易日验证失败: 数据=${dataDay}, 预期=${today}，返回空数据`);
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          res.end(JSON.stringify({ day: today, items: [], data_incomplete: true, reason: 'trading_day_mismatch' }));
+          return;
+        }
+        // 按评分排序并添加Top排名
+        if (Array.isArray(obj.items)) {
+          obj.items.sort((a, b) => (b._score || 0) - (a._score || 0));
+          obj.items.forEach((item, idx) => {
+            item._rank = idx + 1;
+          });
+        }
+        if (cacheFile) writeJsonCache(cacheFile, JSON.stringify(obj));
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.end(JSON.stringify(obj));
+      } else {
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.end('{}');
+      }
     });
     return;
   }
@@ -4994,6 +5039,37 @@ setInterval(async () => {
   }
 }, 30 * 1000);  // 每30秒执行一次
 
+// ============ 午休时数据持久化 ============
+// 11:30收盘时，把runtime/minute/的分时数据复制到data/目录
+setInterval(() => {
+  const parts = getBeijingParts();
+  if (!parts) return;
+  if (parts.weekday === 0 || parts.weekday === 6) return;
+  // 11:30 = 690分钟
+  if (parts.minutes !== 690) return;
+
+  const day = parts.date;
+  const dayCompact = day.replace(/-/g, '');
+  const runtimeDir = path.join(__dirname, 'runtime', 'minute');
+  const dataDir = path.join(__dirname, 'data');
+
+  // 需要持久化的分时code列表
+  const codes = ['sse', 'szi', 'gem', 'star', 'hs300', 'csi2000', 'avg', 'gov', 't', 'tl', 'bank', 'broker', 'insure'];
+
+  for (const code of codes) {
+    const srcFile = path.join(runtimeDir, `minute-${dayCompact}-${code}.jsonl`);
+    const dstFile = path.join(dataDir, `minute-${dayCompact}-${code}.jsonl`);
+    try {
+      if (fs.existsSync(srcFile)) {
+        fs.copyFileSync(srcFile, dstFile);
+        console.log(`[LunchSave] 午休数据已保存: ${dstFile}`);
+      }
+    } catch (e) {
+      console.error(`[LunchSave] 保存失败 ${code}:`, e.message);
+    }
+  }
+}, 60 * 1000);  // 每分钟检查一次
+
 // 启动时的数据补全流程
 setTimeout(async () => {
   console.log('=== 启动数据补全检查 ===');
@@ -5080,3 +5156,76 @@ async function regenerateWarmup(days) {
 
 // 定时任务：每分钟检查一次是否需要更新当天数据
 setInterval(() => { backfillOverviewHistoryIfNeeded(); }, 60 * 1000);
+
+// ============ 15:00后定时任务 ============
+// 收盘后(15:00)自动执行日线成交额聚合和涨跌家持久化
+setInterval(() => {
+  const parts = getBeijingParts();
+  if (!parts) return;
+  if (parts.weekday === 0 || parts.weekday === 6) return;
+  // 15:00 = 900分钟，延迟1分钟执行(15:01-15:05窗口)
+  if (parts.minutes < 901 || parts.minutes > 905) return;
+
+  const day = parts.date;
+  console.log(`[15:00定时任务] 开始执行: ${day}`);
+
+  // 1. 日线成交额聚合
+  execFile('python3', ['scripts/backfill_market_amount_daily.py', day],
+    { cwd: __dirname, timeout: 180000 },
+    (err, stdout, stderr) => {
+      if (err) {
+        console.error(`[15:00] 日线成交额更新失败:`, stderr || err.message);
+      } else {
+        try {
+          const result = JSON.parse(stdout);
+          console.log(`[15:00] 日线成交额: ${result.ok ? '成功 ' + result.rows + '条' : '失败'}`);
+        } catch (e) {
+          console.log(`[15:00] 日线成交额: ${stdout.slice(0, 100)}`);
+        }
+      }
+    });
+
+  // 2. 涨跌家持久化
+  execFile('python3', ['scripts/save_breadth_history.py'],
+    { cwd: __dirname, timeout: 60000 },
+    (err, stdout, stderr) => {
+      if (err) {
+        console.error(`[15:00] 涨跌家持久化失败:`, stderr || err.message);
+      } else {
+        try {
+          const result = JSON.parse(stdout);
+          console.log(`[15:00] 涨跌家持久化: ${result.ok ? '成功 ' + result.day : (result.exists ? '已存在' : '失败')}`);
+        } catch (e) {
+          console.log(`[15:00] 涨跌家持久化: ${stdout.slice(0, 100)}`);
+        }
+      }
+    });
+
+  // 3. ETF日线更新
+  execFile('python3', ['-c', 'from data_maintenance import update_all_etf_data; update_all_etf_data()'],
+    { cwd: __dirname, timeout: 180000 },
+    (err, stdout, stderr) => {
+      if (err) {
+        console.error(`[15:00] ETF日线更新失败:`, stderr || err.message);
+      } else {
+        console.log(`[15:00] ETF日线更新:\n${stdout.slice(0, 200)}`);
+      }
+    });
+
+  // 4. 指数日线更新
+  execFile('python3', ['-c', 'from data_maintenance import update_all_index_data; update_all_index_data()'],
+    { cwd: __dirname, timeout: 180000 },
+    (err, stdout, stderr) => {
+      if (err) {
+        console.error(`[15:00] 指数日线更新失败:`, stderr || err.message);
+      } else {
+        console.log(`[15:00] 指数日线更新:\n${stdout.slice(0, 200)}`);
+      }
+    });
+
+  // 5. 触发warmup更新（收盘后自动刷新）
+  setTimeout(() => {
+    updateWarmupIfNeeded();
+  }, 10000);
+
+}, 60 * 1000);  // 每分钟检查一次

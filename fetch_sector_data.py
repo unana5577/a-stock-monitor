@@ -198,12 +198,24 @@ def _is_trading_day_session():
 
 def _is_market_open() -> bool:
     """
-    判断当前是否在交易时段（9:30 - 15:00）
+    判断当前是否在交易时段（9:30 - 15:00，排除午休）
     使用统一的时间判断系统
 
-    :return: True=交易时段（15:00前）, False=非交易时段
+    :return: True=交易时段（15:00前且非午休）, False=非交易时段或午休时间
     """
-    return _is_trading_time()
+    if not _is_trading_day():
+        return False
+
+    hour, minute = _get_current_time()
+    total_minutes = hour * 60 + minute
+
+    # 上午：09:30-11:30 (570-690)
+    # 下午：13:00-15:00 (780-900)
+    # 午休：11:30-13:00 视为非交易时间
+    is_morning = 570 <= total_minutes < 690
+    is_afternoon = 780 <= total_minutes < 900
+
+    return is_morning or is_afternoon
 
 def _get_latest_trading_day(allow_today: bool = False) -> str:
     """

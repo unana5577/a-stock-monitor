@@ -671,7 +671,7 @@ def analyze_sector(
         score -= 1
 
     return {
-        "板块名称": sector_name,
+        "ETF名称": sector_name,
         "数据日期": asof_date,
         "基准指数": benchmark_name,
         "相关性": round(float(benchmark_corr), 4) if benchmark_corr is not None else None,
@@ -679,7 +679,7 @@ def analyze_sector(
         "asof_date": asof_date,
         "benchmark_name": benchmark_name,
         "benchmark_corr": round(float(benchmark_corr), 6) if benchmark_corr is not None else None,
-        "板块位置": position_area,
+        "ETF位置": position_area,
         "动能": momentum,
         "资金行为": behavior,
         "位置区域": position_info["区域"],
