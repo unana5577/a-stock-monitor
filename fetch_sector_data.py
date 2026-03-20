@@ -3074,20 +3074,24 @@ def get_sector_minute(sector_name):
     return [p for p in out if str(p.get("time", "")).startswith(last_day)]
 
 def get_index_history(symbol, days=180):
+    import akshare as ak
+
     df = None
+    code = symbol.replace("sh", "").replace("sz", "")
+
+    # 优先使用 stock_zh_index_daily_em（包含成交额）
     try:
-        code = symbol.replace("sh", "").replace("sz", "")
-        df = ak.index_zh_a_hist(symbol=code, period="daily", start_date=START_DATE, end_date=datetime.now().strftime("%Y%m%d"))
+        df = ak.stock_zh_index_daily_em(symbol=code)
     except:
         df = None
+
+    # 备用接口
     if df is None or df.empty:
         try:
-            try:
-                df = ak.stock_zh_index_daily_em(symbol=code, start_date=START_DATE, end_date=datetime.now().strftime("%Y%m%d"))
-            except TypeError:
-                df = ak.stock_zh_index_daily_em(symbol=code)
+            df = ak.index_zh_a_hist(symbol=code, period="daily", start_date=START_DATE, end_date=datetime.now().strftime("%Y%m%d"))
         except:
             df = None
+
     if df is None or df.empty:
         try:
             tx_symbol = symbol
@@ -3096,8 +3100,11 @@ def get_index_history(symbol, days=180):
             df = ak.stock_zh_index_daily_tx(symbol=tx_symbol)
         except:
             df = None
+
     if df is None or df.empty:
         return None
+
+    # 统一列名
     if "date" in df.columns and "日期" not in df.columns:
         df = df.rename(columns={"date": "日期"})
     if "close" in df.columns and "收盘" not in df.columns:
@@ -3108,6 +3115,7 @@ def get_index_history(symbol, days=180):
         df = df.rename(columns={"amount": "成交额"})
     if "turnover" in df.columns and "换手率" not in df.columns:
         df = df.rename(columns={"turnover": "换手率"})
+
     df = _build_daily_result(df, days)
     if df:
         df = [d for d in df if d.get("date") and d.get("date") >= "2015-05-27"]
