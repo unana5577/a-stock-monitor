@@ -921,6 +921,105 @@ def _append_etf_daily(etf_code, data_list):
     """
     return _save_etf_to_disk(etf_code, data_list)
 
+def _minute_to_daily_for_etf(etf_code: str, date: str) -> dict:
+    """
+    用分时数据聚合生成日线数据（用于maintain_etf_data的fallback）
+
+    :param etf_code: ETF代码，如 sh512480
+    :param date: 日期，如 2026-03-18
+    :return: {"date": "2026-03-18", "open": xxx, "close": xxx, ...} 或 None
+    """
+    # ETF名称映射（从proxy mapping获取，使用etf变体）
+    cfg = _load_proxy_mapping()
+    proxy_map = (cfg.get("variants") or {}).get("etf") or {}
+    etf_name = None
+    for name, code in proxy_map.items():
+        if code.replace("sh", "").replace("sz", "") == etf_code.replace("sh", "").replace("sz", ""):
+            etf_name = name
+            break
+    if not etf_name:
+        return None
+
+    # 方法1: 从 sector-minute-warmup.json 读取
+    warmup_file = os.path.join("data", "sector-minute-warmup.json")
+    if os.path.exists(warmup_file):
+        try:
+            with open(warmup_file, 'r', encoding='utf-8') as f:
+                warmup_data = json.load(f)
+            minute_data = warmup_data.get('minute', {}).get(etf_name)
+            if minute_data and minute_data.get('series'):
+                series = minute_data['series']
+                prices = [float(item.get('close') or item.get('price') or 0) for item in series if item.get('close') or item.get('price')]
+                volumes = [float(item.get('volume', 0)) for item in series]
+                amounts = [float(item.get('amount', 0)) for item in series]
+                if prices:
+                    open_price = prices[0]
+                    close_price = prices[-1]
+                    high_price = max(prices)
+                    low_price = min(prices)
+                    total_volume = volumes[-1] if volumes else 0
+                    total_amount = amounts[-1] if amounts else 0
+                    pct = (close_price - open_price) / open_price * 100 if open_price > 0 else 0
+                    actual_date = series[0].get('time', '').split(' ')[0] if series and series[0].get('time') else date
+                    return {
+                        "date": actual_date,
+                        "open": open_price,
+                        "close": close_price,
+                        "high": high_price,
+                        "low": low_price,
+                        "volume": total_volume,
+                        "amount": total_amount,
+                        "pct": round(pct, 2),
+                        "source": "minute"
+                    }
+        except Exception as e:
+            print(f"[ETF维护] {etf_code}: 读取warmup失败: {e}")
+
+    # 方法2: 从 minute_data 目录读取
+    minute_dirs = [os.path.join("data", "minute_data"), "data"]
+    for minute_dir in minute_dirs:
+        for pattern in [f"{minute_dir}/minute_{etf_code}_{date}.jsonl", f"{minute_dir}/minute-{date}-{etf_code}.jsonl"]:
+            if os.path.exists(pattern):
+                try:
+                    with open(pattern, 'r', encoding='utf-8') as f:
+                        lines = f.readlines()
+                    if not lines:
+                        continue
+                    prices, volumes, amounts = [], [], []
+                    for line in lines:
+                        try:
+                            item = json.loads(line.strip())
+                            price = item.get('price') or item.get('close')
+                            if price:
+                                prices.append(float(price))
+                            vol = item.get('volume', 0)
+                            if vol:
+                                volumes.append(float(vol))
+                            amt = item.get('amount', 0)
+                            if amt:
+                                amounts.append(float(amt))
+                        except:
+                            continue
+                    if prices:
+                        open_price = prices[0]
+                        close_price = prices[-1]
+                        pct = (close_price - open_price) / open_price * 100 if open_price > 0 else 0
+                        return {
+                            "date": date,
+                            "open": open_price,
+                            "close": close_price,
+                            "high": max(prices),
+                            "low": min(prices),
+                            "volume": volumes[-1] if volumes else 0,
+                            "amount": amounts[-1] if amounts else 0,
+                            "pct": round(pct, 2),
+                            "source": "minute"
+                        }
+                except:
+                    continue
+    return None
+
+
 def maintain_etf_data(etf_code: str) -> dict:
     """
     ETF数据维护主入口（被warmup调用）
@@ -991,18 +1090,38 @@ def maintain_etf_data(etf_code: str) -> dict:
         end_date=missing_days[-1]
     )
 
-    # 区分空响应和请��失败
+    # 步骤6.1: 如果网络请求失败，使用分时数据作为fallback
     if not incremental_data:
-        print(f"[ETF维护] {etf_code}: ⚠️ 网络请求返回空数据，保留本地数据（local_latest={local_latest}）")
-        return {
-            "code": etf_code,
-            "latest_date": local_latest,
-            "updated": False,
-            "added_count": 0,
-            "missing_days": missing_days,
-            "error": "网络请求返回空数据（可能接口限流或ETF代码不支持）",
-            "note": "本地数据未受影响，可稍后重试或手动更新"
-        }
+        print(f"[ETF维护] {etf_code}: ⚠️ 网络请求返回空数据，尝试分时聚合作为fallback")
+        minute_data_list = []
+        for day in missing_days:
+            minute_daily = _minute_to_daily_for_etf(etf_code, day)
+            if minute_daily:
+                minute_data_list.append(minute_daily)
+                print(f"[ETF维护] {etf_code}: 分时聚合 {day} -> close={minute_daily['close']}")
+
+        if minute_data_list:
+            added_count = _append_etf_to_disk(etf_code, minute_data_list)
+            new_latest = _get_latest_etf_date(etf_code)
+            print(f"[ETF维护] {etf_code}: ✅ 分时fallback成功，新增 {added_count} 条，最新={new_latest}")
+            return {
+                "code": etf_code,
+                "latest_date": new_latest,
+                "updated": True,
+                "added_count": added_count,
+                "missing_days": missing_days,
+                "source": "minute_fallback"
+            }
+        else:
+            print(f"[ETF维护] {etf_code}: ⚠️ 分时聚合也失败，保留本地数据（local_latest={local_latest}）")
+            return {
+                "code": etf_code,
+                "latest_date": local_latest,
+                "updated": False,
+                "added_count": 0,
+                "missing_days": missing_days,
+                "error": "网络请求和分时聚合均失败"
+            }
 
     print(f"[ETF维护] {etf_code}: ✅ 网络请求成功，返回 {len(incremental_data)} 条数据")
 
