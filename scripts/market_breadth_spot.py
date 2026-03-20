@@ -19,9 +19,29 @@
 import json
 import sys
 import os
+from datetime import datetime
+
+
+def is_trading_time() -> bool:
+    """判断是否在交易时段（09:30-11:30 或 13:00-15:00）"""
+    now = datetime.now()
+    weekday = now.weekday()
+    if weekday >= 5:  # 周六周日
+        return False
+
+    hour, minute = now.hour, now.minute
+    total_minutes = hour * 60 + minute
+
+    # 09:30-11:30 (570-690) 或 13:00-15:00 (780-900)
+    return (570 <= total_minutes < 690) or (780 <= total_minutes < 900)
 
 
 def main() -> int:
+    # 检查是否在交易时段
+    if not is_trading_time():
+        print(json.dumps({"ok": False, "error": "非交易时段，跳过"}), file=sys.stdout)
+        return 0
+
     try:
         import akshare as ak
     except Exception as e:
