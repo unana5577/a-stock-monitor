@@ -42,6 +42,41 @@
 
 ---
 
+## 2026-03-20 工作记录
+
+### 完成事项
+1. **目录结构整理**：将市场数据统一移动到 `data/market/` 目录
+   - market-amount-daily.jsonl
+   - etf-amount-daily.jsonl
+   - etf-amount-total.jsonl
+   - breadth-cache.json
+   - breadth-history.jsonl
+
+2. **路径更新**：修改12处代码中的文件路径
+   - server.js: 4处
+   - fetch_sector_data.py: 1处
+   - breadth_manager.py: 1处
+   - save_breadth_history.py: 1处
+   - etf_amount_daily_sina.py: 1处
+   - backfill_market_amount_daily.py: 1处
+   - backfill_market_amount_from_index.py: 1处
+   - verify_amount_share.py: 1处
+   - simple_operation_advice.py: 1处
+   - sector_lifecycle/data_loader.py: 1处
+
+3. **数据复核标准**：写入 CLAUDE_DEV_RULES.md
+   - ETF/指数日线更新验证
+   - 分时数据更新验证
+   - 成交额聚合验证
+   - 涨跌家持久化验证
+   - 分时清理验证
+
+### 待解决
+- market-amount-daily.jsonl 数据计算可能有误（需验证是否包含国债期货）
+- 涨跌家数 11:30/15:00 快照未正确记录
+
+---
+
 ## 数据规则（CRITICAL）
 
 ### ETF代码格式

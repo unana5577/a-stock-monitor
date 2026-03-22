@@ -805,7 +805,7 @@ function volumeFilePath(day) {
 }
 
 function marketAmountDailyPath() {
-  const dir = path.join(__dirname, 'data');
+  const dir = path.join(__dirname, 'data', 'market');
   fs.mkdirSync(dir, { recursive: true });
   return path.join(dir, 'market-amount-daily.jsonl');
 }
@@ -844,13 +844,13 @@ async function backfillMarketAmountDaily(startDay) {
 }
 
 function etfAmountTotalPath() {
-  const dir = path.join(__dirname, 'data');
+  const dir = path.join(__dirname, 'data', 'market');
   fs.mkdirSync(dir, { recursive: true });
   return path.join(dir, 'etf-amount-total.jsonl');
 }
 
 function breadthCachePath() {
-  const dir = path.join(__dirname, 'data');
+  const dir = path.join(__dirname, 'data', 'market');
   fs.mkdirSync(dir, { recursive: true });
   return path.join(dir, 'breadth-cache.json');
 }
@@ -2087,7 +2087,7 @@ function buildVolumeCompare(day, volume) {
 
   // 1. 优先从日线数据文件读取
   try {
-    const amountDailyFile = path.join(__dirname, 'data', 'market-amount-daily.jsonl');
+    const amountDailyFile = path.join(__dirname, 'data', 'market', 'market-amount-daily.jsonl');
     if (fs.existsSync(amountDailyFile)) {
       const txt = fs.readFileSync(amountDailyFile, 'utf8').trim();
       const lines = txt.split('\n');

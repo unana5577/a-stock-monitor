@@ -98,7 +98,7 @@ def save_to_cache_jsonl(data, phase):
 def save_to_history(data, phase):
     """保存快照到历史文件（区分早盘/午盘）"""
     project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    history_file = os.path.join(project_dir, "data", "breadth-history.jsonl")
+    history_file = os.path.join(project_dir, "data", "market", "breadth-history.jsonl")
     cache_json = os.path.join(project_dir, "data", "breadth-cache.json")
 
     now = datetime.now()

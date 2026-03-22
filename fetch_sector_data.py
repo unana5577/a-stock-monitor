@@ -1663,7 +1663,7 @@ def _build_histories_from_cache(df, sectors):
     return histories
 
 def _load_market_amount_daily_rows(days=180):
-    path = os.path.join("data", "market-amount-daily.jsonl")
+    path = os.path.join("data", "market", "market-amount-daily.jsonl")
     if not os.path.exists(path):
         return None
     rows = []

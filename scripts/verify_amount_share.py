@@ -16,7 +16,7 @@ def _num(v):
 def main():
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     cache_path = os.path.join(root, "data", "sector-cache.csv")
-    market_path = os.path.join(root, "data", "market-amount-daily.jsonl")
+    market_path = os.path.join(root, "data", "market", "market-amount-daily.jsonl")
     if not os.path.exists(cache_path) or not os.path.exists(market_path):
         print(json.dumps({"ok": False, "error": "missing_files"}, ensure_ascii=False))
         return 2

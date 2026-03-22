@@ -52,7 +52,7 @@ def main() -> int:
             df["sz_amount"] = df["sz_amount"] * scale
             df["total_amount"] = df["total_amount"] * scale
 
-        out_path = os.path.join(os.path.dirname(__file__), "..", "data", "market-amount-daily.jsonl")
+        out_path = os.path.join(os.path.dirname(__file__), "..", "data", "market", "market-amount-daily.jsonl")
         out_path = os.path.abspath(out_path)
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
         with open(out_path, "w", encoding="utf-8") as f:

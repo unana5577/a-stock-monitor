@@ -14,7 +14,7 @@ def main() -> int:
     project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     data_dir = os.path.join(project_dir, "data")
     index_dir = os.path.join(data_dir, "index_daily")
-    out_file = os.path.join(data_dir, "market-amount-daily.jsonl")
+    out_file = os.path.join(data_dir, "market", "market-amount-daily.jsonl")
 
     # 读取现有数据，获取已存在的日期
     existing_dates = set()

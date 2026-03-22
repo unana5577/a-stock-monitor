@@ -76,7 +76,7 @@ class DataLoader:
         Returns:
             字典，格式：{"2026-03-17": 545613396034.0, ...}
         """
-        filepath = self.data_dir / "etf-amount-daily.jsonl"
+        filepath = self.data_dir / "market" / "etf-amount-daily.jsonl"
         if not filepath.exists():
             return {}
 

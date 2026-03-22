@@ -88,7 +88,7 @@ def load_index_data(filename: str) -> pd.DataFrame:
 
 def load_etf_amount_data() -> dict:
     """加载全市场ETF成交额数据"""
-    filepath = DATA_DIR / "etf-amount-daily.jsonl"
+    filepath = DATA_DIR / "market" / "etf-amount-daily.jsonl"
     if not filepath.exists():
         return {}
 

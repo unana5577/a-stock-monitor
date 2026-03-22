@@ -38,7 +38,7 @@ def main():
     timestamp = int(datetime.now().timestamp() * 1000)
 
     # 涨跌家数历史文件
-    history_file = os.path.join(project_dir, 'data', 'breadth-history.jsonl')
+    history_file = os.path.join(project_dir, 'data', 'market', 'breadth-history.jsonl')
 
     # 检查是否已存在今天的记录
     existing_days = set()

@@ -49,6 +49,7 @@ def main() -> int:
             os.path.dirname(__file__),
             "..",
             "data",
+            "market",
             "etf-amount-daily.jsonl"
         )
         out_path = os.path.abspath(out_path)
