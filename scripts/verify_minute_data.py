@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """
-分时数据验证工具
-验证：板块分时、volume、旧版文件
+分时数据验证工具 - 时间感知版本
+运行时间: 09:31, 13:01
+检查内容: 大盘指数分时、板块分时数据点数
 """
 
-import os
+import sys
 import re
+import json
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -17,7 +19,6 @@ def load_holidays():
         return set()
 
     with open(holidays_file, 'r', encoding='utf-8') as f:
-        import json
         data = json.load(f)
         return set(data.get('holidays', []))
 
@@ -32,204 +33,207 @@ def is_trading_day(date, holidays):
     return True
 
 
-def get_last_n_trading_days(end_date, n, holidays):
-    """获取最近N个交易日"""
-    dates = []
-    current = end_date
-    while len(dates) < n:
-        if is_trading_day(current, holidays):
-            dates.append(current)
-        current -= timedelta(days=1)
-    return dates
+def get_expected_points(now):
+    """根据当前时间判断期望的数据点数"""
+    hour = now.hour
+    minute = now.minute
 
-
-def verify_minute_data():
-    """验证板块分时数据（data/minute/）"""
-    print("\n" + "="*80)
-    print("📊 板块分时数据（data/minute/）")
-    print("="*80)
-
-    minute_dir = Path("data/minute")
-    if not minute_dir.exists():
-        print("❌ data/minute/ 目录不存在")
-        return None
-
-    pattern = re.compile(r"minute-(\d{6})-(\w+)\.jsonl$")
-    files = []
-
-    for file in minute_dir.glob("minute-*.jsonl"):
-        match = pattern.search(file.name)
-        if match:
-            date_str = match.group(1)
-            sector = match.group(2)
-            try:
-                file_date = datetime.strptime(date_str, "%Y%m%d")
-                size = file.stat().st_size
-                files.append((file_date, sector, file, size))
-            except ValueError:
-                pass
-
-    if not files:
-        print("❌ 未找到板块分时文件")
-        return None
-
-    # 按日期分组
-    dates = {}
-    for file_date, sector, file, size in files:
-        date_key = file_date.strftime('%Y-%m-%d')
-        if date_key not in dates:
-            dates[date_key] = []
-        dates[date_key].append(sector)
-
-    sorted_dates = sorted(dates.keys(), reverse=True)
-
-    print(f"✅ 分时文件总数：{len(files)} 个")
-    print(f"📅 覆盖日期数：{len(sorted_dates)} 天")
-    print(f"📂 最新日期：{sorted_dates[0] if sorted_dates else 'N/A'}")
-    print(f"📂 最早日期：{sorted_dates[-1] if sorted_dates else 'N/A'}")
-
-    # 检查最近5个交易日
-    holidays = load_holidays()
-    today = datetime.now().date()
-    target_dates = get_last_n_trading_days(datetime(today.year, today.month, today.day), 5, holidays)
-
-    print(f"\n📋 最近5个交易日分时数据：")
-    for date in target_dates:
-        date_str = date.strftime('%Y-%m-%d')
-        if date_str in dates:
-            print(f"   ✅ {date_str}：{len(dates[date_str])} 个板块")
+    # 早盘收盘后 (11:30之后): 应该有120点或121点(包含集合竞价)
+    if hour > 11 or (hour == 11 and minute >= 30):
+        # 如果是下午,检查全天数据(15:00后应有240点或241点)
+        if hour >= 15:
+            return 240, "全天"
         else:
-            print(f"   ❌ {date_str}：缺失")
+            return 120, "早盘"
 
-    return {
-        'total_files': len(files),
-        'dates_count': len(sorted_dates),
-        'latest': sorted_dates[0] if sorted_dates else None,
-        'earliest': sorted_dates[-1] if sorted_dates else None
+    # 早盘中: 暂不严格要求点数
+    return None, "交易中"
+
+
+def log_output(message):
+    """输出到stdout和日志"""
+    print(message)
+
+
+def verify_index_minute(now, expected_points, period):
+    """验证大盘指数分时数据"""
+    log_output("\n📊 大盘指数分时")
+
+    sectors = {
+        'sse': '上证指数',
+        'szi': '深证成指',
+        'gem': '创业板指',
+        'star': '科创板指',
+        'hs300': '沪深300'
     }
 
+    today = now.strftime('%Y%m%d')
+    results = []
 
-def verify_volume_data():
-    """验证成交额分时数据（volume）"""
-    print("\n" + "="*80)
-    print("📊 成交额分时数据（volume）")
-    print("="*80)
+    for code, name in sectors.items():
+        file = Path(f"data/minute-{today}-{code}.jsonl")
 
-    data_dir = Path("data")
-    pattern = re.compile(r"volume-(\d{8})\.jsonl$")
-    files = []
+        if not file.exists():
+            log_output(f"   ❌ {name}（{code}）：文件不存在")
+            results.append(False)
+            continue
 
-    for file in data_dir.glob("volume-*.jsonl"):
-        match = pattern.search(file.name)
-        if match:
-            date_str = match.group(1)
-            try:
-                file_date = datetime.strptime(date_str, "%Y%m%d")
-                size = file.stat().st_size
-                files.append((file_date, file, size))
-            except ValueError:
-                pass
+        try:
+            with open(file, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+                point_count = len(lines)
 
-    files.sort(key=lambda x: x[0])
+                if expected_points:
+                    # 允许+1点（包含集合竞价）
+                    if point_count == expected_points or point_count == expected_points + 1:
+                        log_output(f"   ✅ {name}（{code}）：{point_count}点（{period}）")
+                        results.append(True)
+                    else:
+                        log_output(f"   ⚠️  {name}（{code}）：{point_count}点（期望{expected_points}点）")
+                        results.append(False)
+                else:
+                    log_output(f"   📊 {name}（{code}）：{point_count}点（交易中）")
+                    results.append(True)
 
-    if not files:
-        print("❌ 未找到 volume 文件")
-        return None
+        except Exception as e:
+            log_output(f"   ❌ {name}（{code}）：读取失败 - {e}")
+            results.append(False)
 
-    earliest = files[0][0]
-    latest = files[-1][0]
+    return all(results)
 
-    print(f"✅ 文件数量：{len(files)} 个")
-    print(f"📅 日期范围：{earliest.strftime('%Y-%m-%d')} 至 {latest.strftime('%Y-%m-%d')}")
 
-    return {
-        'count': len(files),
-        'earliest': earliest,
-        'latest': latest
+def verify_sector_minute(now, expected_points, period):
+    """验证板块分时数据"""
+    log_output("\n📊 板块分时")
+
+    sectors = {
+        'bank': '银行',
+        'broker': '证券',
+        'insure': '保险'
     }
 
+    today = now.strftime('%Y%m%d')
+    results = []
 
-def verify_old_minute_files():
-    """验证根目录旧版分时文件"""
-    print("\n" + "="*80)
-    print("📊 根目录旧版分时文件（待清理）")
-    print("="*80)
+    for code, name in sectors.items():
+        file = Path(f"data/minute-{today}-{code}.jsonl")
 
-    data_dir = Path("data")
-    pattern = re.compile(r"minute-(\d{8})-(\w+)\.jsonl$")
-    files = []
+        if not file.exists():
+            # 检查根目录是否存在该文件
+            data_dir = Path("data")
+            matching_files = list(data_dir.glob(f"minute-{today}-{code}.jsonl"))
+            if matching_files:
+                file = matching_files[0]
+            else:
+                log_output(f"   ❌ {name}（{code}）：文件不存在")
+                results.append(False)
+                continue
 
-    for file in data_dir.glob("minute-*.jsonl"):
-        match = pattern.search(file.name)
-        if match:
-            date_str = match.group(1)
-            sector = match.group(2)
-            try:
-                file_date = datetime.strptime(date_str, "%Y%m%d")
-                size = file.stat().st_size
-                files.append((file_date, sector, file, size))
-            except ValueError:
-                pass
+        try:
+            with open(file, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+                point_count = len(lines)
 
-    if not files:
-        print("✅ 未找到旧版分时文件")
-        return None
+                if expected_points:
+                    # 允许+1点（包含集合竞价）
+                    if point_count == expected_points or point_count == expected_points + 1:
+                        log_output(f"   ✅ {name}（{code}）：{point_count}点（{period}）")
+                        results.append(True)
+                    else:
+                        log_output(f"   ⚠️  {name}（{code}）：{point_count}点（期望{expected_points}点）")
+                        results.append(False)
+                else:
+                    log_output(f"   📊 {name}（{code}）：{point_count}点（交易中）")
+                    results.append(True)
 
-    # 按日期分组
-    dates = {}
-    for file_date, sector, file, size in files:
-        date_key = file_date.strftime('%Y-%m-%d')
-        if date_key not in dates:
-            dates[date_key] = []
-        dates[date_key].append((sector, size))
+        except Exception as e:
+            log_output(f"   ❌ {name}（{code}）：读取失败 - {e}")
+            results.append(False)
 
-    sorted_dates = sorted(dates.keys())
+    return all(results)
 
-    print(f"⚠️  旧版文件总数：{len(files)} 个")
-    print(f"📅 日期范围：{sorted_dates[0]} 至 {sorted_dates[-1]}")
-    print(f"📋 按日期统计：")
 
-    for date in sorted_dates:
-        sectors = dates[date]
-        total_size = sum(s[1] for s in sectors)
-        print(f"   - {date}：{len(sectors)} 个板块, {total_size / 1024:.1f} KB")
+def verify_csi2000_minute(now, expected_points, period):
+    """验证中证2000分时数据"""
+    log_output("\n📊 中证2000分时")
 
-    print(f"\n🗑️  建议清理：Task #13")
+    today = now.strftime('%Y%m%d')
+    file = Path(f"data/minute-{today}-csi2000.jsonl")
 
-    return {
-        'total_files': len(files),
-        'dates': sorted_dates,
-        'size_total': sum(f[3] for f in files)
-    }
+    if not file.exists():
+        log_output(f"   ❌ 中证2000：文件不存在")
+        return False
+
+    try:
+        with open(file, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+            point_count = len(lines)
+
+            if expected_points:
+                if point_count == expected_points:
+                    log_output(f"   ✅ 中证2000：{point_count}点（{period}）")
+                    return True
+                else:
+                    log_output(f"   ⚠️  中证2000：{point_count}点（期望{expected_points}点）")
+                    return False
+            else:
+                log_output(f"   📊 中证2000：{point_count}点（交易中）")
+                return True
+
+    except Exception as e:
+        log_output(f"   ❌ 中证2000：读取失败 - {e}")
+        return False
 
 
 def main():
     """主函数"""
-    print("="*80)
-    print("🔍 分时数据验证工具".center(80))
-    print("="*80)
-    print(f"生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    now = datetime.now()
+    log_file = Path(f"logs/verify_{now.strftime('%Y-%m-%d')}.log")
 
-    # 验证各类分时数据
-    minute_result = verify_minute_data()
-    volume_result = verify_volume_data()
-    old_result = verify_old_minute_files()
+    # 创建日志目录
+    log_file.parent.mkdir(exist_ok=True)
 
-    # 汇总报告
-    print("\n" + "="*80)
-    print("📋 验证汇总")
-    print("="*80)
+    # 重定向输出到日志文件
+    original_stdout = sys.stdout
+    sys.stdout = open(log_file, 'a', encoding='utf-8')
 
-    print(f"\n✅ 验证完成：")
-    print(f"   - 板块分时：{'通过' if minute_result else '失败'}")
-    print(f"   - 成交额分时：{'通过' if volume_result else '失败'}")
-    print(f"   - 旧版文件：{'发现' if old_result else '无'}")
+    try:
+        # 写入时间戳
+        timestamp = now.strftime('%Y-%m-%d %H:%M:%S')
+        log_output(f"\n{'='*80}")
+        log_output(f"📊 分时数据验证报告 - {timestamp}")
+        log_output(f"{'='*80}")
 
-    if old_result:
-        print(f"\n🗑️  清理任务：")
-        print(f"   - #13：清理根目录旧版分时文件（{old_result['total_files']} 个）")
+        # 判断是否为交易日
+        holidays = load_holidays()
+        if not is_trading_day(now, holidays):
+            log_output("\n⚠️  今天不是交易日，跳过分时数据检查")
+            return
 
-    print("\n" + "="*80)
+        # 获取期望的数据点数
+        expected_points, period = get_expected_points(now)
+
+        if expected_points:
+            log_output(f"\n📅 检查时段：{period}（期望{expected_points}个数据点）")
+        else:
+            log_output(f"\n📅 检查时段：交易中（不严格检查点数）")
+
+        # 验证各类分时数据
+        index_ok = verify_index_minute(now, expected_points, period)
+        sector_ok = verify_sector_minute(now, expected_points, period)
+        csi2000_ok = verify_csi2000_minute(now, expected_points, period)
+
+        # 汇总结果
+        log_output(f"\n{'='*80}")
+        if index_ok and sector_ok and csi2000_ok:
+            log_output("✅ 分时数据验证通过")
+        else:
+            log_output("⚠️  分时数据存在问题")
+        log_output(f"{'='*80}")
+
+    finally:
+        sys.stdout.close()
+        sys.stdout = original_stdout
 
 
 if __name__ == "__main__":

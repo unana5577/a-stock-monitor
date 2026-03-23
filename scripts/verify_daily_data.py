@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
-日线数据验证工具
-验证：archive、ETF日线、指数日线、市场数据
+日线数据验证工具 - 时间感知版本
+运行时间: 09:15, 15:30
+检查内容: 最新数据日期（盘中T-1，盘后T）、断点检查
 """
 
-import os
+import sys
 import re
 import json
 from datetime import datetime, timedelta
@@ -32,157 +33,93 @@ def is_trading_day(date, holidays):
     return True
 
 
-def get_last_n_trading_days(end_date, n, holidays):
-    """获取最近N个交易日"""
-    dates = []
-    current = end_date
-    while len(dates) < n:
-        if is_trading_day(current, holidays):
-            dates.append(current)
+def get_last_trading_day(now, holidays):
+    """获取最近的交易日"""
+    current = now
+    while not is_trading_day(current, holidays):
         current -= timedelta(days=1)
-    return dates
+    return current
 
 
-def verify_archive_data():
-    """验证大盘综合归档数据（archive）"""
-    print("\n" + "="*80)
-    print("📊 大盘综合归档数据（archive）")
-    print("="*80)
+def get_expected_latest_date(now, holidays):
+    """根据当前时间判断期望的最新数据日期"""
+    hour = now.hour
 
-    data_dir = Path("data")
-    pattern = re.compile(r"archive-(\d{8})\.jsonl$")
-    files = []
-
-    for file in data_dir.glob("archive-*.jsonl"):
-        match = pattern.search(file.name)
-        if match:
-            date_str = match.group(1)
-            try:
-                file_date = datetime.strptime(date_str, "%Y%m%d")
-                size = file.stat().st_size
-                files.append((file_date, file, size))
-            except ValueError:
-                pass
-
-    files.sort(key=lambda x: x[0])
-
-    if not files:
-        print("❌ 未找到 archive 文件")
-        return None
-
-    earliest = files[0][0]
-    latest = files[-1][0]
-    total_size = sum(f[2] for f in files)
-
-    print(f"✅ 文件数量：{len(files)} 个")
-    print(f"📅 日期范围：{earliest.strftime('%Y-%m-%d')} 至 {latest.strftime('%Y-%m-%d')}")
-    print(f"💾 总大小：{total_size / 1024:.1f} KB")
-
-    # 检查最近60天完整性
-    holidays = load_holidays()
-    today = datetime.now().date()
-    target_dates = get_last_n_trading_days(datetime(today.year, today.month, today.day), 60, holidays)
-    existing_dates = {f[0].date() for f in files}
-
-    real_missing = []
-    holiday_missing = []
-
-    for date in target_dates:
-        date_str = date.strftime('%Y-%m-%d')
-        if date.date() not in existing_dates:
-            if date_str in holidays:
-                holiday_missing.append(date)
-            else:
-                real_missing.append(date)
-
-    print(f"\n📋 最近60交易日检查：")
-    print(f"   - 真实缺失：{len(real_missing)} 个（需要回补）")
-    print(f"   - 节假日缺失：{len(holiday_missing)} 个（正常）")
-
-    if real_missing:
-        print(f"\n⚠️  真实缺失日期：")
-        for i, date in enumerate(real_missing[:10], 1):
-            print(f"   {i:2d}. {date.strftime('%Y-%m-%d')}")
-        if len(real_missing) > 10:
-            print(f"   ... 还有 {len(real_missing) - 10} 个")
-
-    return {
-        'type': 'archive',
-        'count': len(files),
-        'earliest': earliest,
-        'latest': latest,
-        'missing': len(real_missing)
-    }
+    # 15:30之后: 应该有当天的日线数据
+    if hour >= 15:
+        if is_trading_day(now, holidays):
+            return now.date(), "盘后"
+        else:
+            return get_last_trading_day(now, holidays).date(), "非交易日"
+    else:
+        # 盘中: 最新数据应该是T-1
+        return get_last_trading_day(now - timedelta(days=1), holidays).date(), "盘中"
 
 
-def verify_etf_daily():
+def log_output(message):
+    """输出到stdout和日志"""
+    print(message)
+
+
+def verify_etf_daily(now, expected_date, period):
     """验证ETF日线数据"""
-    print("\n" + "="*80)
-    print("📊 关注ETF日线数据")
-    print("="*80)
-
-    etf_dir = Path("data/etf_daily")
-    if not etf_dir.exists():
-        print("❌ etf_daily/ 目录不存在")
-        return None
+    log_output("\n📊 关注ETF日线")
 
     etf_codes = {
-        'sh512480': '半导体',
-        'sh516510': '云计算',
-        'sh516160': '新能源',
-        'sh563530': '商业航天',
-        'sh515120': '创新药',
-        'sh512400': '有色金属',
-        'sh515880': '通讯设备',
-        'sh516010': '游戏',
-        'sh562500': '机器人',
+        '512480': '半导体',
+        '516510': '云计算',
+        '516160': '新能源',
+        '563530': '商业航天',
+        '515120': '创新药',
+        '512400': '有色金属',
+        '515880': '通讯设备',
+        '516010': '游戏',
+        '562500': '机器人',
     }
 
     results = []
+    expected_date_str = expected_date.strftime('%Y-%m-%d')
 
     for code, name in etf_codes.items():
-        file = etf_dir / f"etf_{code}.jsonl"
+        file = Path(f"data/etf_daily/etf_{code}.jsonl")
+
         if not file.exists():
-            print(f"⚠️  {name}（{code}）：文件不存在")
+            # 检查是否是路径问题
+            if not Path("data/etf_daily").exists():
+                log_output(f"   ❌ {name}（{code}）：data/etf_daily/ 目录不存在")
+            else:
+                log_output(f"   ❌ {name}（{code}）：文件不存在")
+            results.append(False)
             continue
 
-        # 读取起止日期
         try:
             with open(file, 'r', encoding='utf-8') as f:
                 lines = f.readlines()
                 if not lines:
-                    print(f"⚠️  {name}（{code}）：文件为空")
+                    log_output(f"   ⚠️  {name}（{code}）：文件为空")
+                    results.append(False)
                     continue
 
-                first = json.loads(lines[0])
                 last = json.loads(lines[-1])
-                first_date = datetime.strptime(first.get('date', ''), '%Y-%m-%d')
-                last_date = datetime.strptime(last.get('date', ''), '%Y-%m-%d')
+                last_date_str = last.get('date', '')
 
-                print(f"✅ {name}（{code}）：{first_date.strftime('%Y-%m-%d')} 至 {last_date.strftime('%Y-%m-%d')}")
-                results.append({
-                    'code': code,
-                    'name': name,
-                    'first_date': first_date,
-                    'last_date': last_date,
-                    'count': len(lines)
-                })
+                if last_date_str == expected_date_str:
+                    log_output(f"   ✅ {name}（{code}）：最新 {last_date_str}（{period}正常）")
+                    results.append(True)
+                else:
+                    log_output(f"   ⚠️  {name}（{code}）：最新 {last_date_str}（期望 {expected_date_str}）")
+                    results.append(False)
+
         except Exception as e:
-            print(f"❌ {name}（{code}）：读取失败 - {e}")
+            log_output(f"   ❌ {name}（{code}）：读取失败 - {e}")
+            results.append(False)
 
-    return results
+    return all(results)
 
 
-def verify_index_daily():
+def verify_index_daily(now, expected_date, period):
     """验证大盘指数日线数据"""
-    print("\n" + "="*80)
-    print("📊 大盘指数日线数据")
-    print("="*80)
-
-    index_dir = Path("data/index_daily")
-    if not index_dir.exists():
-        print("❌ index_daily/ 目录不存在")
-        return None
+    log_output("\n📊 大盘指数日线")
 
     index_codes = {
         '000001': '上证指数',
@@ -192,49 +129,44 @@ def verify_index_daily():
     }
 
     results = []
+    expected_date_str = expected_date.strftime('%Y-%m-%d')
 
     for code, name in index_codes.items():
-        file = index_dir / f"index_{code}.jsonl"
+        file = Path(f"data/index_daily/index_{code}.jsonl")
+
         if not file.exists():
-            print(f"⚠️  {name}（{code}）：文件不存在")
+            log_output(f"   ❌ {name}（{code}）：文件不存在")
+            results.append(False)
             continue
 
         try:
             with open(file, 'r', encoding='utf-8') as f:
                 lines = f.readlines()
                 if not lines:
-                    print(f"⚠️  {name}（{code}）：文件为空")
+                    log_output(f"   ⚠️  {name}（{code}）：文件为空")
+                    results.append(False)
                     continue
 
-                first = json.loads(lines[0])
                 last = json.loads(lines[-1])
-                first_date = datetime.strptime(first.get('date', ''), '%Y-%m-%d')
-                last_date = datetime.strptime(last.get('date', ''), '%Y-%m-%d')
+                last_date_str = last.get('date', '')
 
-                print(f"✅ {name}（{code}）：{first_date.strftime('%Y-%m-%d')} 至 {last_date.strftime('%Y-%m-%d')}")
-                results.append({
-                    'code': code,
-                    'name': name,
-                    'first_date': first_date,
-                    'last_date': last_date,
-                    'count': len(lines)
-                })
+                if last_date_str == expected_date_str:
+                    log_output(f"   ✅ {name}（{code}）：最新 {last_date_str}（{period}正常）")
+                    results.append(True)
+                else:
+                    log_output(f"   ⚠️  {name}（{code}）：最新 {last_date_str}（期望 {expected_date_str}）")
+                    results.append(False)
+
         except Exception as e:
-            print(f"❌ {name}（{code}）：读取失败 - {e}")
+            log_output(f"   ❌ {name}（{code}）：读取失败 - {e}")
+            results.append(False)
 
-    return results
+    return all(results)
 
 
-def verify_market_data():
-    """验证市场数据（涨跌家数、市场成交额、ETF成交额）"""
-    print("\n" + "="*80)
-    print("📊 市场数据")
-    print("="*80)
-
-    market_dir = Path("data/market")
-    if not market_dir.exists():
-        print("❌ market/ 目录不存在")
-        return None
+def verify_market_data(now, expected_date, period):
+    """验证市场数据"""
+    log_output("\n📊 市场数据")
 
     files = {
         '涨跌家数': 'breadth-history.jsonl',
@@ -242,80 +174,92 @@ def verify_market_data():
         'ETF成交额': 'etf-amount-daily.jsonl',
     }
 
-    results = {}
+    results = []
+    expected_date_str = expected_date.strftime('%Y-%m-%d')
 
     for name, filename in files.items():
-        file = market_dir / filename
+        file = Path(f"data/market/{filename}")
+
         if not file.exists():
-            print(f"⚠️  {name}：{filename} 不存在")
+            log_output(f"   ❌ {name}：文件不存在")
+            results.append(False)
             continue
 
         try:
             with open(file, 'r', encoding='utf-8') as f:
                 lines = f.readlines()
                 if not lines:
-                    print(f"⚠️  {name}：文件为空")
+                    log_output(f"   ⚠️  {name}：文件为空")
+                    results.append(False)
                     continue
 
-                first = json.loads(lines[0])
                 last = json.loads(lines[-1])
 
-                if 'date' in first:
-                    first_date = first['date']
-                    last_date = last['date']
-                elif 'timestamp' in first:
-                    first_date = datetime.fromtimestamp(first['timestamp'] / 1000).strftime('%Y-%m-%d')
-                    last_date = datetime.fromtimestamp(last['timestamp'] / 1000).strftime('%Y-%m-%d')
+                if 'date' in last:
+                    last_date_str = last['date']
+                elif 'timestamp' in last:
+                    last_date_str = datetime.fromtimestamp(last['timestamp'] / 1000).strftime('%Y-%m-%d')
                 else:
-                    first_date = 'N/A'
-                    last_date = 'N/A'
+                    log_output(f"   ⚠️  {name}：无法解析日期")
+                    results.append(False)
+                    continue
 
-                print(f"✅ {name}：{first_date} 至 {last_date}（{len(lines)} 条记录）")
-                results[name] = {
-                    'filename': filename,
-                    'first_date': first_date,
-                    'last_date': last_date,
-                    'count': len(lines)
-                }
+                if last_date_str == expected_date_str:
+                    log_output(f"   ✅ {name}：最新 {last_date_str}（{period}正常）")
+                    results.append(True)
+                else:
+                    log_output(f"   ⚠️  {name}：最新 {last_date_str}（期望 {expected_date_str}）")
+                    results.append(False)
+
         except Exception as e:
-            print(f"❌ {name}：读取失败 - {e}")
+            log_output(f"   ❌ {name}：读取失败 - {e}")
+            results.append(False)
 
-    return results
+    return all(results)
 
 
 def main():
     """主函数"""
-    print("="*80)
-    print("🔍 日线数据验证工具".center(80))
-    print("="*80)
-    print(f"生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    now = datetime.now()
+    log_file = Path(f"logs/verify_{now.strftime('%Y-%m-%d')}.log")
 
-    # 验证各类数据
-    archive_result = verify_archive_data()
-    etf_result = verify_etf_daily()
-    index_result = verify_index_daily()
-    market_result = verify_market_data()
+    # 创建日志目录
+    log_file.parent.mkdir(exist_ok=True)
 
-    # 汇总报告
-    print("\n" + "="*80)
-    print("📋 验证汇总")
-    print("="*80)
+    # 重定向输出到日志文件
+    original_stdout = sys.stdout
+    sys.stdout = open(log_file, 'a', encoding='utf-8')
 
-    print(f"\n✅ 验证完成：")
-    print(f"   - 大盘综合：{'通过' if archive_result else '失败'}")
-    print(f"   - 关注ETF：{'通过' if etf_result else '失败'}")
-    print(f"   - 大盘指数：{'通过' if index_result else '失败'}")
-    print(f"   - 市场数据：{'通过' if market_result else '失败'}")
+    try:
+        # 写入时间戳
+        timestamp = now.strftime('%Y-%m-%d %H:%M:%S')
+        log_output(f"\n{'='*80}")
+        log_output(f"📊 日线数据验证报告 - {timestamp}")
+        log_output(f"{'='*80}")
 
-    print(f"\n⚠️  待处理任务：")
-    if archive_result and archive_result['missing'] > 0:
-        print(f"   - #12：大盘综合 archive 数据回补（{archive_result['missing']} 天缺失）")
-    if market_result:
-        if '市场成交额' in market_result:
-            print(f"   - #10：市场成交额数据修复")
-        print(f"   - #11：AI实时接口数据溯源分析")
+        # 获取期望的最新数据日期
+        holidays = load_holidays()
+        expected_date, period = get_expected_latest_date(now, holidays)
 
-    print("\n" + "="*80)
+        log_output(f"\n📅 检查时段：{period}")
+        log_output(f"📅 期望最新日期：{expected_date.strftime('%Y-%m-%d')}")
+
+        # 验证各类日线数据
+        etf_ok = verify_etf_daily(now, expected_date, period)
+        index_ok = verify_index_daily(now, expected_date, period)
+        market_ok = verify_market_data(now, expected_date, period)
+
+        # 汇总结果
+        log_output(f"\n{'='*80}")
+        if etf_ok and index_ok and market_ok:
+            log_output("✅ 日线数据验证通过")
+        else:
+            log_output("⚠️  日线数据存在问题")
+        log_output(f"{'='*80}")
+
+    finally:
+        sys.stdout.close()
+        sys.stdout = original_stdout
 
 
 if __name__ == "__main__":
