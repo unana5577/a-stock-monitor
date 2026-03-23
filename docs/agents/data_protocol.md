@@ -13,7 +13,7 @@
 |---------|---------|---------|---------|---------|---------|---------|---------|---------|
 | **市场数据** | 全市场成交额 | 无独立接口 | buildVolumeFromArchive() | archive提取（第22列） | data/volume-YYYYMMDD.jsonl | 60天 | archive→volume，不转日线 | 无 |
 | | 全市场ETF成交额 | 待确认 | 待确认 | 待确认 | 待确认 | 待确认 | 待确认 | 待确认 |
-| | 涨跌家数 | 无独立接口 | market_breadth_spot.py | 东财 | market/breadth-history.jsonl | 永久 | 实时拉取 | 盘中实时 |
+| | 涨跌家数 | 无独立接口 |东财 stock_zh_a_spot| 东财 ak.stock_zh_a_spot | market/breadth-history.jsonl | 永久 | 实时拉取，可做分时/日线 | 盘中实时 |
 | **大盘指数** | 上证指数 | /api/minute/sh000001 | loadMinuteSeries() → fetchAshareMinute() | 新浪 | data/minute-YYMMDD-sse.jsonl | 5个交易日 | 实时拉取，15:00转日线 | 11:30、15:00 |
 | | 深证成指 | /api/minute/sz399001 | loadMinuteSeries() → fetchAshareMinute() | 新浪 | data/minute-YYMMDD-szi.jsonl | 5个交易日 | 实时拉取，15:00转日线 | 11:30、15:00 |
 | | 创业板指 | /api/minute/sz399006 | loadMinuteSeries() → fetchAshareMinute() | 新浪 | data/minute-YYMMDD-gem.jsonl | 5个交易日 | 实时拉取，15:00转日线 | 11:30、15:00 |
@@ -130,7 +130,7 @@
 |---------|---------|---------|---------|---------|---------|---------|---------|---------|
 | **warmup** | 板块历史数据 | 无 | warmup_proxy_files() | 日线数据（ETF/指数） | sector-history-warmup-60.json | 60天 | 每日生成 | 15:00收盘后 |
 | | 分时预热数据 | 无 | warmup_proxy_files() | 分时数据（ETF） | sector-minute-warmup.json | 1天 | 实时更新 | 盘中实时 |
-| | 关注ETF历史 | 无 | warmup_proxy_files() | ETF日线 | sector-history-warmup-60.json | 60天 | 每日生成 | 15:00收盘后 |
+| | 关注ETF历史 | 无 | warmup_proxy_files() | ETF日线 | sector-history-warmup-60.json |新浪 fund_etf_hist_sina| 每日生成 | 15:00收盘后 |
 
 **说明**:
 - warmup目的: 系统启动时预加载关键数据，提升响应速度
@@ -145,13 +145,13 @@
 | | 板块快照(4个) | /api/snapshot | buildSnapshotPayload() | 主：东财fetchEastmoneySnapshot<br>备：东财loadMinuteSeries | **无文件**（实时） | **无文件** | 实时拉取 | 盘中实时 |
 | | 国债期货快照(2个) | /api/snapshot | buildSnapshotPayload() | 主：东财ETF分时<br>备：腾讯fetchSnapshot | **无文件**（实时） | **无文件** | 实时拉取 | 盘中实时 |
 | | 成交额数据 | /api/snapshot | buildSnapshotPayload() | 腾讯fetchSnapshot(上证+深证amount) | **无文件**（实时） | **无文件** | 实时拉取 | 盘中实时 |
-| | 涨跌家数 | /api/snapshot | buildSnapshotPayload() | 主：东财fetchBreadthRealtime<br>备：历史存档 | **无文件**（实时） | **无文件** | 实时拉取 | 盘中实时 |
+| | 涨跌家数 | /api/snapshot | buildSnapshotPayload() | 东财 stock_zh_a_spot（可做分时/日线） | **无文件**（实时） | **无文件** | 实时拉取 | 盘中实时 |
 | | AI分析文本 | /api/snapshot?ai=1 | ensureAiText() | 百炼/| **无文件**（实时） | **无文件** | 实时生成 | 盘中实时 |
 
 **说明**:
 - **主备关系**: 大盘指数、板块、国债等数据都有主数据源和备用数据源，优先使用主数据源，失败时使用备用
-- **涨跌家数**: 主数据源为东财（ak.stock_zh_a_spot），当前被封，使用历史存档备用
-- **Task #11**: AI实时接口数据溯源分析，⚠️ 午市收盘无法实测，待下一交易日验证
+- **涨跌家数**: 东财 ak.stock_zh_a_spot 接口正常，该接口返回全市场股票实时快照，盘中可做分时数据，收盘后可做日线数据
+- **Task #11**: AI实时接口数据溯源分析，✅ 涨跌家数接口已确认正常
 
 ### AI实时接口数据来源对照
 
@@ -163,7 +163,7 @@
 | 10年国债期货(T) | 东财ETF分时 | 腾讯fetchSnapshot | ✅ ETF分时 | ⚠️ 待确认 |
 | 30年国债期货(TL) | 东财ETF分时 | 腾讯fetchSnapshot | ✅ ETF分时 | ⚠️ 待确认 |
 | 成交额 | 腾讯fetchSnapshot | archive历史数据 | ✅ 分时数据 | ⚠️ 待确认 |
-| 涨跌家数 | 东财被封 | 历史存档 | ✅ 历史数据 | ⚠️ 待确认 |
+| 涨跌家数 | 东财ak.stock_zh_a_spot | 无需备用 | ✅ 可做分时/日线 | ✅ 已确认 |
 
 ### 实测数据验证
 
@@ -180,10 +180,10 @@
 
 | 数据分类 | 任务名称 | 执行时间 | 涉及数据 | 执行脚本/函数 | 状态 |
 |---------|---------|---------|---------|-------------|------|
-| **盘中任务** | 涨跌家数实时更新 | 09:00-14:00 (每分钟) | breadth-cache.json | market_breadth_spot.py | ⚠️ 接口被封 |
+| **盘中任务** | 涨跌家数实时更新 | 09:00-14:00 (每分钟) | breadth-cache.json | market_breadth_spot.py | ✅ 正常 |
 | | AI分析文本生成 | 09:40,10:10/40,11:10/40,12:10/40,13:10/40,14:10/40,15:06 | **无文件**（实时） | curl /api/ai/debug | ✅ 正常 |
 | **收盘后任务** | 大盘/板块分时保存 | 11:30、15:00 | data/minute-YYMMDD-*.jsonl | data_maintenance.py update_minute_data() | ✅ 正常 |
-| | 涨跌家数持久化 | 15:00 | market/breadth-history.jsonl | save_breadth_history.py | ✅ 正常 |
+| | 涨跌家数持久化 | 15:00 | breadth-history.jsonl | save_breadth_history.py | ✅ 正常 |
 | | ETF日线更新 | 15:30 | etf_daily/etf_*.jsonl | data_maintenance.py update_all_etf_data() | ✅ 正常 |
 | | 大盘指数日线更新 | 15:30 | index_daily/index_*.jsonl | data_maintenance.py update_all_index_data() | ✅ 正常 |
 | **数据维护** | 分时数据清理 | 每周手动 | data/minute/ | clean_data.py | ✅ 正常 |
@@ -228,8 +228,7 @@
   36 11 * * 1-5 curl -s -X POST http://localhost:8787/api/ai/debug
   6 15 * * 1-5 curl -s -X POST http://localhost:8787/api/ai/debug
   ```
-| 15:00-15:05 | 大盘指数日线更新 | index_daily/index_*.jsonl | get_index_history() | ✅ 正常 |
-| 15:00-15:05 | ETF日线更新（优先新浪） | etf_daily/etf_*.jsonl | _fetch_akshare_sina_etf() | ✅ 正常 |
+| 15:00-15:05 | 大盘指数日线更新 | index_daily/index_*.jsonl | get_index_histo| 15:00-15:05 | ETF日线更新（优先新浪） | etf_daily/etf_*.jsonl |新浪 fund_etf_hist_sina|e_sina_etf() | ✅ 正常 |
 | 15:00-15:05 | ETF分时转日线（兜底） | etf_daily/etf_*.jsonl | minute_to_daily_for_etf() | ✅ 正常 |
 | 15:00-15:05 | 大盘快照归档 | archive-YYYYMMDD.jsonl | fetchAshareSnapshot() | ✅ 正常 |
 | 15:00-15:05 | 成交额提取 | volume-YYYYMMDD.jsonl | buildVolumeFromArchive() | ✅ 正常 |
