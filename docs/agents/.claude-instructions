@@ -157,7 +157,10 @@ ls -lt docs/agents/*_work_log.md | head -1 | xargs cat
 cat bug-log.md
 
 # 3. 核心规则（按需）
-cat CLAUDE_DEV_RULES.md  # 数据验证标准
+cat docs/agents/CLAUDE_DEV_RULES.md  # 数据验证标准
+
+# 4. 工具与职责分工
+cat docs/agents/tools_and_responsibilities.md  # Agent职责、工具清单、定时任务
 ```
 
 每次任务后，Leader必须更新：
