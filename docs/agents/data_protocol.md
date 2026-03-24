@@ -1,9 +1,9 @@
 # 数据协议文档
 
-> 版本: v1.1
-> 更新时间: 2026-03-23
+> 版本: v1.2
+> 更新时间: 2026-03-24
 > 说明: 本文档详细记录项目中所有数据类型的接口、存储、流转和定时任务
-> **状态**: 分时日线数据已完成自检和实测验证
+> **状态**: 分时数据pct字段实现中，大盘指数已完成
 
 ---
 
@@ -41,6 +41,11 @@
   - 东财ETF: fetch_sector_data.py etf-minute (fund_etf_hist_min_em)
   - archive提取: buildVolumeFromArchive() (第22列)
   - 涨跌家数: market_breadth_spot.py (ak.stock_zh_a_spot)
+
+- **分时数据字段**:
+  - 大盘指数: `{ time, open, close, pct }` - pct字段已添加，使用接口自带prevClose计算
+  - 板块: `{ time, open, close, pct }` - pct字段待实现，从昨日分时文件获取昨收
+  - ETF: `{ time, open, close, pct, volume, amount }` - pct字段待实现，从ETF日线获取昨收
 
 - **存储位置**:
   - 大盘指数分时: `data/minute-YYMMDD-*.jsonl`（前端读取）
@@ -91,6 +96,8 @@
 | | 机器人ETF | 无 | _fetch_akshare_sina_etf() | 新浪 | etf_daily/etf_562500.jsonl | 永久 | 追加写入 | 15:00收盘后 |
 | **国债期货** | 10年国债期货 | 无 | get_futures_daily() | 新浪 | futures_daily/futures_T.jsonl | 永久 | 追加写入 | 15:00收盘后 |
 | | 30年国债期货 | 无 | get_futures_daily() | 新浪 | futures_daily/futures_TL.jsonl | 永久 | 追加写入 | 15:00收盘后 |
+| **国债ETF** | 10年国债ETF | 无 | _fetch_akshare_sina_etf() | 新浪 | etf_daily/etf_511260.jsonl | 永久 | 追加写入 | 15:00收盘后 |
+| | 30年国债ETF | 无 | _fetch_akshare_sina_etf() | 新浪 | etf_daily/etf_511130.jsonl | 永久 | 追加写入 | 15:00收盘后 |
 | **大盘综合** | 大盘快照归档 | 无 | fetchAshareSnapshot() | 新浪/腾讯 | archive-YYYYMMDD.jsonl | 60天 | 每日生成 | 15:00收盘后 |
 
 **说明**:
@@ -116,6 +123,8 @@
 | 通讯设备ETF | 2022-01-20 至 2026-03-20 | 1007条 | ✅ 正常 |
 | 游戏ETF | 2022-01-20 至 2026-03-20 | 1007条 | ✅ 正常 |
 | 机器人ETF | 2022-01-20 至 2026-03-20 | 1007条 | ✅ 正常 |
+| 10年国债ETF | 2024-09-13 至 2026-03-24 | 365条 | ✅ 正常 |
+| 30年国债ETF | 2024-09-13 至 2026-03-24 | 365条 | ✅ 正常 |
 | 市场成交额 | 2017-12-08 至 2026-03-20 | 2007条 | ⚠️ 待修复(#10) |
 | ETF成交额 | 2026-03-17 至 2026-03-20 | 5条 | ✅ 正常 |
 | archive归档 | 2026-02-10 至 2026-03-23 | 24个文件 | ⚠️ 36天缺失(#12) |
