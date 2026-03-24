@@ -4560,11 +4560,41 @@ const server = http.createServer(async (req, res) => {
       if (cached && isJsonText(cached)) {
         const obj = JSON.parse(cached);
         const dataDay = obj.day || '';
-        const today = latestTradingDay();
-        if (dataDay !== today) {
-          console.warn(`交易日验证失败(缓存): 数据=${dataDay}, 预期=${today}，返回空数据`);
+
+        // 盘后模式：交易时间内允许返回上一交易日数据
+        const isMarketOpen = isMarketOpenNow();
+        const parts = getBeijingParts();
+        const minutes = parts && parts.minutes ? parts.minutes : 0;
+        const isAfterWarmup = minutes >= 930; // 15:30之后
+
+        let validationPassed = true;
+        let expectedDay = null;
+
+        if (isMarketOpen || !isAfterWarmup) {
+          // 盘后模式：使用warmup的日期验证
+          const warmupPath = path.join(__dirname, 'data', 'sector-history-warmup-60.json');
+          if (fs.existsSync(warmupPath)) {
+            try {
+              const warmupData = JSON.parse(fs.readFileSync(warmupPath, 'utf-8'));
+              expectedDay = warmupData.day || null;
+              if (expectedDay && dataDay !== expectedDay) {
+                console.warn(`[lifecycle] 缓存验证失败: 数据=${dataDay}, warmup=${expectedDay}`);
+                validationPassed = false;
+              }
+            } catch (e) {}
+          }
+        } else {
+          // 非交易时间且15:30后：使用常规验证
+          const today = latestTradingDay();
+          if (dataDay !== today) {
+            validationPassed = false;
+            expectedDay = today;
+          }
+        }
+
+        if (!validationPassed) {
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
-          res.end(JSON.stringify({ day: today, items: [], data_incomplete: true, reason: 'trading_day_mismatch' }));
+          res.end(JSON.stringify({ day: expectedDay || dataDay, items: [], data_incomplete: true, reason: 'trading_day_mismatch' }));
           return;
         }
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -4634,13 +4664,46 @@ const server = http.createServer(async (req, res) => {
       const out = (stdout || '').trim();
       if (out && isJsonText(out)) {
         const obj = JSON.parse(out);
-        // 交易日验证：数据日期必须匹配最新交易日
         const dataDay = obj.day || '';
-        const today = latestTradingDay();
-        if (dataDay !== today) {
-          console.warn(`交易日验证失败: 数据=${dataDay}, 预期=${today}，返回空数据`);
+
+        // 盘后模式：交易时间内允许返回上一交易日数据
+        // warmup在15:30更新，更新前都应显示上一交易日数据
+        const isMarketOpen = isMarketOpenNow();
+        const parts = getBeijingParts();
+        const minutes = parts && parts.minutes ? parts.minutes : 0;
+        const isAfterWarmup = minutes >= 930; // 15:30之后
+
+        let validationPassed = true;
+        let expectedDay = null;
+
+        if (isMarketOpen || !isAfterWarmup) {
+          // 盘后模式：使用warmup的日期验证
+          const warmupPath = path.join(__dirname, 'data', 'sector-history-warmup-60.json');
+          if (fs.existsSync(warmupPath)) {
+            try {
+              const warmupData = JSON.parse(fs.readFileSync(warmupPath, 'utf-8'));
+              expectedDay = warmupData.day || null;
+              if (expectedDay && dataDay !== expectedDay) {
+                console.warn(`[lifecycle] 交易日验证: 数据=${dataDay}, warmup=${expectedDay}`);
+                validationPassed = false;
+              }
+            } catch (e) {
+              console.error(`[lifecycle] warmup读取失败: ${e.message}`);
+            }
+          }
+        } else {
+          // 非交易时间且15:30后：使用常规验证
+          const today = latestTradingDay();
+          if (dataDay !== today) {
+            console.warn(`交易日验证失败: 数据=${dataDay}, 预期=${today}`);
+            validationPassed = false;
+            expectedDay = today;
+          }
+        }
+
+        if (!validationPassed) {
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
-          res.end(JSON.stringify({ day: today, items: [], data_incomplete: true, reason: 'trading_day_mismatch' }));
+          res.end(JSON.stringify({ day: expectedDay || dataDay, items: [], data_incomplete: true, reason: 'trading_day_mismatch' }));
           return;
         }
         // 按评分排序并添加Top排名
