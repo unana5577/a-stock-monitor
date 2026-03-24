@@ -558,7 +558,13 @@ def _fetch_ashare_minute(symbol, count=240):
         data = []
         for _, row in df.iterrows():
             try:
-                data.append({"time": _fmt(row[time_col]), "open": float(row[open_col]), "close": float(row[close_col])})
+                open_price = float(row[open_col])
+                close_price = float(row[close_col])
+                # 计算涨跌幅
+                pct = None
+                if prev_close is not None and prev_close != 0:
+                    pct = round((close_price - prev_close) / prev_close * 100, 2)
+                data.append({"time": _fmt(row[time_col]), "open": open_price, "close": close_price, "pct": pct})
             except:
                 continue
         day = datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d")
@@ -629,14 +635,17 @@ def _proxy_history_payload(sectors, days=60, variant=None):
         m = _fetch_ashare_minute(code, count=240)
         minute[name] = {"series": m.get("data") or [], "prevClose": m.get("prevClose")}
 
-    day = datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d")
+    # 从数据中获取实际最新日期（而不是今天）
+    day = None
     for n, arr in history.items():
         if arr:
             d = str(arr[-1].get("date") or "")
-            if d and d > day:
-                day = d
-            if d and d < day:
-                day = max(day, d)
+            if d:
+                if day is None or d > day:
+                    day = d
+    # 如果没有数据，使用今天
+    if not day:
+        day = datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d")
 
     return {"day": day, "history": history, "minute": minute, "watch": sectors, "variant": v}
 
@@ -3713,15 +3722,53 @@ def get_minute_data_from_akshare(secid):
         today = datetime.now().strftime('%Y-%m-%d')
         filtered = df[df['时间'].astype(str).str.startswith(today)]
 
+        # 从昨日分时文件获取昨收价
+        prev_close = None
+        try:
+            # 昨日日期
+            from datetime import timedelta
+            yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y%m%d')
+
+            # 映表板块代码到文件名
+            sector_file_map = {
+                'BK0475': 'bank',    # 银行
+                'BK0473': 'broker',  # 证券
+                'BK0474': 'insure',  # 保险
+                '932000': 'csi2000'  # 中证2000
+            }
+
+            sector_code = sector_file_map.get(code)
+            if sector_code:
+                yesterday_file = f'data/minute/minute-{yesterday}-{sector_code}.jsonl'
+                if os.path.exists(yesterday_file):
+                    with open(yesterday_file, 'r') as f:
+                        lines = f.readlines()
+                    if lines:
+                        last_line = lines[-1].strip()
+                        if last_line:
+                            parts = last_line.strip('[]\n').split(',')
+                            if len(parts) >= 3:
+                                prev_close = float(parts[2].strip('"\' ]'))
+        except:
+            pass
+
         data = []
         for _, row in filtered.iterrows():
+            open_price = float(row['开盘'])
+            close_price = float(row['收盘'])
+            # 计算涨跌幅
+            pct = None
+            if prev_close is not None and prev_close != 0:
+                pct = round((close_price - prev_close) / prev_close * 100, 2)
+
             data.append({
                 "time": str(row['时间'])[:16],
-                "open": float(row['开盘']),
-                "close": float(row['收盘'])
+                "open": open_price,
+                "close": close_price,
+                "pct": pct
             })
 
-        return {"date": today, "data": data, "prevClose": None}
+        return {"date": today, "data": data, "prevClose": prev_close}
     except Exception as e:
         sys.stderr = sys.__stderr__
         return None
@@ -3755,21 +3802,32 @@ def get_etf_minute_data(code):
         today = datetime.now().strftime('%Y-%m-%d')
         filtered = df[df['时间'].astype(str).str.startswith(today)]
 
+        # 从日线获取昨收价
+        prev_close = None
+        try:
+            daily_result = _fetch_akshare_sina_etf(code, limit=2)
+            if daily_result and daily_result.get('data') and len(daily_result['data']) >= 2:
+                prev_close = daily_result['data'][-2]['close']
+        except:
+            pass
+
         data = []
         for _, row in filtered.iterrows():
+            open_price = float(row['开盘']) if '开盘' in row else 0
+            close_price = float(row['收盘'])
+            # 计算涨跌幅
+            pct = None
+            if prev_close is not None and prev_close != 0:
+                pct = round((close_price - prev_close) / prev_close * 100, 2)
+
             data.append({
                 "time": str(row['时间'])[:16],
-                "price": float(row['收盘']),
+                "open": open_price,
+                "close": close_price,
+                "pct": pct,
                 "volume": int(row['成交量']) if '成交量' in row else 0,
                 "amount": float(row['成交额']) if '成交额' in row else 0
             })
-
-        # 获取昨收
-        prev_close = None
-        if len(filtered) > 0:
-            # 尝试从第一条数据获取昨收（如果API提供）
-            # 否则用第一笔开盘价作为参考
-            prev_close = float(filtered.iloc[0]['开盘']) if '开盘' in filtered.iloc[0] else None
 
         return {"date": today, "data": data, "prevClose": prev_close}
     except Exception as e:
