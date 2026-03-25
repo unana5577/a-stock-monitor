@@ -816,7 +816,8 @@ def update_minute_data():
         ("sh562500", "机器人"),
     ]
 
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now().strftime("%Y-%m-%d")  # ETF使用
+    today_yyyymmdd = datetime.now().strftime("%Y%m%d")  # 大盘/板块使用
 
     # 所有9个ETF都需要获取分时数据（用于生成日线的volume/amount）
     minute_targets = etf_targets  # 使用上面的完整列表
@@ -880,7 +881,7 @@ def update_minute_data():
     ]
 
     for code, name in large_cap_indices:
-        file_path = f"data/minute/minute-{today}-{name}.jsonl"
+        file_path = f"data/minute/minute-{today_yyyymmdd}-{name}.jsonl"
 
         # 检查是否需要更新
         if os.path.exists(file_path):
@@ -911,7 +912,7 @@ def update_minute_data():
     }
 
     for secid, name in sectors.items():
-        file_path = f"data/minute/minute-{today}-{name}.jsonl"
+        file_path = f"data/minute/minute-{today_yyyymmdd}-{name}.jsonl"
 
         # 检查是否需要更新
         if os.path.exists(file_path):

@@ -22,6 +22,11 @@
 - 相似逻辑合并
 - 提取公共函数
 
+### 5. 数据缓存清理
+- 过期缓存清理（根据数据日期而非文件修改时间）
+- 缓存与数据源一致性检查
+- 缓存失效策略制定
+
 ---
 
 ## 权限
@@ -93,6 +98,25 @@ analyze-dependencies  # 分析包依赖使用情况
 refactor-duplicate-code # 重构重复代码
 remove-dead-code      # 删除死代码（需批准）
 ```
+
+### 数据缓存清理技能
+```
+cleanup_cache.py scan      # 扫描所有缓存类型，生成报告
+cleanup_cache.py clean     # 扫描 + 确认后删除过期缓存
+cleanup_cache.py check <类型>  # 检查特定类型缓存
+```
+
+支持的缓存类型：
+- `sector-lifecycle`: 板块生命周期缓存
+- `sector-history`: 板块历史数据缓存
+- `intraday-rotation`: 盘中轮动缓存
+- `sector-analysis-ai`: AI分析缓存
+- `breadth`: 涨跌家数缓存
+
+缓存过期判断：
+- 根据缓存内的 day 字段与期望日期比较
+- 盘后期望今天，盘中期望T-1
+- 允许1-3天容差
 
 ---
 

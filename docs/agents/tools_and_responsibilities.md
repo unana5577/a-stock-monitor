@@ -124,6 +124,7 @@
 | verify_daily_data.py | 检查日线数据完整性 | 09:15、15:30 |
 | verify_warmup_data.py | 检查warmup文件完整性 | 15:30 |
 | verify_ai_data.py | 测试/api/snapshot | 09:31 |
+| **leader_daily_check.py** | **检查warmup日期 + lifecycle接口 + 触发Data Agent修复** | **盘中/盘后** |
 
 ---
 
@@ -132,6 +133,15 @@
 | 工具名称 | 功能 |
 |---------|------|
 | check_data_sources.py | 测试接口可用性，自动修复data_protocol.md |
+| **diagnose_sector_api.py** | **诊断板块接口问题，测试ETF源 + 修复warmup + 分时回补** |
+
+### 缓存清理工具（Cleanup Agent用）
+
+| 工具名称 | 功能 |
+|---------|------|
+| cleanup_cache.py scan | 扫描所有缓存，生成过期报告 |
+| cleanup_cache.py clean | 扫描 + 确认后删除过期缓存 |
+| cleanup_cache.py check \<类型\> | 检查特定类型缓存 |
 
 ---
 
@@ -156,6 +166,8 @@
 | 09:31 | 分时验证 | verify_minute_data.py | verify_YYYY-MM-DD.log |
 | 13:01 | 分时验证 | verify_minute_data.py | verify_YYYY-MM-DD.log |
 | 15:30 | 日线+warmup验证 | verify_daily_data.py + verify_warmup_data.py | verify_YYYY-MM-DD.log |
+| **盘中** | **warmup + lifecycle监控** | **leader_daily_check.py watch** | - |
+| **发现问题时** | **触发Data Agent修复** | **leader_daily_check.py full** | - |
 
 ---
 
@@ -171,6 +183,24 @@
 ---
 
 ## 五、工作流程
+
+### Leader 日常检查流程
+
+```
+1. 09:15 / 盘中监控 / 盘后检查
+   ↓
+2. 运行 leader_daily_check.py check
+   ↓
+3. 检查 warmup 日期是否最新（盘后期望今天，盘中期望T-1）
+   ↓
+4. 检查 /api/sector/lifecycle 接口是否返回空数据
+   ↓
+5. 如发现问题 → 运行 leader_daily_check.py full
+   ↓
+6. 自动触发 Data Agent 修复（diagnose_sector_api.py）
+   ↓
+7. 验证修复后 warmup + lifecycle 正常
+```
 
 ### 数据问题排查流程
 
@@ -266,6 +296,11 @@ python3 data_maintenance.py
 # 接口探测与修复
 python3 scripts/check_data_sources.py etf_daily
 python3 scripts/check_data_sources.py breadth
+
+# 板块接口诊断与修复
+python3 scripts/diagnose_sector_api.py check   # 只诊断
+python3 scripts/diagnose_sector_api.py fix      # 诊断 + 修复
+python3 scripts/diagnose_sector_api.py full    # 完整流程
 
 # 数据回补
 python3 scripts/backfill_etf_daily.py

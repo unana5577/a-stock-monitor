@@ -1259,3 +1259,5 @@
 {"date": "2026-03-18", "open": 0.603, "close": 0.603, "high": 0.608, "low": 0.601, "volume": 1225898.0, "amount": 74010752.0, "pct": -0.33}
 {"date": "2026-03-19", "open": 0.603, "close": 0.605, "high": 0.608, "low": 0.603, "volume": 844776.0, "amount": 51110546.0, "pct": 0.33, "source": "minute_15:00"}
 {"date": "2026-03-20", "open": 0.6, "close": 0.591, "high": 0.606, "low": 0.59, "volume": 0.0, "amount": 0.0, "pct": -1.5, "source": "minute"}
+{"date": "2026-03-23", "open": 0.582, "close": 0.564, "high": 0.584, "low": 0.56, "volume": 626344100.0, "amount": 358261970.0, "pct": null}
+{"date": "2026-03-24", "open": 0.573, "close": 0.58, "high": 0.581, "low": 0.571, "volume": 0.0, "amount": 0.0, "pct": 1.22, "source": "minute"}
