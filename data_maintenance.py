@@ -12,6 +12,8 @@ from pathlib import Path
 # 添加项目路径
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from fetch_sector_data import get_minute_data_from_akshare, _fetch_ashare_minute
+
 
 def load_jsonl(file_path):
     """读取JSONL文件最后一行"""
@@ -864,6 +866,75 @@ def update_minute_data():
             print(f"  ✅ {name} 分时数据更新完成 ({len(result['data'])} 条), prevClose={result.get('prevClose')}")
         else:
             print(f"  ⚠️  {name} 分时数据获取失败，将使用warmup")
+
+    # 大盘指数分时数据保存到 data/minute/
+    print("\n📈 保存大盘指数分时数据...")
+    os.makedirs("data/minute", exist_ok=True)
+
+    large_cap_indices = [
+        ("sh000001", "sse"),      # 上证指数
+        ("sz399001", "szi"),      # 深证成指
+        ("sz399006", "gem"),      # 创业板指
+        ("sh000688", "star"),     # 科创板指
+        ("sh000300", "hs300"),    # 沪深300
+    ]
+
+    for code, name in large_cap_indices:
+        file_path = f"data/minute/minute-{today}-{name}.jsonl"
+
+        # 检查是否需要更新
+        if os.path.exists(file_path):
+            now = datetime.now()
+            if now.hour > 15 or (now.hour == 15 and now.minute >= 5):
+                print(f"  ⏭️  {name} 分时数据已完成")
+                continue
+
+        print(f"  📊 获取 {code}({name}) 分时数据...")
+        result = _fetch_ashare_minute(code, count=240)
+
+        if result and result.get('data'):
+            with open(file_path, 'w', encoding='utf-8') as f:
+                for item in result['data']:
+                    # 格式: [time, open, close, pct]
+                    row = [item['time'], item.get('open'), item['close'], item.get('pct')]
+                    f.write(json.dumps(row, ensure_ascii=False) + '\n')
+            print(f"    ✅ {name} 分时数据保存完成 ({len(result['data'])} 条)")
+        else:
+            print(f"    ⚠️  {name} 分时数据获取失败")
+
+    # 板块分时数据保存到 data/minute/
+    print("\n🏢 保存板块分时数据...")
+    sectors = {
+        '90.BK0475': 'bank',      # 银行
+        '90.BK0473': 'broker',    # 证券
+        '90.BK0474': 'insure',    # 保险
+    }
+
+    for secid, name in sectors.items():
+        file_path = f"data/minute/minute-{today}-{name}.jsonl"
+
+        # 检查是否需要更新
+        if os.path.exists(file_path):
+            now = datetime.now()
+            if now.hour > 15 or (now.hour == 15 and now.minute >= 5):
+                print(f"  ⏭️  {name} 分时数据已完成")
+                continue
+
+        print(f"  📊 获取 {name}({secid}) 分时数据...")
+        result = get_minute_data_from_akshare(secid)
+
+        if result and result.get('data'):
+            with open(file_path, 'w', encoding='utf-8') as f:
+                for item in result['data']:
+                    # 格式: [time, open, close, pct]
+                    pct = item.get('pct')
+                    if pct is None and result.get('prevClose'):
+                        pct = round((item['close'] - result['prevClose']) / result['prevClose'] * 100, 2)
+                    row = [item['time'], item.get('open'), item['close'], pct]
+                    f.write(json.dumps(row, ensure_ascii=False) + '\n')
+            print(f"    ✅ {name} 分时数据保存完成 ({len(result['data'])} 条)")
+        else:
+            print(f"    ⚠️  {name} 分时数据获取失败")
 
     # 遍历所有ETF，用分时数据写入日线（15:00数据）
     print("\n📝 用分时15:00数据写入ETF日线...")
