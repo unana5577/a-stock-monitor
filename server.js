@@ -3193,12 +3193,24 @@ const server = http.createServer(async (req, res) => {
     const isETF = /^\d{6}$/.test(code) && ['5', '1'].includes(code[0]);
 
     if (isETF) {
-      // ETF分时数据：调用Python接口
+      // ETF分时数据：优先使用本地文件
       const etfCode = code[0] === '5' ? `sh${code}` : `sz${code}`;
-      let data = { data: [], prevClose: null };
-      try {
-        const marketOpen = isMarketOpenNow();
-        if (marketOpen) {
+
+      // 缓存和返回逻辑（优先本地文件）
+      const targetDay = latestTradingDay();
+      const dataFile = minuteFilePath(targetDay, code);
+      const runtimeFile = runtimeMinuteFilePath(targetDay, code);
+      const { arr: dataArr } = readMinuteFile(dataFile);
+      const runtimeRead = readMinuteFile(runtimeFile);
+      let merged = mergeMinuteSeries(dataArr, runtimeRead.arr);
+
+      // 只有在本地数据不足且在交易时间时，才调用Python接口
+      const marketOpen = isMarketOpenNow();
+      const needRefresh = marketOpen && (!merged.length || merged.length < 50);
+
+      if (needRefresh) {
+        let data = { data: [], prevClose: null };
+        try {
           const execOpts = getExecOptions();
           execOpts.timeout = 30000;
           data = await new Promise((resolve) => {
@@ -3217,39 +3229,44 @@ const server = http.createServer(async (req, res) => {
               }
             });
           });
-        }
 
-        // 缓存和返回逻辑（复用现有逻辑）
-        const targetDay = latestTradingDay();
-        const dataFile = minuteFilePath(targetDay, code);
-        const runtimeFile = runtimeMinuteFilePath(targetDay, code);
-        const { arr: dataArr } = readMinuteFile(dataFile);
-        const runtimeRead = readMinuteFile(runtimeFile);
-        let merged = mergeMinuteSeries(dataArr, runtimeRead.arr);
-        if (data.data && data.data.length) {
-          if (!runtimeRead.arr.length || (runtimeRead.arr[0]?.time && data.data[0]?.time && data.data[0].time < runtimeRead.arr[0].time)) {
-            writeMinuteFile(runtimeFile, data.data);
-          } else {
-            appendMinuteFile(runtimeFile, data.data, runtimeRead.lastTime);
+          if (data.data && data.data.length) {
+            if (!runtimeRead.arr.length || (runtimeRead.arr[0]?.time && data.data[0]?.time && data.data[0].time < runtimeRead.arr[0].time)) {
+              writeMinuteFile(runtimeFile, data.data);
+            } else {
+              appendMinuteFile(runtimeFile, data.data, runtimeRead.lastTime);
+            }
+            merged = mergeMinuteSeries(dataArr, readMinuteFile(runtimeFile).arr);
           }
-          merged = mergeMinuteSeries(dataArr, readMinuteFile(runtimeFile).arr);
+        } catch (e) {
+          console.error(`ETF minute fetch error for ${code}:`, e.message);
         }
-        merged = merged.filter(p => isTradingMinute(timeToMinuteKey(p?.time)));
-        const todayFiltered = merged.filter(p => p?.time && String(p.time).startsWith(targetDay) && isTradingMinute(timeToMinuteKey(p?.time)));
-        if (todayFiltered.length) merged = todayFiltered;
-
-        const prevClose = data.prevClose || null;
-        const day = targetDay;
-
-        res.setHeader('Content-Type', 'application/json; charset=utf-8');
-        res.end(JSON.stringify({ day, data: merged, prevClose }));
-        return;
-      } catch (e) {
-        console.error(`ETF minute fetch error for ${code}:`, e.message);
-        res.writeHead(500);
-        res.end(JSON.stringify({ error: 'ETF minute fetch failed' }));
-        return;
       }
+
+      merged = merged.filter(p => isTradingMinute(timeToMinuteKey(p?.time)));
+      const todayFiltered = merged.filter(p => p?.time && String(p.time).startsWith(targetDay) && isTradingMinute(timeToMinuteKey(p?.time)));
+      if (todayFiltered.length) merged = todayFiltered;
+
+      // 从ETF日线文件获取昨收价（t-1日收盘价）
+      let prevClose = null;
+      try {
+        const etfDailyFile = path.join(__dirname, 'data', 'etf_daily', `etf_${code}.jsonl`);
+        if (fs.existsSync(etfDailyFile)) {
+          const content = fs.readFileSync(etfDailyFile, 'utf-8').split('\n').filter(l => l.trim());
+          if (content.length >= 1) {
+            const lastRow = JSON.parse(content[content.length - 1]);
+            prevClose = lastRow.close;
+          }
+        }
+      } catch (e) {
+        console.error(`Failed to read ETF daily file for ${code}:`, e.message);
+      }
+
+      const day = targetDay;
+
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.end(JSON.stringify({ day, data: merged, prevClose }));
+      return;
     }
 
     // 原有板块分时逻辑

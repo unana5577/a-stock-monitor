@@ -3802,12 +3802,13 @@ def get_etf_minute_data(code):
         today = datetime.now().strftime('%Y-%m-%d')
         filtered = df[df['时间'].astype(str).str.startswith(today)]
 
-        # 从日线获取昨收价
+        # 从日线获取昨收价（使用t-1日收盘价）
         prev_close = None
         try:
             daily_result = _fetch_akshare_sina_etf(code, limit=2)
-            if daily_result and daily_result.get('data') and len(daily_result['data']) >= 2:
-                prev_close = daily_result['data'][-2]['close']
+            if daily_result and daily_result.get('data') and len(daily_result['data']) >= 1:
+                # data[-1] 是最新一天，在盘中时即为t-1日的收盘价
+                prev_close = daily_result['data'][-1]['close']
         except:
             pass
 
@@ -3933,7 +3934,8 @@ def main():
     elif cmd == "etf-minute":
         if len(sys.argv) >= 3:
             code = sys.argv[2]  # ETF代码，如 "sh159995" 或 "sz159995"
-            data = get_etf_minute_data(code)
+            # 使用 _fetch_ashare_minute 确保pct计算正确
+            data = _fetch_ashare_minute(code, count=240)
             print(json.dumps(_json_sanitize(data), ensure_ascii=False))
         else:
             print(json.dumps({"error": "Missing ETF code argument"}, ensure_ascii=False))
