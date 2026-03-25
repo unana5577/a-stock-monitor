@@ -937,6 +937,39 @@ def update_minute_data():
         else:
             print(f"    ⚠️  {name} 分时数据获取失败")
 
+    # 国债ETF分时数据保存到 data/minute/
+    print("\n💰 保存国债ETF分时数据...")
+    bond_etfs = [
+        ("sh511260", "t2603"),  # 10年国债ETF
+        ("sh511130", "tl2603"), # 30年国债ETF
+    ]
+
+    for code, name in bond_etfs:
+        file_path = f"data/minute/minute-{today_yyyymmdd}-{name}.jsonl"
+
+        # 检查是否需要更新
+        if os.path.exists(file_path):
+            now = datetime.now()
+            if now.hour > 15 or (now.hour == 15 and now.minute >= 5):
+                print(f"  ⏭️  {name} 分时数据已完成")
+                continue
+
+        print(f"  📊 获取 {code}({name}) 分时数据...")
+        result = _fetch_ashare_minute(code, count=240)
+
+        if result and result.get('data'):
+            with open(file_path, 'w', encoding='utf-8') as f:
+                for item in result['data']:
+                    # 格式: [time, open, close, pct]
+                    pct = item.get('pct')
+                    if pct is None and result.get('prevClose'):
+                        pct = round((item['close'] - result['prevClose']) / result['prevClose'] * 100, 2)
+                    row = [item['time'], item.get('open'), item['close'], pct]
+                    f.write(json.dumps(row, ensure_ascii=False) + '\n')
+            print(f"    ✅ {name} 分时数据保存完成 ({len(result['data'])} 条)")
+        else:
+            print(f"    ⚠️  {name} 分时数据获取失败")
+
     # 遍历所有ETF，用分时数据写入日线（15:00数据）
     print("\n📝 用分时15:00数据写入ETF日线...")
     for code, name in etf_targets:
