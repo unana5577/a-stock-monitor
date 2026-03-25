@@ -2771,31 +2771,49 @@ function readLatestArchiveVolume(day) {
 }
 
 async function buildSnapshotPayload() {
-  const [sse, szi, gem, star, hs300, tEtf, tlEtf] = await Promise.all([
-    fetchAshareMinute('sh000001'),
-    fetchAshareMinute('sz399001'),
-    fetchAshareMinute('sz399006'),
-    fetchAshareMinute('sh000680'),
-    fetchAshareMinute('sh000300'),
-    fetchAshareMinute('sh511260'),
-    fetchAshareMinute('sh511130')
+  // 先确定市场日期
+  const todayTradingDay = latestTradingDay();
+  const marketOpenNow = isMarketOpenNow();
+  let marketDate = todayTradingDay;
+
+  // 优先读取本地分时文件
+  const [sseSeries, sziSeries, gemSeries, starSeries, hs300Series] = await Promise.all([
+    loadMinuteSeries(marketDate, 'sse', '1.000001'),
+    loadMinuteSeries(marketDate, 'szi', '0.399001'),
+    loadMinuteSeries(marketDate, 'gem', '0.399006'),
+    loadMinuteSeries(marketDate, 'star', '1.000680'),
+    loadMinuteSeries(marketDate, 'hs300', '1.000300')
   ]);
+
+  // 判断是否需要调用API（本地文件不存在或不是最新）
+  const needApiCall = marketOpenNow && (!sseSeries.length || sseSeries.length < 50);
+
+  // 只在需要时调用API
+  let sse = { date: null, data: [] };
+  let szi = { date: null, data: [] };
+  let gem = { date: null, data: [] };
+  let star = { date: null, data: [] };
+  let hs300 = { date: null, data: [] };
+  let tEtf = { date: null, data: [], prevClose: null };
+  let tlEtf = { date: null, data: [], prevClose: null };
+
+  if (needApiCall) {
+    [sse, szi, gem, star, hs300, tEtf, tlEtf] = await Promise.all([
+      fetchAshareMinute('sh000001'),
+      fetchAshareMinute('sz399001'),
+      fetchAshareMinute('sz399006'),
+      fetchAshareMinute('sh000680'),
+      fetchAshareMinute('sh000300'),
+      fetchAshareMinute('sh511260'),
+      fetchAshareMinute('sh511130')
+    ]);
+    // 更新marketDate（如果有API返回的日期）
+    if (sse.date && sse.date > marketDate) marketDate = sse.date;
+  }
 
   const snaps = await fetchSnapshot('sh000001,sz399001,sz399006,sh000680,sh000300,sh000012,sz399106,sh511260,sh511130');
   const em = await fetchEastmoneySnapshot(['90.BK0475', '90.BK0473', '90.BK0474', '2.932000', '2.830000', '1.000012']);
-  
-  // Determine market date: prefer fresh API date, fallback to latest local file, then current trading day
-  const todayTradingDay = latestTradingDay();
-  const marketOpenNow = isMarketOpenNow();
-  let marketDate = sse.date;
-  if (!marketDate) {
-    const latestFile = findLatestMinuteFile('sse');
-    if (latestFile) {
-      marketDate = dayFromMinuteFile(latestFile);
-    } else {
-      marketDate = todayTradingDay;
-    }
-  }
+
   if (!marketOpenNow) {
     marketDate = todayTradingDay;
   } else if (marketDate < todayTradingDay) {
@@ -2808,13 +2826,12 @@ async function buildSnapshotPayload() {
     }
   }
 
-  const [sseSeries, sziSeries, gemSeries, starSeries, hs300Series] = await Promise.all([
-    (sse.date === marketDate && sse.data?.length) ? sse.data : loadMinuteSeries(marketDate, 'sse', '1.000001'),
-    (szi.date === marketDate && szi.data?.length) ? szi.data : loadMinuteSeries(marketDate, 'szi', '0.399001'),
-    (gem.date === marketDate && gem.data?.length) ? gem.data : loadMinuteSeries(marketDate, 'gem', '0.399006'),
-    (star.date === marketDate && star.data?.length) ? star.data : loadMinuteSeries(marketDate, 'star', '1.000680'),
-    (hs300.date === marketDate && hs300.data?.length) ? hs300.data : loadMinuteSeries(marketDate, 'hs300', '1.000300')
-  ]);
+  // 使用API数据覆盖本地数据（如果有）
+  const finalSseSeries = (sse.date === marketDate && sse.data?.length) ? sse.data : sseSeries;
+  const finalSziSeries = (szi.date === marketDate && szi.data?.length) ? szi.data : sziSeries;
+  const finalGemSeries = (gem.date === marketDate && gem.data?.length) ? gem.data : gemSeries;
+  const finalStarSeries = (star.date === marketDate && star.data?.length) ? star.data : starSeries;
+  const finalHs300Series = (hs300.date === marketDate && hs300.data?.length) ? hs300.data : hs300Series;
 
   // Get previous trading day volume via Tencent API as fallback
   try {
@@ -2945,11 +2962,11 @@ async function buildSnapshotPayload() {
   const payload = {
     day: marketDate,
     indices: {
-      sse: { price: snaps['sh000001']?.price || sseSeries.at(-1)?.close, pct: snaps['sh000001']?.pct || pctOfDay(sseSeries), series: sseSeries },
-      szi: { price: snaps['sz399001']?.price || sziSeries.at(-1)?.close, pct: snaps['sz399001']?.pct || pctOfDay(sziSeries), series: sziSeries },
-      gem: { price: snaps['sz399006']?.price || gemSeries.at(-1)?.close, pct: snaps['sz399006']?.pct || pctOfDay(gemSeries), series: gemSeries },
-      star: { price: snaps['sh000680']?.price || starSeries.at(-1)?.close, pct: snaps['sh000680']?.pct || pctOfDay(starSeries), series: starSeries },
-      hs300: { price: snaps['sh000300']?.price || hs300Series.at(-1)?.close, pct: snaps['sh000300']?.pct || pctOfDay(hs300Series), series: hs300Series },
+      sse: { price: snaps['sh000001']?.price || finalSseSeries.at(-1)?.close, pct: snaps['sh000001']?.pct || pctOfDay(finalSseSeries), series: finalSseSeries },
+      szi: { price: snaps['sz399001']?.price || finalSziSeries.at(-1)?.close, pct: snaps['sz399001']?.pct || pctOfDay(finalSziSeries), series: finalSziSeries },
+      gem: { price: snaps['sz399006']?.price || finalGemSeries.at(-1)?.close, pct: snaps['sz399006']?.pct || pctOfDay(finalGemSeries), series: finalGemSeries },
+      star: { price: snaps['sh000680']?.price || finalStarSeries.at(-1)?.close, pct: snaps['sh000680']?.pct || pctOfDay(finalStarSeries), series: finalStarSeries },
+      hs300: { price: snaps['sh000300']?.price || finalHs300Series.at(-1)?.close, pct: snaps['sh000300']?.pct || pctOfDay(finalHs300Series), series: finalHs300Series },
       csi2000: { price: csi2000PriceFinal, pct: csi2000PctFinal, series: csi2000Series },
       avg: { price: avgPriceFinal, pct: avgPctFinal, series: avgSeries }
     },
@@ -4581,7 +4598,9 @@ const server = http.createServer(async (req, res) => {
                 console.warn(`[lifecycle] 缓存验证失败: 数据=${dataDay}, warmup=${expectedDay}`);
                 validationPassed = false;
               }
-            } catch (e) {}
+            } catch (e) {
+              // 忽略验证错误
+            }
           }
         } else {
           // 非交易时间且15:30后：使用常规验证
