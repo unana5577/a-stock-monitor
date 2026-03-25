@@ -3722,7 +3722,7 @@ def get_minute_data_from_akshare(secid):
         today = datetime.now().strftime('%Y-%m-%d')
         filtered = df[df['时间'].astype(str).str.startswith(today)]
 
-        # 从昨日分时文件获取昨收价
+        # 从昨日分时文件获取昨收价，如果不存在则用今日开盘价作为基准
         prev_close = None
         try:
             # 昨日日期
