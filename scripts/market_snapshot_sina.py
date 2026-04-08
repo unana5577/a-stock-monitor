@@ -53,6 +53,9 @@ def get_cached_snapshot():
                 lines = f.readlines()
                 if lines:
                     etf = json.loads(lines[-1].strip())
+                    # ✅ 兼容旧数据：如果没有 amount_yi 字段，自动计算
+                    if etf and "amount_yi" not in etf and "amount" in etf:
+                        etf["amount_yi"] = round(float(etf["amount"]) / 100000000, 2)
 
         return {
             "timestamp": datetime.now().isoformat(),
@@ -117,12 +120,17 @@ def fetch_market_snapshot():
         etf_amount = etf_df['成交额'].fillna(0).astype(float).sum()
         etf_count = len(etf_df)
 
-        etf = {
-            "amount": round(float(etf_amount), 2),  # 元
-            "amount_yi": round(float(etf_amount) / 100000000, 2),  # 亿元
-            "count": int(etf_count)
-        }
-        print(f"     ✅ ETF成交额: {etf['amount_yi']:.2f}亿，ETF数量: {etf_count}")
+        # ✅ 数据验证：amount必须大于0
+        if etf_amount <= 0:
+            print(f"     ❌ ETF成交额为0或负数，不保存数据")
+            etf = None
+        else:
+            etf = {
+                "amount": round(float(etf_amount), 2),  # 元
+                "amount_yi": round(float(etf_amount) / 100000000, 2),  # 亿元
+                "count": int(etf_count)
+            }
+            print(f"     ✅ ETF成交额: {etf['amount_yi']:.2f}亿，ETF数量: {etf_count}")
     except Exception as e:
         print(f"     ❌ 获取ETF成交额失败: {e}")
         etf = None
