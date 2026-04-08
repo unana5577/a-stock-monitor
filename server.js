@@ -276,7 +276,7 @@ function runPython(code, args = []) {
   });
 }
 
-function execPythonJson(args, timeout = 8000) {
+function execPythonJson(args, timeout = 30000) {
   return new Promise((resolve) => {
     execFile('python3', args, { timeout, cwd: __dirname, maxBuffer: 10 * 1024 * 1024 }, (err, stdout) => {
       if (err) return resolve(null);
@@ -4970,6 +4970,16 @@ except Exception as e:
 
   if (url.pathname === '/api/market/breadth') {
     const day = latestTradingDay();
+
+    // ⭐ 优先读取 breadth-cache.json（由 market_snapshot_sina.py 更新）
+    const breadthCache = readBreadthCache();
+    if (breadthCache && isNum(breadthCache.up) && isNum(breadthCache.down)) {
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.end(JSON.stringify({ ...breadthCache, day }));
+      return;
+    }
+
+    // 备选方案：从 archive 数据读取
     const snap = readLatestArchivePayload();
     const snapUp = Number(snap?.sentiment?.upCount);
     const snapDown = Number(snap?.sentiment?.downCount);

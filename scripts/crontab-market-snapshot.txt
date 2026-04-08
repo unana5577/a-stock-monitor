@@ -1,0 +1,4 @@
+# 全市场快照数据采集定时任务
+# 每5分钟执行一次
+
+*/5 * * * * cd /Users/una5577/Documents/trae_projects/a-stock-monitor && /usr/local/bin/python3 scripts/market_snapshot_sina.py >> server.log 2>&1
