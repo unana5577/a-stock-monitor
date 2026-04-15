@@ -392,8 +392,8 @@
             <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div v-for="(item, idx) in lifecycleItems" :key="idx" class="border rounded-lg p-3 hover:shadow-md transition">
                 <div class="flex items-center justify-between">
-                  <div class="text-sm font-semibold">{{ item["板块名称"] || '-' }}</div>
-                  <div class="text-xs text-gray-500">{{ item["板块位置"] || '-' }}</div>
+                  <div class="text-sm font-semibold">{{ item["ETF名称"] || '-' }}</div>
+                  <div class="text-xs text-gray-500">{{ item["ETF位置"] || '-' }}</div>
                 </div>
                 <div class="text-xs text-gray-500 mt-1 flex flex-wrap gap-2">
                    <span>基准 {{ item["基准指数"] || '-' }}</span>
