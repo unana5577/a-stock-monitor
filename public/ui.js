@@ -2154,6 +2154,174 @@ createApp({
       if (tab === 'news') await loadNews(false);
     };
 
+    const updateDataHealthStatus = async () => {
+      try {
+        const res = await fetch('/api/data/monitoring');
+        const monitoring = await res.json();
+
+        // 更新时间状态
+        const timeStatus = monitoring.timeStatus || {};
+        const emojiEl = document.getElementById('time-status-emoji');
+        const statusTextEl = document.getElementById('time-status-text');
+        const statusDescEl = document.getElementById('time-status-desc');
+        const currentTimeEl = document.getElementById('current-time');
+        const currentDateEl = document.getElementById('current-date');
+
+        if (emojiEl) emojiEl.textContent = timeStatus.emoji || '⏳';
+        if (statusTextEl) statusTextEl.textContent = timeStatus.state || '未知';
+        if (statusDescEl) statusDescEl.textContent = timeStatus.description || '';
+        if (currentTimeEl) currentTimeEl.textContent = monitoring.currentTime || '--:--:--';
+
+        const date = new Date(monitoring.timestamp);
+        if (currentDateEl) currentDateEl.textContent = date.toLocaleDateString('zh-CN');
+
+        // 更新整体健康度
+        const summary = monitoring.summary || {};
+        const totalErrors = summary.error_sources || 0;
+        const totalWarnings = summary.warning_sources || 0;
+
+        let health = 'healthy';
+        if (totalErrors > 0) health = 'critical';
+        else if (totalWarnings > 0) health = 'degraded';
+
+        updateOverallHealth(health);
+
+        // 更新各数据源状态
+        const sources = monitoring.dataSources || {};
+        updateEtfStatus(sources.etf_daily);
+        updateIndexStatus(sources.index_daily);
+        updateWarmupStatus(sources.warmup);
+        updateLifecycleStatus(sources.lifecycle);
+
+        // 更新检查时间
+        const timeEl = document.getElementById('last-check-time');
+        if (timeEl) {
+          timeEl.textContent = `最后检查: ${date.toLocaleTimeString('zh-CN')}`;
+        }
+
+        // 更新详细信息
+        const detailEl = document.getElementById('health-status-json');
+        if (detailEl) {
+          detailEl.textContent = JSON.stringify(monitoring, null, 2);
+        }
+
+        // 更新异常警告
+        updateAlerts(monitoring.alerts || []);
+      } catch (error) {
+        console.error('Failed to fetch data monitoring:', error);
+        const badge = document.getElementById('overall-health-badge');
+        if (badge) {
+          badge.textContent = '❓';
+          badge.className = 'px-4 py-2 rounded-full text-white font-bold text-lg bg-gray-500';
+        }
+      }
+    };
+
+    const updateAlerts = (alerts) => {
+      // 如果需要显示异常警告，可以在这里实现
+      // 例如在页面顶部显示警告横幅
+      if (!alerts || alerts.length === 0) return;
+
+      console.log('数据监控异常:', alerts);
+    };
+
+    const updateOverallHealth = (health) => {
+      const badge = document.getElementById('overall-health-badge');
+      if (!badge) return;
+
+      if (health === 'healthy') {
+        badge.textContent = '✅ 健康';
+        badge.className = 'px-4 py-2 rounded-full text-white font-bold text-lg bg-green-500';
+      } else if (health === 'degraded') {
+        badge.textContent = '⚠️ 降级';
+        badge.className = 'px-4 py-2 rounded-full text-white font-bold text-lg bg-yellow-500';
+      } else {
+        badge.textContent = '❌ 异常';
+        badge.className = 'px-4 py-2 rounded-full text-white font-bold text-lg bg-red-500';
+      }
+    };
+
+    const updateEtfStatus = (etf) => {
+      const totalEl = document.getElementById('etf-total');
+      const okEl = document.getElementById('etf-ok');
+      const delayedEl = document.getElementById('etf-delayed');
+      const failedEl = document.getElementById('etf-failed');
+      const iconEl = document.getElementById('etf-health-icon');
+
+      if (totalEl) totalEl.textContent = etf.total || 0;
+      if (okEl) okEl.textContent = etf.ok || 0;
+      if (delayedEl) delayedEl.textContent = etf.delayed || 0;
+      if (failedEl) failedEl.textContent = etf.failed || 0;
+
+      if (iconEl) {
+        if (etf.failed > 0) iconEl.textContent = '❌';
+        else if (etf.delayed > 0) iconEl.textContent = '⚠️';
+        else iconEl.textContent = '✅';
+      }
+    };
+
+    const updateIndexStatus = (index) => {
+      const statusEl = document.getElementById('index-status');
+      const iconEl = document.getElementById('index-health-icon');
+
+      if (!statusEl) return;
+
+      if (index.failed > 0) {
+        statusEl.textContent = `❌ ${index.failed}个失败`;
+        if (iconEl) iconEl.textContent = '❌';
+      } else if (index.delayed > 0) {
+        statusEl.textContent = `⚠️ ${index.delayed}个延迟`;
+        if (iconEl) iconEl.textContent = '⚠️';
+      } else {
+        statusEl.textContent = `✅ 全部正常 (${index.ok}/${index.total})`;
+        if (iconEl) iconEl.textContent = '✅';
+      }
+    };
+
+    const updateWarmupStatus = (warmup) => {
+      const statusEl = document.getElementById('warmup-status');
+      const iconEl = document.getElementById('warmup-health-icon');
+
+      if (!statusEl) return;
+
+      const statusMap = {
+        'ok': '✅ 正常',
+        'stale': `⚠️ 数据旧 (${warmup.latestDate})`,
+        'missing': '❌ 文件缺失',
+        'error': `❌ 错误: ${warmup.error || '未知'}`
+      };
+
+      statusEl.textContent = statusMap[warmup.status] || '❓ 未知状态';
+
+      if (iconEl) {
+        if (warmup.status === 'ok') iconEl.textContent = '✅';
+        else if (warmup.status === 'stale') iconEl.textContent = '⚠️';
+        else iconEl.textContent = '❌';
+      }
+    };
+
+    const updateLifecycleStatus = (lifecycle) => {
+      const statusEl = document.getElementById('lifecycle-status');
+      const iconEl = document.getElementById('lifecycle-health-icon');
+
+      if (!statusEl) return;
+
+      const statusMap = {
+        'ok': `✅ 正常 (${lifecycle.latestDate})`,
+        'stale': `⚠️ 数据旧 (${lifecycle.latestDate})`,
+        'missing': '❌ 文件缺失',
+        'error': `❌ 错误: ${lifecycle.error || '未知'}`
+      };
+
+      statusEl.textContent = statusMap[lifecycle.status] || '❓ 未知状态';
+
+      if (iconEl) {
+        if (lifecycle.status === 'ok') iconEl.textContent = '✅';
+        else if (lifecycle.status === 'stale') iconEl.textContent = '⚠️';
+        else iconEl.textContent = '❌';
+      }
+    };
+
     const init = async () => {
       try {
         const cached = localStorage.getItem(sectorCacheKey);
@@ -2183,10 +2351,20 @@ createApp({
       await loadNews(false);
       await refreshAll();
       await refreshAi(false);
+      await updateDataHealthStatus();
     };
     init();
     setInterval(refreshAll, 15000);
     setInterval(() => refreshAi(false), 30 * 60 * 1000);
+    setInterval(updateDataHealthStatus, 5 * 60 * 1000);
+
+    // 全局函数：切换详细信息显示
+    window.toggleDataHealthDetails = () => {
+      const detailEl = document.getElementById('detailed-health-status');
+      if (detailEl) {
+        detailEl.classList.toggle('hidden');
+      }
+    };
 
     return { activeTab, aiBrief, aiUpdatedAt, aiSections, marketAi, promptText, promptOutput, promptLoading, promptError, runPromptDebug, sectorPromptText, sectorPromptOutput, sectorPromptLoading, sectorPromptError, runSectorPromptDebug, refreshAi, market, bonds, breadth, extra, sectors, sentiment, pctColor, fmtPct, fmtVolumeCmp, fmtHeatDelta, rotationMonthSpan, setRotationMonthSpan, rotationMatrixAxis, rotationMatrixMonths, rotationMatrixGroups, refreshAll, dataTs, fmtTime, sectorInput, updateSectorWatch, watchList, watchIndicators, lastIndicator, currentDays, lifecycleItems, sectorRotationPayload, sectorIntradayPayload, sectorLoading, changeDays, getStageColor, getAdviceColor, badgeClass, fmtProb, selectTab, newsItems, newsLoading, heatmapItems, heatmapMax, getImpact, getImpactClass, importanceStars, loadNews, macroNews, geoNews, focusNews, rotationFilters, rotationFilter, rotationMainline, setRotationFilter, toggleRotationExpand, isRotationExpanded, exportRotationJson, copyRotationMarkdown, watchIntradayRows, rotationTopGroups, intradayBars, intradaySignal, intradayReason, intradayMax, intradayView, setIntradayView, rotationSequencePayload, rotationSequenceDays, fetchRotationSequence, riskSummary, panicPayload, showSectorManager, profileGroups, profileUpdatedAt, manageSectorName, sectorGroupOptions, openSectorManager, closeSectorManager, addWatchSector, removeWatchSector, saveSectorProfile, calcForecastVolume, forecastVolume: computed(calcForecastVolume) };
   }

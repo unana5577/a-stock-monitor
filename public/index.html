@@ -386,6 +386,89 @@
           </div>
         </div>
         <div class="bg-white rounded-xl shadow p-4">
+          <div class="text-sm text-gray-500 mb-2 font-semibold">📊 数据流程状态监控</div>
+
+          <!-- 时间状态 -->
+          <div class="mb-4 p-3 bg-gradient-to-r from-blue-50 to-purple-50 rounded">
+            <div class="flex items-center justify-between">
+              <div>
+                <div class="flex items-center gap-2">
+                  <span id="time-status-emoji" class="text-2xl">⏳</span>
+                  <span class="font-bold text-lg" id="time-status-text">检查中...</span>
+                </div>
+                <div class="text-xs text-gray-600 mt-1" id="time-status-desc">加载中...</div>
+              </div>
+              <div class="text-right">
+                <div class="text-2xl font-bold text-gray-700" id="current-time">--:--:--</div>
+                <div class="text-xs text-gray-500" id="current-date">----/--/--</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 整体健康度 -->
+          <div class="mb-4 p-3 bg-gray-50 rounded">
+            <div class="flex items-center justify-between">
+              <span class="font-semibold">整体健康度</span>
+              <span id="overall-health-badge" class="px-4 py-2 rounded-full text-white font-bold text-lg">检查中...</span>
+            </div>
+            <div class="text-xs text-gray-500 mt-1" id="last-check-time">最后检查: -</div>
+          </div>
+
+          <!-- 数据源状态卡片 -->
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+            <!-- ETF数据 -->
+            <div class="border rounded p-3">
+              <div class="flex items-center justify-between mb-2">
+                <h3 class="font-semibold text-sm">📈 ETF数据</h3>
+                <span id="etf-health-icon" class="text-2xl">⏳</span>
+              </div>
+              <div class="text-sm space-y-1">
+                <div>总数: <span id="etf-total" class="font-medium">9</span></div>
+                <div class="text-green-600">✅ <span id="etf-ok">-</span></div>
+                <div class="text-yellow-600">⚠️ <span id="etf-delayed">-</span></div>
+                <div class="text-red-600">❌ <span id="etf-failed">-</span></div>
+              </div>
+            </div>
+
+            <!-- 指数数据 -->
+            <div class="border rounded p-3">
+              <div class="flex items-center justify-between mb-2">
+                <h3 class="font-semibold text-sm">📊 指数数据</h3>
+                <span id="index-health-icon" class="text-2xl">⏳</span>
+              </div>
+              <div id="index-status" class="text-xs text-gray-600">检查中...</div>
+            </div>
+
+            <!-- Warmup缓存 -->
+            <div class="border rounded p-3">
+              <div class="flex items-center justify-between mb-2">
+                <h3 class="font-semibold text-sm">🔥 Warmup缓存</h3>
+                <span id="warmup-health-icon" class="text-2xl">⏳</span>
+              </div>
+              <div id="warmup-status" class="text-xs text-gray-600">检查中...</div>
+            </div>
+
+            <!-- Lifecycle分析 -->
+            <div class="border rounded p-3">
+              <div class="flex items-center justify-between mb-2">
+                <h3 class="font-semibold text-sm">🎯 Lifecycle</h3>
+                <span id="lifecycle-health-icon" class="text-2xl">⏳</span>
+              </div>
+              <div id="lifecycle-status" class="text-xs text-gray-600">检查中...</div>
+            </div>
+          </div>
+
+          <!-- 详细状态（可展开） -->
+          <div>
+            <button onclick="toggleDataHealthDetails()" class="text-blue-600 text-xs hover:text-blue-800">显示详细信息 ▼</button>
+            <div id="detailed-health-status" class="hidden mt-2">
+              <div class="bg-gray-50 rounded p-3">
+                <pre id="health-status-json" class="text-xs overflow-auto max-h-60"></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="bg-white rounded-xl shadow p-4">
           <div class="text-sm text-gray-500 mb-2 font-semibold">板块生命周期监测</div>
           <div id="sector-lifecycle">
             <div v-if="!lifecycleItems.length" class="text-xs text-gray-400">暂无数据</div>

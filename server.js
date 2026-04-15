@@ -3632,6 +3632,28 @@ const server = http.createServer(async (req, res) => {
     res.end(JSON.stringify(snap));
     return;
   }
+  if (url.pathname === '/api/data/health') {
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    const health = await execPythonJson(['scripts/get_data_health.py'], 30000);
+    if (!health) {
+      res.writeHead(503, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ error: 'Failed to get data health status' }));
+      return;
+    }
+    res.end(JSON.stringify(health));
+    return;
+  }
+  if (url.pathname === '/api/data/monitoring') {
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    const monitoring = await execPythonJson(['scripts/get_data_monitoring.py'], 30000);
+    if (!monitoring) {
+      res.writeHead(503, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ error: 'Failed to get data monitoring status' }));
+      return;
+    }
+    res.end(JSON.stringify(monitoring));
+    return;
+  }
   if (url.pathname === '/health') {
     res.setHeader('Content-Type', 'application/json');
     const mt = lastGoodMinute.get('t');

@@ -1,0 +1,154 @@
+{
+  "name": "数据流程监控仪表板",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "定时触发器",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "timestamp",
+              "value": "={{ $now.toISO() }}"
+            },
+            {
+              "name": "checkTime",
+              "value": "={{ $now.format('HH:mm:ss') }}"
+            }
+          ]
+        }
+      },
+      "id": "set-timestamp",
+      "name": "设置时间戳",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8787/api/data/health",
+        "options": {}
+      },
+      "id": "check-all-data",
+      "name": "检查所有数据源",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.health }}",
+              "operation": "equals",
+              "value2": "healthy"
+            }
+          ]
+        }
+      },
+      "id": "check-health-condition",
+      "name": "健康度判断",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "fileName": "logs/data-health-errors.log",
+        "operation": "append",
+        "fileContent": "={{ $now.format('YYYY-MM-DD HH:mm:ss') }} - 健康度异常: {{ $json.health }}\n{{ JSON.stringify($json, null, 2) }}\n\n"
+      },
+      "id": "log-errors",
+      "name": "记录异常日志",
+      "type": "n8n-nodes-base.writeBinaryFile",
+      "typeVersion": 1,
+      "position": [1050, 400]
+    },
+    {
+      "parameters": {},
+      "id": "healthy-end",
+      "name": "正常结束",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1050, 200]
+    }
+  ],
+  "connections": {
+    "定时触发器": {
+      "main": [
+        [
+          {
+            "node": "设置时间戳",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "设置时间戳": {
+      "main": [
+        [
+          {
+            "node": "检查所有数据源",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "检查所有数据源": {
+      "main": [
+        [
+          {
+            "node": "健康度判断",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "健康度判断": {
+      "main": [
+        [
+          {
+            "node": "正常结束",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "记录异常日志",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2026-04-15T00:00:00.000Z",
+  "versionId": "1"
+}
