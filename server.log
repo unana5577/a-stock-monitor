@@ -1,18 +1,18 @@
 proxy server on http://localhost:8787 [Ashare+Tencent]
 === 启动数据补全检查 ===
 [启动检查] ✅ 最近30天数据完整，无需补全
-[Warmup] ✅ 数据最新 (2026-03-24)，无需更新
+[Warmup] ✅ 数据最新 (2026-04-15)，无需更新
 === 启动数据补全完成 ===
-[AI Debug] 喂给AI的数据: {"upCount":"-","downCount":"-","volume":119117824,"volumeStr":"11911.8亿","indices":["sse","szi","gem","star","hs300","csi2000","avg"]}
-[LunchSave] 午休数据已保存: /Users/una5577/Documents/trae_projects/a-stock-monitor/data/minute-20260325-sse.jsonl
-[LunchSave] 午休数据已保存: /Users/una5577/Documents/trae_projects/a-stock-monitor/data/minute-20260325-szi.jsonl
-[LunchSave] 午休数据已保存: /Users/una5577/Documents/trae_projects/a-stock-monitor/data/minute-20260325-gem.jsonl
-[LunchSave] 午休数据已保存: /Users/una5577/Documents/trae_projects/a-stock-monitor/data/minute-20260325-star.jsonl
-[LunchSave] 午休数据已保存: /Users/una5577/Documents/trae_projects/a-stock-monitor/data/minute-20260325-hs300.jsonl
-[LunchSave] 午休数据已保存: /Users/una5577/Documents/trae_projects/a-stock-monitor/data/minute-20260325-csi2000.jsonl
-[LunchSave] 午休数据已保存: /Users/una5577/Documents/trae_projects/a-stock-monitor/data/minute-20260325-gov.jsonl
-[LunchSave] 午休数据已保存: /Users/una5577/Documents/trae_projects/a-stock-monitor/data/minute-20260325-t.jsonl
-[LunchSave] 午休数据已保存: /Users/una5577/Documents/trae_projects/a-stock-monitor/data/minute-20260325-tl.jsonl
-[LunchSave] 午休数据已保存: /Users/una5577/Documents/trae_projects/a-stock-monitor/data/minute-20260325-bank.jsonl
-[LunchSave] 午休数据已保存: /Users/una5577/Documents/trae_projects/a-stock-monitor/data/minute-20260325-broker.jsonl
-[LunchSave] 午休数据已保存: /Users/una5577/Documents/trae_projects/a-stock-monitor/data/minute-20260325-insure.jsonl
+[AI Debug] 喂给AI的数据: {"upCount":"-","downCount":"-","volume":39425951,"volumeStr":"3942.6亿","indices":["sse","szi","gem","star","hs300","csi2000","avg"]}
+[LunchSave] 午休数据已保存: /Users/una5577/Documents/trae_projects/a-stock-monitor/data/minute-20260416-sse.jsonl
+[LunchSave] 午休数据已保存: /Users/una5577/Documents/trae_projects/a-stock-monitor/data/minute-20260416-szi.jsonl
+[LunchSave] 午休数据已保存: /Users/una5577/Documents/trae_projects/a-stock-monitor/data/minute-20260416-gem.jsonl
+[LunchSave] 午休数据已保存: /Users/una5577/Documents/trae_projects/a-stock-monitor/data/minute-20260416-star.jsonl
+[LunchSave] 午休数据已保存: /Users/una5577/Documents/trae_projects/a-stock-monitor/data/minute-20260416-hs300.jsonl
+[LunchSave] 午休数据已保存: /Users/una5577/Documents/trae_projects/a-stock-monitor/data/minute-20260416-csi2000.jsonl
+[LunchSave] 午休数据已保存: /Users/una5577/Documents/trae_projects/a-stock-monitor/data/minute-20260416-gov.jsonl
+[LunchSave] 午休数据已保存: /Users/una5577/Documents/trae_projects/a-stock-monitor/data/minute-20260416-t.jsonl
+[LunchSave] 午休数据已保存: /Users/una5577/Documents/trae_projects/a-stock-monitor/data/minute-20260416-tl.jsonl
+[LunchSave] 午休数据已保存: /Users/una5577/Documents/trae_projects/a-stock-monitor/data/minute-20260416-bank.jsonl
+[LunchSave] 午休数据已保存: /Users/una5577/Documents/trae_projects/a-stock-monitor/data/minute-20260416-broker.jsonl
+[LunchSave] 午休数据已保存: /Users/una5577/Documents/trae_projects/a-stock-monitor/data/minute-20260416-insure.jsonl

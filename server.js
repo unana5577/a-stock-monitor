@@ -1817,10 +1817,9 @@ function prevCloseFromMinuteFile(day, code) {
     return pickNum(toNumber(last?.close), toNumber(last?.open));
   };
   const main = readMinuteFile(minuteFilePath(day, code)).arr;
-  let out = pickLast(main);
-  if (isNum(out)) return out;
   const runtime = readMinuteFile(runtimeMinuteFilePath(day, code)).arr;
-  out = pickLast(runtime);
+  const merged = mergeMinuteSeries(main, runtime);
+  const out = pickLast(merged);
   return isNum(out) ? out : null;
 }
 
