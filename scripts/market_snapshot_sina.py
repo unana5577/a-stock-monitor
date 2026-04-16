@@ -106,7 +106,8 @@ def fetch_market_snapshot():
             "flat": int(flat),
             "total": int(total),
             "ratio": round(float(ratio), 2),
-            "sentiment": "亢奋" if ratio > 2 else ("恐慌" if ratio < 0.3 else "正常")
+            "sentiment": "亢奋" if ratio > 2 else ("恐慌" if ratio < 0.3 else "正常"),
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
         print(f"     ✅ 涨跌家数: 上涨{up} / 下跌{down} / 平盘{flat}，情绪: {breadth['sentiment']}")
     except Exception as e:

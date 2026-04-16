@@ -92,12 +92,12 @@
           <div class="text-sm text-gray-500 mb-2">国债与指数</div>
           <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div class="border rounded-lg p-3">
-              <div class="flex justify-between text-sm"><span>30Y TL2603</span><span :class="pctColor(bonds.tl.pct)">{{ fmtPct(bonds.tl.pct) }}</span></div>
+              <div class="flex justify-between text-sm"><span>30Y国债(511130)</span><span :class="pctColor(bonds.tl.pct)">{{ fmtPct(bonds.tl.pct) }}</span></div>
               <div class="text-xs text-gray-500 mt-1">价 {{ bonds.tl.price || '-' }}</div>
               <div id="spark-tl" class="mt-2" style="height:60px;"></div>
             </div>
             <div class="border rounded-lg p-3">
-              <div class="flex justify-between text-sm"><span>10Y T2603</span><span :class="pctColor(bonds.t.pct)">{{ fmtPct(bonds.t.pct) }}</span></div>
+              <div class="flex justify-between text-sm"><span>10Y国债(511260)</span><span :class="pctColor(bonds.t.pct)">{{ fmtPct(bonds.t.pct) }}</span></div>
               <div class="text-xs text-gray-500 mt-1">价 {{ bonds.t.price || '-' }}</div>
               <div id="spark-t" class="mt-2" style="height:60px;"></div>
             </div>

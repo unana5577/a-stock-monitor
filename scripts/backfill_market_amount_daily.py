@@ -57,12 +57,12 @@ def main() -> int:
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
         with open(out_path, "w", encoding="utf-8") as f:
             for _, r in df.iterrows():
-                row = {
-                    "date": r["day"],
-                    "total": float(r["total_amount"]),
-                    "sh": float(r["sh_amount"]),
-                    "sz": float(r["sz_amount"])
-                }
+                row = [
+                    r["day"],
+                    float(r["total_amount"]),
+                    float(r["sh_amount"]),
+                    float(r["sz_amount"])
+                ]
                 f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
         print(json.dumps({"ok": True, "start": start, "end": end, "rows": int(df.shape[0]), "path": out_path, "scale": scale}, ensure_ascii=False), file=sys.stdout)

@@ -861,7 +861,12 @@ function readBreadthCache() {
   try {
     const txt = fs.readFileSync(file, 'utf8').trim();
     if (!txt) return null;
-    return JSON.parse(txt);
+    const data = JSON.parse(txt);
+    // 兼容 { ok: true, data: {...} } 格式
+    if (data.data && typeof data.data === 'object') {
+        return data.data;
+    }
+    return data;
   } catch (e) {
     return null;
   }
@@ -3247,19 +3252,28 @@ const server = http.createServer(async (req, res) => {
       const todayFiltered = merged.filter(p => p?.time && String(p.time).startsWith(targetDay) && isTradingMinute(timeToMinuteKey(p?.time)));
       if (todayFiltered.length) merged = todayFiltered;
 
-      // 从ETF日线文件获取昨收价（t-1日收盘价）
+      // 优先从T-1分钟线获取昨收价
       let prevClose = null;
-      try {
-        const etfDailyFile = path.join(__dirname, 'data', 'etf_daily', `etf_${code}.jsonl`);
-        if (fs.existsSync(etfDailyFile)) {
-          const content = fs.readFileSync(etfDailyFile, 'utf-8').split('\n').filter(l => l.trim());
-          if (content.length >= 1) {
-            const lastRow = JSON.parse(content[content.length - 1]);
-            prevClose = lastRow.close;
+      const t1 = findPreviousTradingDay(targetDay);
+      const fallback = prevCloseFromMinuteFile(t1, code);
+      if (isNum(fallback)) {
+        prevClose = fallback;
+      }
+      
+      if (prevClose == null) {
+        // 从ETF日线文件获取昨收价（兜底）
+        try {
+          const etfDailyFile = path.join(__dirname, 'data', 'etf_daily', `etf_${code}.jsonl`);
+          if (fs.existsSync(etfDailyFile)) {
+            const content = fs.readFileSync(etfDailyFile, 'utf-8').split('\n').filter(l => l.trim());
+            if (content.length >= 1) {
+              const lastRow = JSON.parse(content[content.length - 1]);
+              prevClose = lastRow.close;
+            }
           }
+        } catch (e) {
+          console.error(`Failed to read ETF daily file for ${code}:`, e.message);
         }
-      } catch (e) {
-        console.error(`Failed to read ETF daily file for ${code}:`, e.message);
       }
 
       const day = targetDay;
@@ -3397,6 +3411,42 @@ const server = http.createServer(async (req, res) => {
       if (isNum(fallback)) prevClose = fallback;
     }
     if (prevClose == null) {
+      const indexMap = { sse: '000001', szi: '399001', gem: '399006', star: '000688' };
+      const idx = indexMap[code];
+      if (idx) {
+        try {
+          const file = path.join(__dirname, 'data', 'index_daily', `index_${idx}.jsonl`);
+          if (fs.existsSync(file)) {
+            const lines = fs.readFileSync(file, 'utf-8').split('\n').filter(Boolean);
+            let pick = null;
+            for (let i = lines.length - 1; i >= 0 && i >= lines.length - 50; i--) {
+              const line = lines[i];
+              if (!line) continue;
+              try {
+                const row = JSON.parse(line);
+                if (row?.date && row.date < targetDay && isNum(row.close)) {
+                  pick = row.close;
+                  break;
+                }
+              } catch (e) {
+                void e;
+              }
+            }
+            if (isNum(pick) && merged.length) {
+              const first = pickNum(toNumber(merged[0]?.open), toNumber(merged[0]?.close));
+              if (first != null) {
+                const ratio = first / pick;
+                if (!Number.isFinite(ratio) || ratio < 0.5 || ratio > 2) pick = null;
+              }
+            }
+            if (isNum(pick)) prevClose = pick;
+          }
+        } catch (e) {
+          void e;
+        }
+      }
+    }
+    if (prevClose == null) {
       try {
         const fetched = await fetchPrevCloseForMinute(code, targetDay);
         if (isNum(fetched)) prevClose = fetched;
@@ -3517,20 +3567,6 @@ const server = http.createServer(async (req, res) => {
     const latest = items.length ? items[items.length - 1] : null;
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.end(JSON.stringify({ ok: true, updated, latest, items }));
-    return;
-  }
-  if (url.pathname === '/api/market/breadth') {
-    const refresh = url.searchParams.get('refresh') === '1';
-    if (refresh) {
-      const obj = await execPythonJson(['scripts/market_breadth_spot.py'], 120000);
-      if (obj && obj.ok) {
-        const file = breadthCachePath();
-        fs.writeFileSync(file, JSON.stringify(obj), 'utf8');
-      }
-    }
-    const data = readBreadthCache();
-    res.setHeader('Content-Type', 'application/json; charset=utf-8');
-    res.end(JSON.stringify({ ok: true, data }));
     return;
   }
   // 市场日期 API
@@ -4997,7 +5033,7 @@ except Exception as e:
     const breadthCache = readBreadthCache();
     if (breadthCache && isNum(breadthCache.up) && isNum(breadthCache.down)) {
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
-      res.end(JSON.stringify({ ...breadthCache, day }));
+      res.end(JSON.stringify({ ok: true, data: { ...breadthCache, day } }));
       return;
     }
 
@@ -5008,7 +5044,7 @@ except Exception as e:
     if (isNum(snapUp) && isNum(snapDown) && (snap?.day || day) === day) {
       const total = Number(snapUp || 0) + Number(snapDown || 0);
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
-      res.end(JSON.stringify({ up: snapUp, down: snapDown, flat: 0, total, day }));
+      res.end(JSON.stringify({ ok: true, data: { up: snapUp, down: snapDown, flat: 0, total, day } }));
       return;
     }
     if (isMarketOpenNow()) {
@@ -5016,7 +5052,7 @@ except Exception as e:
       if (rt && isNum(rt.up) && isNum(rt.down)) {
         const total = Number(rt.total || (rt.up + rt.down + (rt.flat || 0)) || 0);
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
-        res.end(JSON.stringify({ up: rt.up, down: rt.down, flat: rt.flat || 0, total, day }));
+        res.end(JSON.stringify({ ok: true, data: { up: rt.up, down: rt.down, flat: rt.flat || 0, total, day } }));
         return;
       }
     }
@@ -5028,7 +5064,7 @@ except Exception as e:
         if (isNum(obj?.up) && isNum(obj?.down)) {
           if (!obj.day && !obj.date) obj.day = day;
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
-          res.end(JSON.stringify(obj));
+          res.end(JSON.stringify({ ok: true, data: obj }));
           return;
         }
       } catch (e) {
@@ -5046,7 +5082,7 @@ except Exception as e:
             const payload = JSON.stringify(obj);
             writeJsonCache(cacheFile, payload);
             res.setHeader('Content-Type', 'application/json; charset=utf-8');
-            res.end(payload);
+            res.end(JSON.stringify({ ok: true, data: obj }));
             return;
           }
         }
@@ -5062,7 +5098,7 @@ except Exception as e:
       const obj = { up, down, flat, total, day, source_day: sourceDay, stale: !!(sourceDay && sourceDay !== day) };
       writeJsonCache(cacheFile, JSON.stringify(obj));
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
-      res.end(JSON.stringify(obj));
+      res.end(JSON.stringify({ ok: true, data: obj }));
     });
     return;
   }
