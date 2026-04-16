@@ -3565,11 +3565,11 @@ const server = http.createServer(async (req, res) => {
         if (data.day) args.push('--day', data.day);
         if (data.steps) args.push('--steps', data.steps);
         
-        execFile('python3', args, { cwd: __dirname, timeout: 60000 }, (err, stdout, stderr) => {
+        execFile('python3', args, { cwd: __dirname, timeout: 60000, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
           const lines = (stdout || '').trim().split('\n');
           const outRaw = lines[lines.length - 1]; // runner's last line is the JSON
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
-          if (outRaw && outRaw.startsWith('{')) {
+          if (!err && outRaw && outRaw.startsWith('{')) {
             res.end(outRaw);
           } else {
             res.statusCode = 500;
@@ -3582,6 +3582,62 @@ const server = http.createServer(async (req, res) => {
       }
     });
     return;
+  }
+
+  if (url.pathname === '/api/runner/journal') {
+    const rel = String(url.searchParams.get('path') || '').trim();
+    if (!rel || rel.includes('..') || !rel.startsWith('data/runs/')) {
+      res.statusCode = 400;
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.end(JSON.stringify({ ok: false, error: 'invalid path' }));
+      return;
+    }
+    const abs = path.join(__dirname, rel);
+    if (!fs.existsSync(abs)) {
+      res.statusCode = 404;
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.end(JSON.stringify({ ok: false, error: 'not found', path: rel }));
+      return;
+    }
+    try {
+      const obj = JSON.parse(fs.readFileSync(abs, 'utf8'));
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.end(JSON.stringify({ ok: true, journal: obj }));
+      return;
+    } catch (e) {
+      res.statusCode = 500;
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.end(JSON.stringify({ ok: false, error: e.message, path: rel }));
+      return;
+    }
+  }
+
+  if (url.pathname === '/api/runner/file') {
+    const rel = String(url.searchParams.get('path') || '').trim();
+    if (!rel || rel.includes('..') || !(rel.startsWith('data/m0/') || rel.startsWith('data/market/') || rel.startsWith('data/runs/'))) {
+      res.statusCode = 400;
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.end(JSON.stringify({ ok: false, error: 'invalid path' }));
+      return;
+    }
+    const abs = path.join(__dirname, rel);
+    if (!fs.existsSync(abs)) {
+      res.statusCode = 404;
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.end(JSON.stringify({ ok: false, error: 'not found', path: rel }));
+      return;
+    }
+    try {
+      const txt = fs.readFileSync(abs, 'utf8');
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.end(JSON.stringify({ ok: true, path: rel, text: txt }));
+      return;
+    } catch (e) {
+      res.statusCode = 500;
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.end(JSON.stringify({ ok: false, error: e.message, path: rel }));
+      return;
+    }
   }
 
   if (url.pathname === '/api/market/etf_amount_total') {

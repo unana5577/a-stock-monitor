@@ -1,0 +1,185 @@
+{
+  "name": "M0-B-minute2daily-qa",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-trigger",
+      "name": "手动触发",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "triggerSource",
+              "value": "pipelineId=m0-B"
+            },
+            {
+              "name": "symbol",
+              "value": "sse"
+            }
+          ]
+        }
+      },
+      "id": "set-source",
+      "name": "设置参数",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [
+        480,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:8787/api/runner/run",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "plan",
+              "value": "m0m1"
+            },
+            {
+              "name": "triggerType",
+              "value": "n8n"
+            },
+            {
+              "name": "triggerSource",
+              "value": "={{ $json.triggerSource }}"
+            },
+            {
+              "name": "steps",
+              "value": "m0-B"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "run-runner",
+      "name": "运行Runner",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        720,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'http://localhost:8787/api/runner/journal?path=' + ($json.runJournalPath || $json.journal) }}",
+        "options": {}
+      },
+      "id": "get-journal",
+      "name": "获取RunJournal",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        960,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'http://localhost:8787/api/minute/' + ($node[\"设置参数\"].json.symbol || 'sse') }}",
+        "options": {}
+      },
+      "id": "get-minute",
+      "name": "获取分钟线",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        960,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const run = $node[\"运行Runner\"].json;\nconst journalWrap = $node[\"获取RunJournal\"].json;\nconst journal = journalWrap?.journal || null;\nconst minute = $node[\"获取分钟线\"].json;\n\nconst iconMap = { success: '✅', partial: '⚠️', failed: '❌' };\nconst icon = iconMap[run.status] || '❓';\n\nconst asOf = String(run.asOf || '').includes('T') ? String(run.asOf).split('T')[1].slice(0,5) : '15:00';\n\nconst series = Array.isArray(minute.series) ? minute.series : [];\nconst pts = series.length;\nconst last = pts ? series[pts - 1] : null;\nconst close = last?.close ?? null;\nconst amt = 0;\n\nconst hasCloseBar = !!(last?.time && String(last.time).includes('15:00'));\nconst amountOk = amt > 0;\nconst prevClose = minute.prevClose;\nconst pctOk = prevClose != null && Number(prevClose) > 0;\n\nlet failStep = null;\nlet err = null;\nif (journal && Array.isArray(journal.steps)) {\n  const failed = journal.steps.find(s => s.status === 'failed');\n  if (failed) {\n    failStep = failed.name;\n    err = failed.error?.message || (failed.warnings || []).find(w => w.severity === 'error')?.message || 'failed';\n  }\n}\n\nconst line1 = `M0-B ${icon} day=${run.day} asOf=${asOf} symbol=${$node[\"设置参数\"].json.symbol}`;\nconst line2 = `pts=${pts} close=${close ?? 'NA'} amt=${amt}`;\nconst line3 = `QA: closeBar=${hasCloseBar ? 'Y' : 'N'} amountOk=${amountOk ? 'Y' : 'N'} pctOk=${pctOk ? 'Y' : 'N'} out: minute2daily + qa (failStep=${failStep ?? 'NA'} err=${err ?? 'NA'})`;\n\nreturn [{ line1, line2, line3, summary: `${line1}\\n${line2}\\n${line3}` }];\n"
+      },
+      "id": "summary",
+      "name": "3行摘要",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1220,
+        260
+      ]
+    }
+  ],
+  "connections": {
+    "手动触发": {
+      "main": [
+        [
+          {
+            "node": "设置参数",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "设置参数": {
+      "main": [
+        [
+          {
+            "node": "运行Runner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "运行Runner": {
+      "main": [
+        [
+          {
+            "node": "获取RunJournal",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "获取分钟线",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "获取RunJournal": {
+      "main": [
+        [
+          {
+            "node": "3行摘要",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "获取分钟线": {
+      "main": [
+        [
+          {
+            "node": "3行摘要",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "versionId": "m0-b-v1"
+}
+

@@ -4,6 +4,7 @@ import os
 import random
 import string
 import sys
+import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -105,6 +106,34 @@ def atomic_write_text(path: Path, text: str) -> None:
     tmp.write_text(text, encoding="utf-8")
     os.replace(tmp, path)
 
+def atomic_write_json(path: Path, obj: dict | list) -> None:
+    atomic_write_text(path, json.dumps(obj, ensure_ascii=False, indent=2))
+
+def write_meta(path: Path, meta: dict) -> None:
+    atomic_write_json(path.with_name(path.name + ".meta.json"), meta)
+
+def read_last_jsonl_row(path: Path, pred=None) -> dict | None:
+    if not path.exists() or path.stat().st_size <= 0:
+        return None
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+        for line in reversed(lines):
+            line = line.strip()
+            if not line:
+                continue
+            row = json.loads(line)
+            if isinstance(row, dict) and (pred is None or pred(row)):
+                return row
+    except Exception:
+        return None
+    return None
+
+def http_json(url: str, timeout: int = 20) -> dict:
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        data = resp.read().decode("utf-8")
+    return json.loads(data)
+
 
 def journal_path(project_root: Path, day: str, run_id: str) -> Path:
     return project_root / "data" / "runs" / day / f"{run_id}.json"
@@ -155,7 +184,7 @@ def qa_basic(project_root: Path, day: str) -> tuple[str, list[WarningItem], dict
         warnings.append(
             WarningItem(
                 code="ARCHIVE_DEGRADED",
-                severity="degraded",
+                severity="warn",
                 message="archive缺失或结构不符合预期（不阻塞默认链）",
                 paths=[str(archive_file.relative_to(project_root))],
             )
@@ -167,7 +196,7 @@ def qa_basic(project_root: Path, day: str) -> tuple[str, list[WarningItem], dict
         warnings.append(
             WarningItem(
                 code="MARKET_AMOUNT_DAILY_DEGRADED",
-                severity="degraded",
+                severity="warn",
                 message="market-amount-daily缺失或为空（已知问题，暂不阻塞默认链）",
                 paths=[str(market_amount_daily.relative_to(project_root))],
             )
@@ -239,7 +268,7 @@ def run_cmd(args: argparse.Namespace) -> int:
         "steps": [],
     }
 
-    has_warnings = False
+    has_warn = False
     failed = False
 
     def add_step(
@@ -251,17 +280,20 @@ def run_cmd(args: argparse.Namespace) -> int:
         error: dict | None,
         providers: list[dict] | None = None,
     ):
-        nonlocal has_warnings, failed
-        if warnings:
-            has_warnings = True
-        if status == "failed":
+        nonlocal has_warn, failed
+        eff_status = status
+        if any(w.severity == "error" for w in warnings):
+            eff_status = "failed"
+        if any(w.severity == "warn" for w in warnings):
+            has_warn = True
+        if eff_status == "failed":
             failed = True
         journal["steps"].append(
             {
                 "name": name,
                 "startedAt": inputs.get("_startedAt"),
                 "endedAt": inputs.get("_endedAt"),
-                "status": status,
+                "status": eff_status,
                 "inputs": {k: v for k, v in inputs.items() if not k.startswith("_")},
                 "warnings": [w.__dict__ for w in warnings],
                 "providers": providers or [],
@@ -386,7 +418,7 @@ def run_cmd(args: argparse.Namespace) -> int:
         add_step("report", "skipped", {"_startedAt": now_dt.isoformat(), "_endedAt": now_dt.isoformat()}, outputs=[], warnings=[], error=None)
 
     journal["endedAt"] = beijing_now().isoformat()
-    journal["status"] = "failed" if failed else ("partial" if has_warnings else "success")
+    journal["status"] = "failed" if failed else ("partial" if has_warn else "success")
 
     atomic_write_text(j_path, json.dumps(journal, ensure_ascii=False, indent=2))
 
