@@ -3251,27 +3251,28 @@ const server = http.createServer(async (req, res) => {
       const todayFiltered = merged.filter(p => p?.time && String(p.time).startsWith(targetDay) && isTradingMinute(timeToMinuteKey(p?.time)));
       if (todayFiltered.length) merged = todayFiltered;
 
-      // 优先从T-1分钟线获取昨收价
+      // 优先从ETF日线文件获取昨收价
       let prevClose = null;
-      const t1 = findPreviousTradingDay(targetDay);
-      const fallback = prevCloseFromMinuteFile(t1, code);
-      if (isNum(fallback)) {
-        prevClose = fallback;
-      }
-      
-      if (prevClose == null) {
-        // 从ETF日线文件获取昨收价（兜底）
-        try {
-          const etfDailyFile = path.join(__dirname, 'data', 'etf_daily', `etf_${code}.jsonl`);
-          if (fs.existsSync(etfDailyFile)) {
-            const content = fs.readFileSync(etfDailyFile, 'utf-8').split('\n').filter(l => l.trim());
-            if (content.length >= 1) {
-              const lastRow = JSON.parse(content[content.length - 1]);
+      try {
+        const etfDailyFile = path.join(__dirname, 'data', 'etf_daily', `etf_${code}.jsonl`);
+        if (fs.existsSync(etfDailyFile)) {
+          const content = fs.readFileSync(etfDailyFile, 'utf-8').split('\n').filter(l => l.trim());
+          if (content.length >= 1) {
+            const lastRow = JSON.parse(content[content.length - 1]);
+            if (lastRow.date < targetDay) {
               prevClose = lastRow.close;
             }
           }
-        } catch (e) {
-          console.error(`Failed to read ETF daily file for ${code}:`, e.message);
+        }
+      } catch (e) {
+        console.error(`Failed to read ETF daily file for ${code}:`, e.message);
+      }
+
+      if (prevClose == null) {
+        const t1 = findPreviousTradingDay(targetDay);
+        const fallback = prevCloseFromMinuteFile(t1, code);
+        if (isNum(fallback)) {
+          prevClose = fallback;
         }
       }
 
@@ -3405,11 +3406,6 @@ const server = http.createServer(async (req, res) => {
       if (cached?.prevClose != null) prevClose = cached.prevClose;
     }
     if (prevClose == null) {
-      const t1 = findPreviousTradingDay(targetDay);
-      const fallback = prevCloseFromMinuteFile(t1, code);
-      if (isNum(fallback)) prevClose = fallback;
-    }
-    if (prevClose == null) {
       const indexMap = { sse: '000001', szi: '399001', gem: '399006', star: '000688' };
       const idx = indexMap[code];
       if (idx) {
@@ -3444,6 +3440,11 @@ const server = http.createServer(async (req, res) => {
           void e;
         }
       }
+    }
+    if (prevClose == null) {
+      const t1 = findPreviousTradingDay(targetDay);
+      const fallback = prevCloseFromMinuteFile(t1, code);
+      if (isNum(fallback)) prevClose = fallback;
     }
     if (prevClose == null) {
       try {
@@ -3554,6 +3555,35 @@ const server = http.createServer(async (req, res) => {
     res.end(JSON.stringify({ ok: true, items }));
     return;
   }
+  if (url.pathname === '/api/runner/run' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', () => {
+      try {
+        const data = JSON.parse(body || '{}');
+        const args = ['-m', 'treasolo.runner', 'run', '--plan', data.plan || 'm0m1', '--trigger-type', data.triggerType || 'n8n', '--trigger-source', data.triggerSource || 'n8n-http'];
+        if (data.day) args.push('--day', data.day);
+        if (data.steps) args.push('--steps', data.steps);
+        
+        execFile('python3', args, { cwd: __dirname, timeout: 60000 }, (err, stdout, stderr) => {
+          const lines = (stdout || '').trim().split('\n');
+          const outRaw = lines[lines.length - 1]; // runner's last line is the JSON
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          if (outRaw && outRaw.startsWith('{')) {
+            res.end(outRaw);
+          } else {
+            res.statusCode = 500;
+            res.end(JSON.stringify({ error: 'runner failed', stderr: stderr || outRaw, stdout }));
+          }
+        });
+      } catch (e) {
+        res.statusCode = 400;
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+
   if (url.pathname === '/api/market/etf_amount_total') {
     const refresh = url.searchParams.get('refresh') === '1';
     let updated = null;

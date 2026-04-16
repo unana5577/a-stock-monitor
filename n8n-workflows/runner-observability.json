@@ -107,13 +107,35 @@
     },
     {
       "parameters": {
-        "command": "python3 -m treasolo.runner run --plan m0m1 --trigger-type n8n --trigger-source {{ $json.triggerSource || 'runner-observability' }}",
-        "cwd": "/Users/una5577/Documents/trae_projects/a-stock-monitor"
+        "method": "POST",
+        "url": "http://localhost:8787/api/runner/run",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "plan",
+              "value": "m0m1"
+            },
+            {
+              "name": "triggerType",
+              "value": "n8n"
+            },
+            {
+              "name": "triggerSource",
+              "value": "={{ $json.triggerSource || 'runner-observability' }}"
+            },
+            {
+              "name": "steps",
+              "value": "m0-AB"
+            }
+          ]
+        },
+        "options": {}
       },
       "id": "execute-runner",
       "name": "执行Runner",
-      "type": "n8n-nodes-base.executeCommand",
-      "typeVersion": 1,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
       "position": [
         1180,
         260
@@ -121,7 +143,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const raw = ($json.stdout ?? $json.data ?? '').trim();\nif (!raw) throw new Error('Runner stdout is empty');\nconst obj = JSON.parse(raw);\nconst root = '/Users/una5577/Documents/trae_projects/a-stock-monitor/';\nreturn [{\n  ...obj,\n  journalAbs: root + obj.journal,\n  qaAbs: obj.qa ? (root + obj.qa) : null,\n}];\n"
+        "jsCode": "const obj = $json;\nif (!obj || !obj.runId) throw new Error('Runner response invalid: ' + JSON.stringify(obj));\nconst root = '/Users/una5577/Documents/trae_projects/a-stock-monitor/';\nreturn [{\n  ...obj,\n  journalAbs: root + (obj.runJournalPath || obj.journal),\n  qaAbs: obj.qa ? (root + obj.qa) : null,\n}];\n"
       },
       "id": "parse-stdout",
       "name": "解析stdout",
