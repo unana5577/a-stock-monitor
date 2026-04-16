@@ -1,0 +1,384 @@
+{
+  "name": "Runner可观测性-统一",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-trigger",
+      "name": "手动触发",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        220,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "定时触发器",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        220,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "triggerSource",
+              "value": "runner-observability-manual"
+            }
+          ]
+        }
+      },
+      "id": "set-manual-source",
+      "name": "设置来源-手动",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [
+        460,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const now = $now.setZone('Asia/Shanghai');\nconst weekday = now.weekday; // 1-7\nconst minutes = now.hour * 60 + now.minute;\nconst isWeekday = weekday >= 1 && weekday <= 5;\nconst inMorning = minutes >= 570 && minutes <= 690;\nconst inAfternoon = minutes >= 780 && minutes <= 900;\nreturn [{\n  now: now.toISO(),\n  isWeekday,\n  inTradingTime: isWeekday && (inMorning || inAfternoon),\n}];\n"
+      },
+      "id": "calc-trading-time",
+      "name": "计算交易时段",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.inTradingTime }}",
+              "operation": "isTrue"
+            }
+          ]
+        }
+      },
+      "id": "if-trading-time",
+      "name": "是否交易时段",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        700,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "triggerSource",
+              "value": "runner-observability-intraday"
+            }
+          ]
+        }
+      },
+      "id": "set-intraday-source",
+      "name": "设置来源-盘中",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [
+        940,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "command": "python3 -m treasolo.runner run --plan m0m1 --trigger-type n8n --trigger-source {{ $json.triggerSource || 'runner-observability' }}",
+        "cwd": "/Users/una5577/Documents/trae_projects/a-stock-monitor"
+      },
+      "id": "execute-runner",
+      "name": "执行Runner",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        1180,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = ($json.stdout ?? $json.data ?? '').trim();\nif (!raw) throw new Error('Runner stdout is empty');\nconst obj = JSON.parse(raw);\nconst root = '/Users/una5577/Documents/trae_projects/a-stock-monitor/';\nreturn [{\n  ...obj,\n  journalAbs: root + obj.journal,\n  qaAbs: obj.qa ? (root + obj.qa) : null,\n}];\n"
+      },
+      "id": "parse-stdout",
+      "name": "解析stdout",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1420,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "filePath": "={{ $json.journalAbs }}"
+      },
+      "id": "read-journal",
+      "name": "读取RunJournal",
+      "type": "n8n-nodes-base.readBinaryFile",
+      "typeVersion": 1,
+      "position": [
+        1660,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const b = $binary?.data?.data;\nif (!b) throw new Error('journal binary is empty');\nconst txt = Buffer.from(b, 'base64').toString('utf-8');\nconst journal = JSON.parse(txt);\nconst status = journal.status;\nreturn [{ journal, status }];\n"
+      },
+      "id": "decode-journal",
+      "name": "解码RunJournal",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1900,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const journal = $json.journal;\nconst stdout = $node[\"解析stdout\"].json;\nconst steps = (journal.steps || []).map((s) => {\n  const providers = (s.providers || []).map((p) => ({\n    datasetId: p.datasetId ?? p.dataset ?? null,\n    providerId: p.providerId ?? null,\n    asOf: p.asOf ?? null,\n  }));\n  const outputs = (s.outputs || []).map((o) => ({\n    type: o.type ?? null,\n    path: o.path ?? null,\n  }));\n  const warnings = (s.warnings || []).map((w) => ({\n    code: w.code ?? null,\n    severity: w.severity ?? null,\n    message: w.message ?? null,\n    paths: w.paths ?? [],\n  }));\n  return {\n    step: s.name,\n    status: s.status,\n    providers,\n    outputs,\n    error: s.error ?? null,\n    warnings,\n  };\n});\nconst errors = [];\nfor (const s of steps) {\n  for (const w of (s.warnings || [])) {\n    if (w.severity === 'error') errors.push({ step: s.step, code: w.code, message: w.message });\n  }\n  if (s.status === 'failed' && s.error) errors.push({ step: s.step, code: 'STEP_FAILED', message: s.error.message ?? String(s.error) });\n}\nconst warningsCount = steps.reduce((n, s) => n + (s.warnings || []).filter((w) => w.severity === 'warn').length, 0);\nconst errorsCount = errors.length;\nreturn [{\n  runId: journal.runId ?? stdout.runId ?? null,\n  status: journal.status ?? stdout.status ?? null,\n  day: journal.day ?? stdout.day ?? null,\n  asOf: journal.asOf ?? stdout.asOf ?? null,\n  triggerSource: journal.trigger?.source ?? stdout.triggerSource ?? null,\n  runJournalPath: stdout.journal ?? stdout.runJournalPath ?? null,\n  warningsCount,\n  errorsCount,\n  steps,\n  errors,\n}];\n"
+      },
+      "id": "extract-acceptance",
+      "name": "提取验收摘要",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2140,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.status }}",
+              "operation": "equals",
+              "value2": "failed"
+            }
+          ]
+        }
+      },
+      "id": "if-failed",
+      "name": "是否失败",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        2380,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "fileName": "logs/runner-observe-errors.log",
+        "operation": "append",
+        "fileContent": "={{ $now.setZone('Asia/Shanghai').toFormat('yyyy-LL-dd HH:mm:ss') }} - runner failed\\n{{ JSON.stringify($json.journal, null, 2) }}\\n\\n"
+      },
+      "id": "log-failed",
+      "name": "记录失败日志",
+      "type": "n8n-nodes-base.writeBinaryFile",
+      "typeVersion": 1,
+      "position": [
+        2380,
+        200
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "noop",
+      "name": "结束",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        2380,
+        320
+      ]
+    }
+  ],
+  "connections": {
+    "手动触发": {
+      "main": [
+        [
+          {
+            "node": "设置来源-手动",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "定时触发器": {
+      "main": [
+        [
+          {
+            "node": "计算交易时段",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "设置来源-手动": {
+      "main": [
+        [
+          {
+            "node": "执行Runner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "计算交易时段": {
+      "main": [
+        [
+          {
+            "node": "是否交易时段",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "是否交易时段": {
+      "main": [
+        [
+          {
+            "node": "设置来源-盘中",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "结束",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "设置来源-盘中": {
+      "main": [
+        [
+          {
+            "node": "执行Runner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "执行Runner": {
+      "main": [
+        [
+          {
+            "node": "解析stdout",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "解析stdout": {
+      "main": [
+        [
+          {
+            "node": "读取RunJournal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "读取RunJournal": {
+      "main": [
+        [
+          {
+            "node": "解码RunJournal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "解码RunJournal": {
+      "main": [
+        [
+          {
+            "node": "提取验收摘要",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "提取验收摘要": {
+      "main": [
+        [
+          {
+            "node": "是否失败",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "是否失败": {
+      "main": [
+        [
+          {
+            "node": "记录失败日志",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "结束",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "记录失败日志": {
+      "main": [
+        [
+          {
+            "node": "结束",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {},
+  "versionId": "runner-observability-unified-v1"
+}
