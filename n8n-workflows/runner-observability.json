@@ -54,7 +54,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const now = $now.setZone('Asia/Shanghai');\nconst weekday = now.weekday; // 1-7\nconst minutes = now.hour * 60 + now.minute;\nconst isWeekday = weekday >= 1 && weekday <= 5;\nconst inMorning = minutes >= 570 && minutes <= 690;\nconst inAfternoon = minutes >= 780 && minutes <= 900;\nreturn [{\n  now: now.toISO(),\n  isWeekday,\n  inTradingTime: isWeekday && (inMorning || inAfternoon),\n}];\n"
+        "jsCode": "const dtf = new Intl.DateTimeFormat('en-GB', {\n  timeZone: 'Asia/Shanghai',\n  hour12: false,\n  weekday: 'short',\n  year: 'numeric',\n  month: '2-digit',\n  day: '2-digit',\n  hour: '2-digit',\n  minute: '2-digit',\n  second: '2-digit',\n});\nconst parts = dtf.formatToParts(new Date());\nconst map = Object.fromEntries(parts.map(p => [p.type, p.value]));\nconst weekdayMap = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 };\nconst weekday = weekdayMap[map.weekday] ?? 0;\nconst hour = Number(map.hour);\nconst minute = Number(map.minute);\nconst minutes = hour * 60 + minute;\nconst isWeekday = weekday >= 1 && weekday <= 5;\nconst inMorning = minutes >= 570 && minutes <= 690;\nconst inAfternoon = minutes >= 780 && minutes <= 900;\nconst inTradingTime = isWeekday && (inMorning || inAfternoon);\nconst now = `${map.year}-${map.month}-${map.day}T${map.hour}:${map.minute}:${map.second}+08:00`;\nreturn [{ now, isWeekday, inTradingTime }];\n"
       },
       "id": "calc-trading-time",
       "name": "计算交易时段",
@@ -71,7 +71,8 @@
           "boolean": [
             {
               "value1": "={{ $json.inTradingTime }}",
-              "operation": "isTrue"
+              "operation": "equals",
+              "value2": true
             }
           ]
         }
