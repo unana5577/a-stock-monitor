@@ -21,6 +21,10 @@
               "value": "pipelineId=m0-B"
             },
             {
+              "name": "baseUrl",
+              "value": "http://127.0.0.1:8787"
+            },
+            {
               "name": "symbol",
               "value": "sse"
             }
@@ -39,7 +43,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://localhost:8787/api/runner/run",
+        "url": "={{ $json.baseUrl + '/api/runner/run' }}",
         "sendBody": true,
         "bodyParameters": {
           "parameters": [
@@ -75,7 +79,7 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "={{ 'http://localhost:8787/api/runner/journal?path=' + ($json.runJournalPath || $json.journal) }}",
+        "url": "={{ $node[\"设置参数\"].json.baseUrl + '/api/runner/journal?path=' + ($json.runJournalPath || $json.journal) }}",
         "options": {}
       },
       "id": "get-journal",
@@ -90,7 +94,7 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "={{ 'http://localhost:8787/api/minute/' + ($node[\"设置参数\"].json.symbol || 'sse') }}",
+        "url": "={{ $node[\"设置参数\"].json.baseUrl + '/api/minute/' + ($node[\"设置参数\"].json.symbol || 'sse') }}",
         "options": {}
       },
       "id": "get-minute",
@@ -182,4 +186,3 @@
   "settings": {},
   "versionId": "m0-b-v1"
 }
-

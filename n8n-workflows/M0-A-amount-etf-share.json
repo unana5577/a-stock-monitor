@@ -19,6 +19,10 @@
             {
               "name": "triggerSource",
               "value": "pipelineId=m0-A"
+            },
+            {
+              "name": "baseUrl",
+              "value": "http://127.0.0.1:8787"
             }
           ]
         }
@@ -35,7 +39,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://localhost:8787/api/runner/run",
+        "url": "={{ $json.baseUrl + '/api/runner/run' }}",
         "sendBody": true,
         "bodyParameters": {
           "parameters": [
@@ -71,7 +75,7 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "={{ 'http://localhost:8787/api/runner/journal?path=' + ($json.runJournalPath || $json.journal) }}",
+        "url": "={{ $node[\"设置来源\"].json.baseUrl + '/api/runner/journal?path=' + ($json.runJournalPath || $json.journal) }}",
         "options": {}
       },
       "id": "get-journal",
@@ -86,7 +90,7 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "http://localhost:8787/api/runner/file?path=data/market/market-amount-daily.jsonl",
+        "url": "={{ $node[\"设置来源\"].json.baseUrl + '/api/runner/file?path=data/market/market-amount-daily.jsonl' }}",
         "options": {}
       },
       "id": "get-market-amount",
@@ -101,7 +105,7 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "http://localhost:8787/api/runner/file?path=data/market/etf-amount-total.jsonl",
+        "url": "={{ $node[\"设置来源\"].json.baseUrl + '/api/runner/file?path=data/market/etf-amount-total.jsonl' }}",
         "options": {}
       },
       "id": "get-etf-amount",
@@ -209,4 +213,3 @@
   "settings": {},
   "versionId": "m0-a-v1"
 }
-
