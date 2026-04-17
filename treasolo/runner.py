@@ -369,31 +369,96 @@ def run_cmd(args: argparse.Namespace) -> int:
         etf_daily_path.parent.mkdir(parents=True, exist_ok=True)
         market_path.parent.mkdir(parents=True, exist_ok=True)
         
-        with open(market_path, "a", encoding="utf-8") as f: f.write(json.dumps({"date": day, "sh000001.amount": 5000, "sz399001.amount": 5000, "total": 10000}) + "\n")
-        with open(etf_daily_path, "a", encoding="utf-8") as f: f.write(json.dumps({"date": day, "total": 2000}) + "\n")
-        with open(etf_minute_path, "a", encoding="utf-8") as f: f.write(json.dumps({"time": f"{day} 15:00", "total": 2000}) + "\n")
-        
-        meta = {"datasetId": "etf_amount_daily", "providerId": "mock", "asOf": as_of, "fallbackReason": None, "runId": run_id, "step": "amount_merge"}
-        (etf_daily_path.parent / "etf_amount_daily.jsonl.meta.json").write_text(json.dumps(meta))
-        (etf_minute_path.parent / "etf_amount_minute.jsonl.meta.json").write_text(json.dumps(meta))
+        # 1. 抓取大盘真实成交额 (sh000001 + sz399001)
+        market_total = 0
+        market_warnings = []
+        market_error = None
+        try:
+            import akshare as ak
+            df_sh = ak.stock_zh_index_daily_em(symbol="sh000001")
+            df_sz = ak.stock_zh_index_daily_em(symbol="sz399001")
+            # 过滤出当天数据
+            df_sh_today = df_sh[df_sh['date'].astype(str).str.startswith(day)]
+            df_sz_today = df_sz[df_sz['date'].astype(str).str.startswith(day)]
+            
+            if df_sh_today.empty or df_sz_today.empty:
+                market_error = f"akshare.stock_zh_index_daily_em 返回数据中没有找到 {day} 的记录"
+            else:
+                sh_amt = float(df_sh_today.iloc[0]['amount'])
+                sz_amt = float(df_sz_today.iloc[0]['amount'])
+                market_total = sh_amt + sz_amt
+                if market_total <= 0:
+                    market_error = f"计算出的全市场成交额异常: {market_total}"
+        except Exception as e:
+            market_error = f"抓取全市场成交额异常: {e}"
 
-        add_step(
-            "amount_merge",
-            "success",
-            {"_startedAt": s0.isoformat(), "_endedAt": s1.isoformat()},
-            outputs=[
-                {"type": "file", "path": str(etf_minute_path.relative_to(project_root))},
-                {"type": "file", "path": str(etf_daily_path.relative_to(project_root))},
-                {"type": "file", "path": str(market_path.relative_to(project_root))}
-            ],
-            warnings=[],
-            error=None,
-            providers=[
-                {"datasetId": "market_amount_daily", "providerId": "akshare.fund_etf_hist_sina", "asOf": as_of},
-                {"datasetId": "etf_amount_minute", "providerId": "akshare.fund_etf_category_sina", "asOf": as_of},
-                {"datasetId": "etf_amount_daily", "providerId": "akshare.fund_etf_category_sina", "asOf": as_of}
-            ]
-        )
+        # 2. 抓取 ETF 真实成交额
+        etf_total = 0
+        etf_error = None
+        try:
+            import akshare as ak
+            etf_df = ak.fund_etf_category_sina(symbol="ETF基金")
+            etf_total = float(etf_df['成交额'].fillna(0).astype(float).sum())
+            if etf_total <= 0:
+                etf_error = f"抓取到的 ETF 总成交额异常: {etf_total}"
+        except Exception as e:
+            etf_error = f"抓取 ETF 成交额异常: {e}"
+
+        if market_error or etf_error:
+            failed = True
+            err_msg = " | ".join(filter(None, [market_error, etf_error]))
+            add_step("amount_merge", "failed", {"_startedAt": s0.isoformat(), "_endedAt": beijing_now().isoformat()}, outputs=[], warnings=[], error={"message": err_msg})
+        else:
+            # 双落盘写入
+            market_record = {"date": day, "sh000001.amount": sh_amt, "sz399001.amount": sz_amt, "total": market_total, "asOf": as_of}
+            with open(market_path, "a", encoding="utf-8") as f: f.write(json.dumps(market_record) + "\n")
+            
+            etf_daily_record = {"date": day, "total": etf_total, "asOf": as_of}
+            with open(etf_daily_path, "a", encoding="utf-8") as f: f.write(json.dumps(etf_daily_record) + "\n")
+            
+            # 分时文件必须带 ts (Asia/Shanghai) 和 amountCum
+            ts_str = beijing_now().replace(second=0, microsecond=0).isoformat()
+            etf_minute_record = {"day": day, "ts": ts_str, "amountCum": etf_total, "asOf": as_of}
+            with open(etf_minute_path, "a", encoding="utf-8") as f: f.write(json.dumps(etf_minute_record) + "\n")
+            
+            # 生成 Meta
+            meta_daily = {"datasetId": "etf_amount_daily", "providerId": "akshare.fund_etf_category_sina", "asOf": as_of, "fallbackReason": None, "runId": run_id, "step": "amount_merge"}
+            meta_minute = {"datasetId": "etf_amount_minute", "providerId": "akshare.fund_etf_category_sina", "asOf": as_of, "fallbackReason": None, "runId": run_id, "step": "amount_merge"}
+            (etf_daily_path.parent / "etf_amount_daily.jsonl.meta.json").write_text(json.dumps(meta_daily))
+            (etf_minute_path.parent / "etf_amount_minute.jsonl.meta.json").write_text(json.dumps(meta_minute))
+
+            # QA 强校验: 检查分时数据是否回撤
+            minute_lines = [json.loads(line) for line in etf_minute_path.read_text().splitlines() if line.strip()]
+            amount_cums = [r.get("amountCum", 0) for r in minute_lines]
+            is_monotonic = all(x <= y for x, y in zip(amount_cums, amount_cums[1:]))
+            qa_warnings = []
+            if not is_monotonic:
+                qa_warnings.append({"severity": "error", "message": "etf_amount_minute amountCum 出现回撤或非单调递增"})
+                failed = True
+            
+            # QA 强校验: 收盘附近必须有 close bar
+            if "15:00" in as_of or "15:01" in as_of:
+                has_close_bar = any("15:00" in r.get("ts", "") or "15:01" in r.get("ts", "") for r in minute_lines)
+                if not has_close_bar:
+                    qa_warnings.append({"severity": "warn", "message": "接近收盘时间但分时数据中缺少 15:00/15:01 的 close bar"})
+
+            add_step(
+                "amount_merge",
+                "success" if not failed else "failed",
+                {"_startedAt": s0.isoformat(), "_endedAt": beijing_now().isoformat()},
+                outputs=[
+                    {"type": "file", "path": str(etf_minute_path.relative_to(project_root))},
+                    {"type": "file", "path": str(etf_daily_path.relative_to(project_root))},
+                    {"type": "file", "path": str(market_path.relative_to(project_root))}
+                ],
+                warnings=qa_warnings,
+                error={"message": "QA validation failed for amount_merge"} if failed and qa_warnings else None,
+                providers=[
+                    {"datasetId": "market_amount_daily", "providerId": "akshare.stock_zh_index_daily_em", "asOf": as_of},
+                    {"datasetId": "etf_amount_minute", "providerId": "akshare.fund_etf_category_sina", "asOf": as_of},
+                    {"datasetId": "etf_amount_daily", "providerId": "akshare.fund_etf_category_sina", "asOf": as_of}
+                ]
+            )
     elif "amount_merge" in steps:
         add_step("amount_merge", "skipped", {"_startedAt": now_dt.isoformat(), "_endedAt": now_dt.isoformat()}, outputs=[], warnings=[], error=None)
 
@@ -451,8 +516,22 @@ def run_cmd(args: argparse.Namespace) -> int:
             with open(j_path, "r", encoding="utf-8") as f:
                 enriched["journal"] = json.load(f)
         if "amount_merge" in steps:
-            enriched["market"] = {"total": 10000}
-            enriched["etf"] = {"total": 2000}
+            # 尝试从真实落盘文件读取，提供给摘要输出
+            market_path = project_root / "data/market/market-amount-daily.jsonl"
+            etf_daily_path = project_root / f"data/m0/{day}/{run_id}/etf_amount_daily.jsonl"
+            
+            market_total = 'NA'
+            if market_path.exists():
+                lines = market_path.read_text().splitlines()
+                if lines: market_total = json.loads(lines[-1]).get("total", "NA")
+                
+            etf_total = 'NA'
+            if etf_daily_path.exists():
+                lines = etf_daily_path.read_text().splitlines()
+                if lines: etf_total = json.loads(lines[-1]).get("total", "NA")
+                
+            enriched["market"] = {"total": market_total}
+            enriched["etf"] = {"total": etf_total}
         if "daily_qa" in steps:
             enriched["minute"] = {"symbol": "sse", "pts": 240, "close": 3000, "amt": 10000, "hasCloseBar": True, "amountOk": True, "pctOk": True}
     except Exception as e:
