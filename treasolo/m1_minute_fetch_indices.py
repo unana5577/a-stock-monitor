@@ -86,7 +86,7 @@ def main() -> int:
         except Exception:
             skipped.append(sym)
             continue
-        out = PROJECT_ROOT / f"data/market/minute/{sym}/{day}.jsonl"
+        out = PROJECT_ROOT / f"data/index/minute/{sym}/{day}.jsonl"
         ok = append_jsonl(out, {"time": now.isoformat(), "asOf": as_of, "price": price})
         if ok:
             wrote.append(sym)

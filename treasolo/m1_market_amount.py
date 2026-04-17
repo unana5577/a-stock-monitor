@@ -46,7 +46,7 @@ def fetch_and_save(day: str):
     }
 
     # 3. 落盘
-    out_dir = PROJECT_ROOT / "data" / "m1" / "market"
+    out_dir = PROJECT_ROOT / "data" / "market"
     out_dir.mkdir(parents=True, exist_ok=True)
     out_file = out_dir / "market_amount.jsonl"
     

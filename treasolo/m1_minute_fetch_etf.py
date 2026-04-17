@@ -99,7 +99,7 @@ def main() -> int:
             skipped.append(sym)
             continue
             
-        out = PROJECT_ROOT / f"data/market/minute/{sym}/{day}.jsonl"
+        out = PROJECT_ROOT / f"data/etf/minute/{sym}/{day}.jsonl"
         ok = append_jsonl(out, record)
         if ok:
             wrote.append(sym)

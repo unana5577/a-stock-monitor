@@ -19,31 +19,31 @@
 - **用途**：每 5 分钟算一次“全市场成交额”和“ETF占比”。(注：开盘时验证)
 - **导入 n8n 用的文件**：[n8n-workflows/M1-Market-Amount.json](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/n8n-workflows/M1-Market-Amount.json)
 - **底层 Python 脚本**：[treasolo/m1_market_amount.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/treasolo/m1_market_amount.py)
-- **抓下来的数据存在哪**：`data/m1/market/market_amount.jsonl`
+- **抓下来的数据存在哪**：`data/market/market_amount.jsonl`
 
 ### 2. 市场涨跌情绪抓取
 - **用途**：每 5 分钟算一次“上涨/下跌/平盘家数”。(注：已按照“麻烦的接口.md”使用新浪全市场接口，需开盘验证)
 - **导入 n8n 用的文件**：[n8n-workflows/M1-Breadth-Fetch.json](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/n8n-workflows/M1-Breadth-Fetch.json)
 - **底层 Python 脚本**：[treasolo/breadth_manager.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/treasolo/breadth_manager.py)
-- **抓下来的数据存在哪**：`data/minute/breadth-cache.jsonl`
+- **抓下来的数据存在哪**：`data/market/minute/breadth-cache.jsonl`
 
 ### 3. 大盘指数：盘中分时抓取
-- **用途**：每 30 分钟抓取 7 大指数当前的分钟价，用于画分时线。
+- **用途**：每 30 分钟抓取 6 大指数当前的分钟价，用于画分时线。
 - **导入 n8n 用的文件**：[n8n-workflows/M1-A-Index-Minute-Fetch.json](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/n8n-workflows/M1-A-Index-Minute-Fetch.json)
 - **底层 Python 脚本**：[treasolo/m1_minute_fetch_indices.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/treasolo/m1_minute_fetch_indices.py)
-- **抓下来的数据存在哪**：`data/market/minute/<代码>/<日期>.jsonl`
+- **抓下来的数据存在哪**：`data/index/minute/<代码>/<日期>.jsonl`
 
 ### 4. 大盘指数：收盘抢发日线
 - **用途**：每天 15:01，用最后一次分时价，拼出今天的日线收盘价。
 - **导入 n8n 用的文件**：[n8n-workflows/M1-B-Minute2Daily.json](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/n8n-workflows/M1-B-Minute2Daily.json)
 - **底层 Python 脚本**：[treasolo/m1_minute_to_daily.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/treasolo/m1_minute_to_daily.py)
-- **抓下来的数据存在哪**：`data/m1/index/<代码>/daily.jsonl`
+- **抓下来的数据存在哪**：`data/index/<代码>/daily.jsonl`
 
 ### 5. 大盘指数与 ETF：晚间权威对账与回补 (共用)
 - **用途**：每天 18:00，去官方接口要最终结算日线，强制覆盖我们 15:01 抢发的数据，保证 100% 准确。支持对所有大盘指数与 ETF 的日线进行漏缺天数补齐。
 - **导入 n8n 用的文件**：[n8n-workflows/M1-E-Backfill-Universal.json](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/n8n-workflows/M1-E-Backfill-Universal.json)
 - **底层 Python 脚本**：[treasolo/m1_backfill.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/treasolo/m1_backfill.py)
-- **抓下来的数据存在哪**：与各自的日线是同一个文件 `data/m1/index/<代码>/daily.jsonl` 或 `data/m1/etf/<代码>/daily.jsonl`，直接覆盖更新。
+- **抓下来的数据存在哪**：与各自的日线是同一个文件 `data/index/<代码>/daily.jsonl` 或 `data/etf/<代码>/daily.jsonl`，直接覆盖更新。
 
 ---
 
@@ -53,13 +53,13 @@
 - **用途**：每 30 分钟抓取核心 ETF 分时数据，包含 `price`, `pct`, `amount`, `vol`, `open`, `high`, `low` 等完整字段。
 - **导入 n8n 用的文件**：[n8n-workflows/M1-C-ETF-Minute-Fetch.json](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/n8n-workflows/M1-C-ETF-Minute-Fetch.json)
 - **底层 Python 脚本**：[treasolo/m1_minute_fetch_etf.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/treasolo/m1_minute_fetch_etf.py)
-- **抓下来的数据存在哪**：`data/market/minute/<代码>/<日期>.jsonl`
+- **抓下来的数据存在哪**：`data/etf/minute/<代码>/<日期>.jsonl`
 
 ### 7. ETF：收盘抢发日线
 - **用途**：每天 15:01，用 ETF 的最后一次分时数据，生成当天的收盘日线。
 - **导入 n8n 用的文件**：[n8n-workflows/M1-D-ETF-Minute2Daily.json](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/n8n-workflows/M1-D-ETF-Minute2Daily.json)
 - **底层 Python 脚本**：[treasolo/m1_minute_to_daily_etf.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/treasolo/m1_minute_to_daily_etf.py)
-- **抓下来的数据存在哪**：`data/m1/etf/<代码>/daily.jsonl`
+- **抓下来的数据存在哪**：`data/etf/<代码>/daily.jsonl`
 
 ---
 

@@ -81,7 +81,7 @@ def fetch_breadth_spot():
     import json
     from pathlib import Path
     PROJECT_ROOT = Path(__file__).resolve().parent.parent
-    cache_file = PROJECT_ROOT / "data/minute/breadth-cache.jsonl"
+    cache_file = PROJECT_ROOT / "data/market/minute/breadth-cache.jsonl"
     if cache_file.exists():
         with open(cache_file, "r") as f:
             lines = f.readlines()

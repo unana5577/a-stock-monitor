@@ -136,16 +136,16 @@ def run_one(symbol: str, write: bool, missing_window_days: int, expect_end: str 
     
     if is_index:
         name = INDEX_SYMBOLS[symbol]
-        out_root = PROJECT_ROOT / "data/m1/index"
+        out_root = PROJECT_ROOT / "data/index"
     elif is_etf:
         name = ETF_SYMBOLS[symbol]
-        out_root = PROJECT_ROOT / "data/m1/etf"
+        out_root = PROJECT_ROOT / "data/etf"
     else:
         # 如果是新增的没有配置的 ETF，自动按照前缀判断
         if symbol.startswith("sh5") or symbol.startswith("sz1"):
             is_etf = True
             name = f"未知ETF({symbol})"
-            out_root = PROJECT_ROOT / "data/m1/etf"
+            out_root = PROJECT_ROOT / "data/etf"
         else:
             print(f"⚠️ 未知的 symbol 类型: {symbol}")
             return 1
@@ -160,12 +160,20 @@ def run_one(symbol: str, write: bool, missing_window_days: int, expect_end: str 
         rows = parse_jsonl(daily_file)
         print(f"  [读取底表] 成功加载 {daily_file.relative_to(PROJECT_ROOT)}")
     except FileNotFoundError:
-        # 2. 如果没有，针对 Index 尝试读取历史遗留文件
-        legacy_file = PROJECT_ROOT / f"data/index_daily/index_{symbol[-6:]}.jsonl"
-        if is_index and legacy_file.exists():
+        # 2. 如果没有，针对 Index/ETF 尝试读取历史遗留文件
+        legacy_index_file = PROJECT_ROOT / f"data/index_daily/index_{symbol[-6:]}.jsonl"
+        legacy_etf_file = PROJECT_ROOT / f"data/etf_daily/etf_{symbol[-6:]}.jsonl"
+        
+        if is_index and legacy_index_file.exists():
             try:
-                rows = parse_jsonl(legacy_file)
-                print(f"  [读取底表] 成功加载历史底表 {legacy_file.relative_to(PROJECT_ROOT)}")
+                rows = parse_jsonl(legacy_index_file)
+                print(f"  [读取底表] 成功加载历史大盘底表 {legacy_index_file.relative_to(PROJECT_ROOT)}")
+            except Exception:
+                rows = []
+        elif is_etf and legacy_etf_file.exists():
+            try:
+                rows = parse_jsonl(legacy_etf_file)
+                print(f"  [读取底表] 成功加载历史ETF底表 {legacy_etf_file.relative_to(PROJECT_ROOT)}")
             except Exception:
                 rows = []
         else:
