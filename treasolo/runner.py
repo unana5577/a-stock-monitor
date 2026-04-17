@@ -550,7 +550,6 @@ def run_cmd(args: argparse.Namespace) -> int:
                         "symbol": symbol,
                         "close": close_price,
                         "volume": sum(float(r.get("volume", 0)) for r in lines),
-                        "amount": amt,
                         "asOf": as_of
                     }
                     with open(daily_file, "a", encoding="utf-8") as f:
