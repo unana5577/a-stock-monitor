@@ -43,7 +43,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $('设置参数').item.json.baseUrl + '/api/runner/run' }}",
+        "url": "http://127.0.0.1:8787/api/runner/run",
         "sendBody": true,
         "bodyParameters": {
           "parameters": [
@@ -79,7 +79,7 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "={{ $('设置参数').item.json.baseUrl + '/api/runner/journal?path=' + ($json.runJournalPath || $json.journal) }}",
+        "url": "={{ 'http://127.0.0.1:8787/api/runner/journal?path=' + ($json.runJournalPath || $json.journal) }}",
         "options": {}
       },
       "id": "get-journal",
@@ -94,7 +94,7 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "={{ $('设置参数').item.json.baseUrl + '/api/minute/' + ($('设置参数').item.json.symbol || 'sse') }}",
+        "url": "={{ 'http://127.0.0.1:8787/api/minute/' + ($('设置参数').item.json.symbol || 'sse') }}",
         "options": {}
       },
       "id": "get-minute",

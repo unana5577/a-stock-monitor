@@ -39,7 +39,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $('设置来源').item.json.baseUrl + '/api/runner/run' }}",
+        "url": "http://127.0.0.1:8787/api/runner/run",
         "sendBody": true,
         "bodyParameters": {
           "parameters": [
@@ -75,7 +75,7 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "={{ $('设置来源').item.json.baseUrl + '/api/runner/journal?path=' + ($json.runJournalPath || $json.journal) }}",
+        "url": "={{ 'http://127.0.0.1:8787/api/runner/journal?path=' + ($json.runJournalPath || $json.journal) }}",
         "options": {}
       },
       "id": "get-journal",
@@ -90,7 +90,7 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "={{ $node[\"设置来源\"].json.baseUrl + '/api/runner/file?path=data/market/market-amount-daily.jsonl' }}",
+        "url": "http://127.0.0.1:8787/api/runner/file?path=data/market/market-amount-daily.jsonl",
         "options": {}
       },
       "id": "get-market-amount",
@@ -105,7 +105,7 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "={{ $node[\"设置来源\"].json.baseUrl + '/api/runner/file?path=data/market/etf-amount-total.jsonl' }}",
+        "url": "={{ 'http://127.0.0.1:8787/api/runner/file?path=data/m0/' + $node['运行Runner'].json.day + '/' + $node['运行Runner'].json.runId + '/etf_amount_daily.jsonl' }}",
         "options": {}
       },
       "id": "get-etf-amount",
