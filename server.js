@@ -5260,8 +5260,8 @@ except Exception as e:
   });
 });
 
-server.listen(PORT, () => {
-  console.log(`proxy server on http://localhost:${PORT} [Ashare+Tencent]`);
+server.listen(PORT, '127.0.0.1', () => {
+  console.log(`proxy server on http://127.0.0.1:${PORT} [Ashare+Tencent]`);
 });
 
 // ============ 定时写入成交额任务 ============
