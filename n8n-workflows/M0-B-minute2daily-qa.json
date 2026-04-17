@@ -43,7 +43,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $json.baseUrl + '/api/runner/run' }}",
+        "url": "={{ $('设置参数').item.json.baseUrl + '/api/runner/run' }}",
         "sendBody": true,
         "bodyParameters": {
           "parameters": [
@@ -79,7 +79,7 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "={{ $node[\"设置参数\"].json.baseUrl + '/api/runner/journal?path=' + ($json.runJournalPath || $json.journal) }}",
+        "url": "={{ $('设置参数').item.json.baseUrl + '/api/runner/journal?path=' + ($json.runJournalPath || $json.journal) }}",
         "options": {}
       },
       "id": "get-journal",
@@ -94,7 +94,7 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "={{ $node[\"设置参数\"].json.baseUrl + '/api/minute/' + ($node[\"设置参数\"].json.symbol || 'sse') }}",
+        "url": "={{ $('设置参数').item.json.baseUrl + '/api/minute/' + ($('设置参数').item.json.symbol || 'sse') }}",
         "options": {}
       },
       "id": "get-minute",
@@ -108,7 +108,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const run = $node[\"运行Runner\"].json;\nconst journalWrap = $node[\"获取RunJournal\"].json;\nconst journal = journalWrap?.journal || null;\nconst minute = $node[\"获取分钟线\"].json;\n\nconst iconMap = { success: '✅', partial: '⚠️', failed: '❌' };\nconst icon = iconMap[run.status] || '❓';\n\nconst asOfStr = String(run.asOf || '');\nconst asOf = asOfStr.includes('T') ? asOfStr.split('T')[1].slice(0,5) : '15:00';\n\nconst series = Array.isArray(minute.series) ? minute.series : [];\nconst pts = series.length;\nconst last = pts ? series[pts - 1] : null;\nconst close = last?.close ?? null;\nconst amt = 0;\n\nconst hasCloseBar = !!(last?.time && String(last.time).includes('15:00'));\nconst amountOk = amt > 0;\nconst prevClose = minute.prevClose;\nconst pctOk = prevClose != null && Number(prevClose) > 0;\n\nlet failStep = 'None';\nlet err = 'None';\nif (journal && Array.isArray(journal.steps)) {\n  const failed = journal.steps.find(s => s.status === 'failed');\n  if (failed) {\n    failStep = failed.name;\n    err = failed.error?.message || (failed.warnings || []).find(w => w.severity === 'error')?.message || 'failed';\n  }\n}\n\nconst line1 = `M0-B ${icon} day=${run.day} asOf=${asOf} symbol=${$node[\"设置参数\"].json.symbol}`;\nconst line2 = `pts=${pts} close=${close ?? 'NA'} amt=${amt}`;\nconst line3 = `QA: closeBar=${hasCloseBar ? 'Y' : 'N'} amountOk=${amountOk ? 'Y' : 'N'} pctOk=${pctOk ? 'Y' : 'N'} out: minute2daily + qa (err=${err})`;\n\nreturn [{ line1, line2, line3, summary: `${line1}\\n${line2}\\n${line3}` }];\n"
+        "jsCode": "const run = $node[\"运行Runner\"].json;\nconst journalWrap = $node[\"获取RunJournal\"].json;\nconst journal = journalWrap?.journal || null;\nconst minute = $node[\"获取分钟线\"].json;\n\nconst iconMap = { success: '✅', partial: '⚠️', failed: '❌' };\nconst icon = iconMap[run.status] || '❓';\n\nconst asOfStr = String(run.asOf || '');\nconst asOf = asOfStr.includes('T') ? asOfStr.split('T')[1].slice(0,5) : '15:00';\n\nconst series = Array.isArray(minute.series) ? minute.series : [];\nconst pts = series.length;\nconst last = pts ? series[pts - 1] : null;\nconst close = last?.close ?? null;\nconst amt = 0;\n\nconst hasCloseBar = !!(last?.time && String(last.time).includes('15:00'));\nconst amountOk = amt > 0;\nconst prevClose = minute.prevClose;\nconst pctOk = prevClose != null && Number(prevClose) > 0;\n\nlet failStep = 'None';\nlet err = 'None';\nif (journal && Array.isArray(journal.steps)) {\n  const failed = journal.steps.find(s => s.status === 'failed');\n  if (failed) {\n    failStep = failed.name;\n    err = failed.error?.message || (failed.warnings || []).find(w => w.severity === 'error')?.message || 'failed';\n  }\n}\n\nconst line1 = `M0-B ${icon} day=${run.day} asOf=${asOf} symbol=${$('设置参数').item.json.symbol}`;\nconst line2 = `pts=${pts} close=${close ?? 'NA'} amt=${amt}`;\nconst line3 = `QA: closeBar=${hasCloseBar ? 'Y' : 'N'} amountOk=${amountOk ? 'Y' : 'N'} pctOk=${pctOk ? 'Y' : 'N'} out: minute2daily + qa (err=${err})`;\n\nreturn [{ line1, line2, line3, summary: `${line1}\\n${line2}\\n${line3}` }];\n"
       },
       "id": "summary",
       "name": "3行摘要",

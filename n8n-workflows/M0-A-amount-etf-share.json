@@ -39,7 +39,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $json.baseUrl + '/api/runner/run' }}",
+        "url": "={{ $('设置来源').item.json.baseUrl + '/api/runner/run' }}",
         "sendBody": true,
         "bodyParameters": {
           "parameters": [
@@ -75,7 +75,7 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "={{ $node[\"设置来源\"].json.baseUrl + '/api/runner/journal?path=' + ($json.runJournalPath || $json.journal) }}",
+        "url": "={{ $('设置来源').item.json.baseUrl + '/api/runner/journal?path=' + ($json.runJournalPath || $json.journal) }}",
         "options": {}
       },
       "id": "get-journal",
