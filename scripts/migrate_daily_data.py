@@ -12,7 +12,9 @@ INDEX_SYMBOLS = {
 }
 
 ETF_SYMBOLS = {
-    "sh511130", "sh511260", "sh512480"
+    "sh511130", "sh511260", "sh512400", "sh512480",
+    "sh515120", "sh515880", "sh516010", "sh516160",
+    "sh516510", "sh562500", "sh563530"
 }
 
 def migrate_legacy_data():

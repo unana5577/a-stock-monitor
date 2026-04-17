@@ -31,7 +31,7 @@
       "typeVersion": 2,
       "position": [250, 150],
       "parameters": {
-        "jsCode": "const symbols = ['sh000001', 'sz399001', 'sz399006', 'sh000688', 'sh000300', 'sh000852', 'sh511130', 'sh511260', 'sh512480'];\nreturn symbols.map(s => ({ json: { symbol: s } }));"
+        "jsCode": "const symbols = [\n  'sh000001', 'sz399001', 'sz399006', 'sh000688', 'sh000300', 'sh000852', \n  'sh511130', 'sh511260', 'sh512400', 'sh512480', 'sh515120', 'sh515880', \n  'sh516010', 'sh516160', 'sh516510', 'sh562500', 'sh563530'\n];\nreturn symbols.map(s => ({ json: { symbol: s } }));"
       }
     },
     {

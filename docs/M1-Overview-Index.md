@@ -1,7 +1,37 @@
 # M1 阶段：大盘核心数据全景索引卡
 
-本文档专为你快速定位 M1 阶段的 5 条核心数据工作流而写。
+本文档专为你快速定位 M1 阶段的核心数据工作流与文件层级而写。
 **任何时候你找不到文件或不知道该点哪个，查这张表就够了。**
+
+---
+
+## 数据落盘终极目录树
+
+为了保证文件分类极其干净、严谨，所有的行情数据严格遵循 `data/<类别>/<周期>/<标的代码>/` 的对称层级结构落盘：
+
+```text
+data/
+  ├── market/                  # 宏观市场指标 (无具体标的)
+  │    ├── market_amount.jsonl     # 全市场成交额与ETF占比 (每5分钟追加)
+  │    └── minute/
+  │         └── breadth-cache.jsonl# 盘中涨跌家数情绪 (每5分钟追加)
+  │
+  ├── index/                   # 大盘宽基指数
+  │    ├── daily/
+  │    │    ├── sh000001/daily.jsonl
+  │    │    └── sz399001/daily.jsonl
+  │    └── minute/
+  │         ├── sh000001/2026-04-17.jsonl
+  │         └── sz399001/2026-04-17.jsonl
+  │
+  └── etf/                     # 行业与主题 ETF
+       ├── daily/
+       │    ├── sh511130/daily.jsonl
+       │    └── sh512480/daily.jsonl
+       └── minute/
+            ├── sh511130/2026-04-17.jsonl
+            └── sh512480/2026-04-17.jsonl
+```
 
 ---
 
@@ -37,13 +67,13 @@
 - **用途**：每天 15:01，用最后一次分时价，拼出今天的日线收盘价。
 - **导入 n8n 用的文件**：[n8n-workflows/M1-B-Minute2Daily.json](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/n8n-workflows/M1-B-Minute2Daily.json)
 - **底层 Python 脚本**：[treasolo/m1_minute_to_daily.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/treasolo/m1_minute_to_daily.py)
-- **抓下来的数据存在哪**：`data/index/<代码>/daily.jsonl`
+- **抓下来的数据存在哪**：`data/index/daily/<代码>/daily.jsonl`
 
 ### 5. 大盘指数与 ETF：晚间权威对账与回补 (共用)
 - **用途**：每天 18:00，去官方接口要最终结算日线，强制覆盖我们 15:01 抢发的数据，保证 100% 准确。支持对所有大盘指数与 ETF 的日线进行漏缺天数补齐。
 - **导入 n8n 用的文件**：[n8n-workflows/M1-E-Backfill-Universal.json](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/n8n-workflows/M1-E-Backfill-Universal.json)
 - **底层 Python 脚本**：[treasolo/m1_backfill.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/treasolo/m1_backfill.py)
-- **抓下来的数据存在哪**：与各自的日线是同一个文件 `data/index/<代码>/daily.jsonl` 或 `data/etf/<代码>/daily.jsonl`，直接覆盖更新。
+- **抓下来的数据存在哪**：与各自的日线是同一个文件 `data/index/daily/<代码>/daily.jsonl` 或 `data/etf/daily/<代码>/daily.jsonl`，直接覆盖更新。
 
 ---
 
@@ -59,14 +89,13 @@
 - **用途**：每天 15:01，用 ETF 的最后一次分时数据，生成当天的收盘日线。
 - **导入 n8n 用的文件**：[n8n-workflows/M1-D-ETF-Minute2Daily.json](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/n8n-workflows/M1-D-ETF-Minute2Daily.json)
 - **底层 Python 脚本**：[treasolo/m1_minute_to_daily_etf.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/treasolo/m1_minute_to_daily_etf.py)
-- **抓下来的数据存在哪**：`data/etf/<代码>/daily.jsonl`
+- **抓下来的数据存在哪**：`data/etf/daily/<代码>/daily.jsonl`
 
 ---
 
-## 附录：当前监控的 6 大核心指数对照表
+## 附录：当前监控的核心标的对照表
 
-这是上述工作流中 `<代码>` 所对应的具体指数，**如果找不到文件，请核对这 6 个代码目录**：
-
+### 1. 6 大核心宽基指数
 | 指数代码 | 指数名称 | 说明 |
 | :--- | :--- | :--- |
 | `sh000001` | 上证指数 | 核心大盘 |
@@ -75,3 +104,18 @@
 | `sh000688` | 科创50 | 核心大盘 |
 | `sh000300` | 沪深300 | 核心大盘 |
 | `sh000852` | 中证1000 | 核心大盘 |
+
+### 2. 11 大行业/主题 ETF
+| ETF 代码 | ETF 名称 | 说明 |
+| :--- | :--- | :--- |
+| `sh511130` | 30年国债ETF | 债市基准 |
+| `sh511260` | 10年国债ETF | 债市基准 |
+| `sh512400` | 医疗ETF | 行业主题 |
+| `sh512480` | 半导体ETF | 行业主题 |
+| `sh515120` | 创新药ETF | 行业主题 |
+| `sh515880` | 通信ETF | 行业主题 |
+| `sh516010` | 游戏ETF | 行业主题 |
+| `sh516160` | 新能源ETF | 行业主题 |
+| `sh516510` | 云计算ETF | 行业主题 |
+| `sh562500` | 机器人ETF | 行业主题 |
+| `sh563530` | 数字经济ETF | 行业主题 |
