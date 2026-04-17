@@ -3577,6 +3577,8 @@ const server = http.createServer(async (req, res) => {
         } else if (data.script === 'm1_market_amount.py') {
           args = ['scripts/m1_market_amount.py'];
           if (data.day) args.push('--day', data.day);
+        } else if (data.script === 'breadth_manager.py') {
+          args = ['scripts/breadth_manager.py', data.cmd || 'spot'];
         } else {
           res.statusCode = 400;
           return res.end(JSON.stringify({ error: 'unknown script' }));

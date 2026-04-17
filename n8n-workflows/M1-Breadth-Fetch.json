@@ -1,0 +1,53 @@
+{
+  "name": "M1-Breadth-Fetch",
+  "nodes": [
+    {
+      "id": "trigger",
+      "name": "定时触发",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [0, 0],
+      "parameters": { "rule": { "interval": [ { "field": "minutes", "minutesInterval": 5 } ] } }
+    },
+    {
+      "id": "manual",
+      "name": "手动触发",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 200]
+    },
+    {
+      "id": "http",
+      "name": "调用本地脚本",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [250, 100],
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8787/api/m1/run",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"script\": \"breadth_manager.py\",\n  \"cmd\": \"spot\"\n}",
+        "options": {}
+      }
+    },
+    {
+      "id": "parse",
+      "name": "输出日志",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 100],
+      "parameters": {
+        "jsCode": "return $input.all().map(item => {\n  let raw = item.json.stdout ? item.json.stdout.join('') : '{}';\n  let parsed = {};\n  try { parsed = JSON.parse(raw); } catch(e) {}\n  \n  let summary = `M1-Breadth ❌ 未知错误`;\n  if (parsed.ok === false) {\n    summary = `M1-Breadth ⏭️ 跳过: ${parsed.error}`;\n  } else if (parsed.ok) {\n    let d = parsed.data || {};\n    summary = `M1-Breadth ✅ 抓取成功\\n上涨: ${d.up} | 下跌: ${d.down} | 平盘: ${d.flat}`;\n  }\n  \n  return { json: { summary } };\n});"
+      }
+    }
+  ],
+  "connections": {
+    "定时触发": { "main": [ [ { "node": "调用本地脚本", "type": "main", "index": 0 } ] ] },
+    "手动触发": { "main": [ [ { "node": "调用本地脚本", "type": "main", "index": 0 } ] ] },
+    "调用本地脚本": { "main": [ [ { "node": "输出日志", "type": "main", "index": 0 } ] ] }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
