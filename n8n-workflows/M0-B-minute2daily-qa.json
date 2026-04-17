@@ -3,42 +3,28 @@
   "nodes": [
     {
       "parameters": {},
-      "id": "manual-trigger",
+      "id": "trigger",
       "name": "手动触发",
       "type": "n8n-nodes-base.manualTrigger",
       "typeVersion": 1,
-      "position": [
-        240,
-        260
-      ]
+      "position": [0, 0]
     },
     {
       "parameters": {
         "values": {
           "string": [
-            {
-              "name": "triggerSource",
-              "value": "pipelineId=m0-B"
-            },
-            {
-              "name": "baseUrl",
-              "value": "http://127.0.0.1:8787"
-            },
-            {
-              "name": "symbol",
-              "value": "sse"
-            }
+            { "name": "day", "value": "" },
+            { "name": "runId", "value": "" },
+            { "name": "source", "value": "n8n-manual" },
+            { "name": "symbol", "value": "sse" }
           ]
         }
       },
-      "id": "set-source",
-      "name": "设置参数",
+      "id": "set",
+      "name": "Set",
       "type": "n8n-nodes-base.set",
-      "typeVersion": 3.2,
-      "position": [
-        480,
-        260
-      ]
+      "typeVersion": 1,
+      "position": [200, 0]
     },
     {
       "parameters": {
@@ -47,142 +33,81 @@
         "sendBody": true,
         "bodyParameters": {
           "parameters": [
-            {
-              "name": "plan",
-              "value": "m0m1"
-            },
-            {
-              "name": "triggerType",
-              "value": "n8n"
-            },
-            {
-              "name": "triggerSource",
-              "value": "={{ $json.triggerSource }}"
-            },
-            {
-              "name": "steps",
-              "value": "m0-B"
-            }
+            { "name": "plan", "value": "m0m1" },
+            { "name": "triggerType", "value": "n8n" },
+            { "name": "triggerSource", "value": "={{ $('Set').item.json.source }}" },
+            { "name": "steps", "value": "m0-B" },
+            { "name": "day", "value": "={{ $('Set').item.json.day }}" },
+            { "name": "runId", "value": "={{ $('Set').item.json.runId }}" }
           ]
         },
         "options": {}
       },
-      "id": "run-runner",
-      "name": "运行Runner",
+      "id": "http",
+      "name": "HTTP Request",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
-      "position": [
-        720,
-        260
-      ]
+      "position": [400, 0]
     },
     {
       "parameters": {
-        "method": "GET",
-        "url": "={{ 'http://127.0.0.1:8787/api/runner/journal?path=' + ($json.runJournalPath || $json.journal) }}",
-        "options": {}
+        "jsCode": "return [$input.item.json];"
       },
-      "id": "get-journal",
-      "name": "获取RunJournal",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.1,
-      "position": [
-        960,
-        260
-      ]
-    },
-    {
-      "parameters": {
-        "method": "GET",
-        "url": "={{ 'http://127.0.0.1:8787/api/minute/' + ($('设置参数').item.json.symbol || 'sse') }}",
-        "options": {}
-      },
-      "id": "get-minute",
-      "name": "获取分钟线",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.1,
-      "position": [
-        960,
-        440
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "const run = $node[\"运行Runner\"].json;\nconst journalWrap = $node[\"获取RunJournal\"].json;\nconst journal = journalWrap?.journal || null;\nconst minute = $node[\"获取分钟线\"].json;\n\nconst iconMap = { success: '✅', partial: '⚠️', failed: '❌' };\nconst icon = iconMap[run.status] || '❓';\n\nconst asOfStr = String(run.asOf || '');\nconst asOf = asOfStr.includes('T') ? asOfStr.split('T')[1].slice(0,5) : '15:00';\n\nconst series = Array.isArray(minute.series) ? minute.series : [];\nconst pts = series.length;\nconst last = pts ? series[pts - 1] : null;\nconst close = last?.close ?? null;\nconst amt = 0;\n\nconst hasCloseBar = !!(last?.time && String(last.time).includes('15:00'));\nconst amountOk = amt > 0;\nconst prevClose = minute.prevClose;\nconst pctOk = prevClose != null && Number(prevClose) > 0;\n\nlet failStep = 'None';\nlet err = 'None';\nif (journal && Array.isArray(journal.steps)) {\n  const failed = journal.steps.find(s => s.status === 'failed');\n  if (failed) {\n    failStep = failed.name;\n    err = failed.error?.message || (failed.warnings || []).find(w => w.severity === 'error')?.message || 'failed';\n  }\n}\n\nconst line1 = `M0-B ${icon} day=${run.day} asOf=${asOf} symbol=${$('设置参数').item.json.symbol}`;\nconst line2 = `pts=${pts} close=${close ?? 'NA'} amt=${amt}`;\nconst line3 = `QA: closeBar=${hasCloseBar ? 'Y' : 'N'} amountOk=${amountOk ? 'Y' : 'N'} pctOk=${pctOk ? 'Y' : 'N'} out: minute2daily + qa (err=${err})`;\n\nreturn [{ line1, line2, line3, summary: `${line1}\\n${line2}\\n${line3}` }];\n"
-      },
-      "id": "summary",
-      "name": "3行摘要",
+      "id": "parse",
+      "name": "Parse",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [
-        1220,
-        260
-      ]
+      "position": [600, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.status }}",
+              "operation": "equals",
+              "value2": "failed"
+            }
+          ]
+        }
+      },
+      "id": "if",
+      "name": "IF",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [800, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $input.item.json;\nconst e = d.enriched || {};\nconst asOf = String(d.asOf || '').includes('T') ? String(d.asOf).split('T')[1].slice(0,5) : '15:00';\nconst symbol = e.minute?.symbol || 'sse';\nconst pts = e.minute?.pts || 0; const close = e.minute?.close || 'NA'; const amt = e.minute?.amt || 0;\nconst closeBar = e.minute?.hasCloseBar ? 'Y' : 'N'; const amountOk = e.minute?.amountOk ? 'Y' : 'N'; const pctOk = e.minute?.pctOk ? 'Y' : 'N';\nlet failStep = 'None'; let err = 'None';\nif (e.journal?.steps) {\n  const failed = e.journal.steps.find(s => s.status === 'failed');\n  if (failed) { failStep = failed.name; err = failed.error?.message || (failed.warnings || []).find(w => w.severity === 'error')?.message || 'failed'; }\n}\nconst line1 = `M0-B ❌ day=${d.day} asOf=${asOf} symbol=${symbol}`;\nconst line2 = `pts=${pts} close=${close} amt=${amt}`;\nconst line3 = `QA: closeBar=${closeBar} amountOk=${amountOk} pctOk=${pctOk} out: minute2daily + qa (err=${err})`;\nreturn [{ summary: `${line1}\\n${line2}\\n${line3}` }];"
+      },
+      "id": "summary-fail",
+      "name": "记录失败并 stop",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1000, -100]
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $input.item.json;\nconst e = d.enriched || {};\nconst icon = d.status === 'partial' ? '⚠️' : '✅';\nconst asOf = String(d.asOf || '').includes('T') ? String(d.asOf).split('T')[1].slice(0,5) : '15:00';\nconst symbol = e.minute?.symbol || 'sse';\nconst pts = e.minute?.pts || 0; const close = e.minute?.close || 'NA'; const amt = e.minute?.amt || 0;\nconst closeBar = e.minute?.hasCloseBar ? 'Y' : 'N'; const amountOk = e.minute?.amountOk ? 'Y' : 'N'; const pctOk = e.minute?.pctOk ? 'Y' : 'N';\nconst line1 = `M0-B ${icon} day=${d.day} asOf=${asOf} symbol=${symbol}`;\nconst line2 = `pts=${pts} close=${close} amt=${amt}`;\nconst line3 = `QA: closeBar=${closeBar} amountOk=${amountOk} pctOk=${pctOk} out: minute2daily + qa`;\nreturn [{ summary: `${line1}\\n${line2}\\n${line3}` }];"
+      },
+      "id": "summary-success",
+      "name": "输出人类摘要",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1000, 100]
     }
   ],
   "connections": {
-    "手动触发": {
+    "手动触发": { "main": [ [ { "node": "Set", "type": "main", "index": 0 } ] ] },
+    "Set": { "main": [ [ { "node": "HTTP Request", "type": "main", "index": 0 } ] ] },
+    "HTTP Request": { "main": [ [ { "node": "Parse", "type": "main", "index": 0 } ] ] },
+    "Parse": { "main": [ [ { "node": "IF", "type": "main", "index": 0 } ] ] },
+    "IF": {
       "main": [
-        [
-          {
-            "node": "设置参数",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "设置参数": {
-      "main": [
-        [
-          {
-            "node": "运行Runner",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "运行Runner": {
-      "main": [
-        [
-          {
-            "node": "获取RunJournal",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "获取分钟线",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "获取RunJournal": {
-      "main": [
-        [
-          {
-            "node": "3行摘要",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "获取分钟线": {
-      "main": [
-        [
-          {
-            "node": "3行摘要",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        [ { "node": "记录失败并 stop", "type": "main", "index": 0 } ],
+        [ { "node": "输出人类摘要", "type": "main", "index": 0 } ]
       ]
     }
-  },
-  "active": false,
-  "settings": {},
-  "versionId": "m0-b-v1"
+  }
 }

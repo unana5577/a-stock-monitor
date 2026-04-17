@@ -3,38 +3,27 @@
   "nodes": [
     {
       "parameters": {},
-      "id": "manual-trigger",
+      "id": "trigger",
       "name": "手动触发",
       "type": "n8n-nodes-base.manualTrigger",
       "typeVersion": 1,
-      "position": [
-        240,
-        260
-      ]
+      "position": [0, 0]
     },
     {
       "parameters": {
         "values": {
           "string": [
-            {
-              "name": "triggerSource",
-              "value": "pipelineId=m0-A"
-            },
-            {
-              "name": "baseUrl",
-              "value": "http://127.0.0.1:8787"
-            }
+            { "name": "day", "value": "" },
+            { "name": "runId", "value": "" },
+            { "name": "source", "value": "n8n-manual" }
           ]
         }
       },
-      "id": "set-source",
-      "name": "设置来源",
+      "id": "set",
+      "name": "Set",
       "type": "n8n-nodes-base.set",
-      "typeVersion": 3.2,
-      "position": [
-        480,
-        260
-      ]
+      "typeVersion": 1,
+      "position": [200, 0]
     },
     {
       "parameters": {
@@ -43,173 +32,81 @@
         "sendBody": true,
         "bodyParameters": {
           "parameters": [
-            {
-              "name": "plan",
-              "value": "m0m1"
-            },
-            {
-              "name": "triggerType",
-              "value": "n8n"
-            },
-            {
-              "name": "triggerSource",
-              "value": "={{ $json.triggerSource }}"
-            },
-            {
-              "name": "steps",
-              "value": "m0-A"
-            }
+            { "name": "plan", "value": "m0m1" },
+            { "name": "triggerType", "value": "n8n" },
+            { "name": "triggerSource", "value": "={{ $('Set').item.json.source }}" },
+            { "name": "steps", "value": "m0-A" },
+            { "name": "day", "value": "={{ $('Set').item.json.day }}" },
+            { "name": "runId", "value": "={{ $('Set').item.json.runId }}" }
           ]
         },
         "options": {}
       },
-      "id": "run-runner",
-      "name": "运行Runner",
+      "id": "http",
+      "name": "HTTP Request",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
-      "position": [
-        720,
-        260
-      ]
+      "position": [400, 0]
     },
     {
       "parameters": {
-        "method": "GET",
-        "url": "={{ 'http://127.0.0.1:8787/api/runner/journal?path=' + ($json.runJournalPath || $json.journal) }}",
-        "options": {}
+        "jsCode": "return [$input.item.json];"
       },
-      "id": "get-journal",
-      "name": "获取RunJournal",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.1,
-      "position": [
-        960,
-        260
-      ]
-    },
-    {
-      "parameters": {
-        "method": "GET",
-        "url": "http://127.0.0.1:8787/api/runner/file?path=data/market/market-amount-daily.jsonl",
-        "options": {}
-      },
-      "id": "get-market-amount",
-      "name": "读取市场成交额文件",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.1,
-      "position": [
-        960,
-        420
-      ]
-    },
-    {
-      "parameters": {
-        "method": "GET",
-        "url": "={{ 'http://127.0.0.1:8787/api/runner/file?path=data/m0/' + $node['运行Runner'].json.day + '/' + $node['运行Runner'].json.runId + '/etf_amount_daily.jsonl' }}",
-        "options": {}
-      },
-      "id": "get-etf-amount",
-      "name": "读取ETF成交额文件",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.1,
-      "position": [
-        960,
-        580
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "const run = $node[\"运行Runner\"].json;\nconst journalWrap = $node[\"获取RunJournal\"].json;\nconst journal = journalWrap?.journal || null;\n\nconst marketText = $node[\"读取市场成交额文件\"].json?.text || '';\nconst etfText = $node[\"读取ETF成交额文件\"].json?.text || '';\n\nconst iconMap = { success: '✅', partial: '⚠️', failed: '❌' };\nconst icon = iconMap[run.status] || '❓';\n\nconst asOfStr = String(run.asOf || '');\nconst asOf = asOfStr.includes('T') ? asOfStr.split('T')[1].slice(0,5) : '15:00';\n\nlet market = null;\ntry {\n  const lines = marketText.split('\\n').map(s => s.trim()).filter(Boolean);\n  const last = JSON.parse(lines[lines.length - 1]);\n  market = Number(last.total ?? last.total_amount ?? 0);\n} catch (e) {\n  market = null;\n}\n\nlet etfD = null;\ntry {\n  const lines = etfText.split('\\n').map(s => s.trim()).filter(Boolean);\n  const last = JSON.parse(lines[lines.length - 1]);\n  if (Array.isArray(last)) etfD = Number(last[1] || 0);\n  else etfD = Number(last.total ?? last.amount ?? 0);\n} catch (e) {\n  etfD = null;\n}\n\nconst etfM = etfD != null && Number.isFinite(etfD) && etfD > 0 ? 'OK' : 'NA';\nlet share = null;\nif (market != null && etfD != null && Number.isFinite(market) && Number.isFinite(etfD) && market > 0) {\n  share = ((etfD / market) * 100).toFixed(2);\n}\n\nlet failStep = 'None';\nlet err = 'None';\nif (journal && Array.isArray(journal.steps)) {\n  const failed = journal.steps.find(s => s.status === 'failed');\n  if (failed) {\n    failStep = failed.name;\n    err = failed.error?.message || (failed.warnings || []).find(w => w.severity === 'error')?.message || 'failed';\n  } else {\n    const merge = journal.steps.find(s => s.name === 'amount_merge');\n    const outs = (merge?.outputs || []).map(o => o.path).filter(Boolean);\n    const need = [\n      `data/market/market-amount-daily.jsonl`,\n      `data/m0/${run.day}/${run.runId}/etf_amount_minute.jsonl`,\n      `data/m0/${run.day}/${run.runId}/etf_amount_daily.jsonl`,\n    ];\n    const missing = need.filter(p => !outs.includes(p));\n    if (missing.length > 0) {\n      failStep = 'amount_merge';\n      err = 'Missing outputs: ' + missing.join(', ');\n    }\n  }\n}\n\nconst line1 = `M0-A ${icon} day=${run.day} asOf=${asOf}`;\nconst line2 = `market=${market ?? 'NA'} etfD=${etfD ?? 'NA'} etfM=${etfM} share=${share ?? 'NA'}%`;\nconst line3 = `out: amounts.json + etf_minute + etf_daily (failStep=${failStep} err=${err})`;\n\nreturn [{ line1, line2, line3, summary: `${line1}\\n${line2}\\n${line3}` }];\n"
-      },
-      "id": "summary",
-      "name": "3行摘要",
+      "id": "parse",
+      "name": "Parse",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [
-        1220,
-        260
-      ]
+      "position": [600, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.status }}",
+              "operation": "equals",
+              "value2": "failed"
+            }
+          ]
+        }
+      },
+      "id": "if",
+      "name": "IF",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [800, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $input.item.json;\nconst e = d.enriched || {};\nconst asOf = String(d.asOf || '').includes('T') ? String(d.asOf).split('T')[1].slice(0,5) : '15:00';\nconst market = e.market?.total || 'NA';\nconst etfD = e.etf?.total || 'NA';\nconst etfM = etfD !== 'NA' ? 'OK' : 'NA';\nconst share = (market !== 'NA' && etfD !== 'NA' && market > 0) ? ((etfD / market) * 100).toFixed(2) : 'NA';\nlet failStep = 'None'; let err = 'None';\nif (e.journal?.steps) {\n  const failed = e.journal.steps.find(s => s.status === 'failed');\n  if (failed) { failStep = failed.name; err = failed.error?.message || (failed.warnings || []).find(w => w.severity === 'error')?.message || 'failed'; }\n}\nconst line1 = `M0-A ❌ day=${d.day} asOf=${asOf}`;\nconst line2 = `market=${market} etfD=${etfD} etfM=${etfM} share=${share === 'NA' ? 'NA' : share + '%'}`;\nconst line3 = `out: amounts.json + etf_minute + etf_daily (failStep=${failStep} err=${err})`;\nreturn [{ summary: `${line1}\\n${line2}\\n${line3}` }];"
+      },
+      "id": "summary-fail",
+      "name": "记录失败并 stop",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1000, -100]
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $input.item.json;\nconst e = d.enriched || {};\nconst icon = d.status === 'partial' ? '⚠️' : '✅';\nconst asOf = String(d.asOf || '').includes('T') ? String(d.asOf).split('T')[1].slice(0,5) : '15:00';\nconst market = e.market?.total || 'NA';\nconst etfD = e.etf?.total || 'NA';\nconst etfM = etfD !== 'NA' ? 'OK' : 'NA';\nconst share = (market !== 'NA' && etfD !== 'NA' && market > 0) ? ((etfD / market) * 100).toFixed(2) : 'NA';\nconst line1 = `M0-A ${icon} day=${d.day} asOf=${asOf}`;\nconst line2 = `market=${market} etfD=${etfD} etfM=${etfM} share=${share === 'NA' ? 'NA' : share + '%'}`;\nconst line3 = `out: amounts.json + etf_minute + etf_daily`;\nreturn [{ summary: `${line1}\\n${line2}\\n${line3}` }];"
+      },
+      "id": "summary-success",
+      "name": "输出人类摘要",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1000, 100]
     }
   ],
   "connections": {
-    "手动触发": {
+    "手动触发": { "main": [ [ { "node": "Set", "type": "main", "index": 0 } ] ] },
+    "Set": { "main": [ [ { "node": "HTTP Request", "type": "main", "index": 0 } ] ] },
+    "HTTP Request": { "main": [ [ { "node": "Parse", "type": "main", "index": 0 } ] ] },
+    "Parse": { "main": [ [ { "node": "IF", "type": "main", "index": 0 } ] ] },
+    "IF": {
       "main": [
-        [
-          {
-            "node": "设置来源",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "设置来源": {
-      "main": [
-        [
-          {
-            "node": "运行Runner",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "运行Runner": {
-      "main": [
-        [
-          {
-            "node": "获取RunJournal",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "读取市场成交额文件",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "读取ETF成交额文件",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "获取RunJournal": {
-      "main": [
-        [
-          {
-            "node": "3行摘要",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "读取市场成交额文件": {
-      "main": [
-        [
-          {
-            "node": "3行摘要",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "读取ETF成交额文件": {
-      "main": [
-        [
-          {
-            "node": "3行摘要",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        [ { "node": "记录失败并 stop", "type": "main", "index": 0 } ],
+        [ { "node": "输出人类摘要", "type": "main", "index": 0 } ]
       ]
     }
-  },
-  "active": false,
-  "settings": {},
-  "versionId": "m0-a-v1"
+  }
 }
