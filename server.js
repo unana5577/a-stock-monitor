@@ -3570,8 +3570,8 @@ const server = http.createServer(async (req, res) => {
           if (data.symbols) args.push('--symbols', data.symbols);
           if (data.day) args.push('--day', data.day);
           if (data.force) args.push('--force');
-        } else if (data.script === 'm1_backfill_index.py') {
-          args = ['treasolo/m1_backfill_index.py', '--symbol', data.symbol, '--missing-window-days', '30'];
+        } else if (data.script === 'm1_backfill.py') {
+          args = ['treasolo/m1_backfill.py', '--symbol', data.symbol, '--missing-window-days', '30'];
           if (data.applyFix) args.push('--apply-fix', '--write');
           if (data.expectEnd) args.push('--expect-end', data.expectEnd);
         } else if (data.script === 'm1_minute_fetch_etf.py') {

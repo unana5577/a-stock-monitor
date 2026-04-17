@@ -39,11 +39,11 @@
 - **底层 Python 脚本**：[treasolo/m1_minute_to_daily.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/treasolo/m1_minute_to_daily.py)
 - **抓下来的数据存在哪**：`data/m1/index/<代码>/daily.jsonl`
 
-### 5. 大盘指数：晚间权威对账与回补
-- **用途**：每天 18:00，去腾讯官方接口要最终结算日线，强制覆盖我们 15:01 抢发的数据，保证 100% 准确。
-- **导入 n8n 用的文件**：[n8n-workflows/M1-Backfill-Index.json](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/n8n-workflows/M1-Backfill-Index.json)
-- **底层 Python 脚本**：[treasolo/m1_backfill_index.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/treasolo/m1_backfill_index.py)
-- **抓下来的数据存在哪**：与第4条是同一个文件 `data/m1/index/<代码>/daily.jsonl`，直接覆盖更新。
+### 5. 大盘指数与 ETF：晚间权威对账与回补 (共用)
+- **用途**：每天 18:00，去官方接口要最终结算日线，强制覆盖我们 15:01 抢发的数据，保证 100% 准确。支持对所有大盘指数与 ETF 的日线进行漏缺天数补齐。
+- **导入 n8n 用的文件**：[n8n-workflows/M1-E-Backfill-Universal.json](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/n8n-workflows/M1-E-Backfill-Universal.json)
+- **底层 Python 脚本**：[treasolo/m1_backfill.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/treasolo/m1_backfill.py)
+- **抓下来的数据存在哪**：与各自的日线是同一个文件 `data/m1/index/<代码>/daily.jsonl` 或 `data/m1/etf/<代码>/daily.jsonl`，直接覆盖更新。
 
 ---
 
