@@ -462,8 +462,36 @@ def run_cmd(args: argparse.Namespace) -> int:
 
     if "minute_fetch" in steps and not failed:
         s0 = beijing_now()
-        s1 = beijing_now()
-        add_step("minute_fetch", "success", {"_startedAt": s0.isoformat(), "_endedAt": s1.isoformat()}, outputs=[], warnings=[], error=None)
+        
+        symbol = "sse" # TODO: 从参数传入
+        minute_file = project_root / f"data/market/minute/{symbol}/{day}.jsonl"
+        minute_file.parent.mkdir(parents=True, exist_ok=True)
+        
+        fetch_warnings = []
+        try:
+            import akshare as ak
+            df = ak.stock_zh_index_spot_sina()
+            df_sh = df[df['代码'] == 'sh000001']
+            if df_sh.empty:
+                fetch_warnings.append(WarningItem(code="FETCH_EMPTY", severity="error", message="akshare 未返回上证指数实时数据", paths=[]))
+                failed = True
+            else:
+                # 构造符合要求的分时结构
+                row = df_sh.iloc[0]
+                ts_str = beijing_now().replace(second=0, microsecond=0).isoformat()
+                record = {
+                    "time": ts_str,
+                    "price": float(row["最新价"]),
+                    "volume": float(row["成交量"]),
+                    "amount": float(row["成交额"])
+                }
+                with open(minute_file, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(record) + "\n")
+        except Exception as e:
+            fetch_warnings.append(WarningItem(code="FETCH_ERROR", severity="error", message=f"抓取分时数据异常: {e}", paths=[]))
+            failed = True
+            
+        add_step("minute_fetch", "success" if not failed else "failed", {"_startedAt": s0.isoformat(), "_endedAt": beijing_now().isoformat()}, outputs=[{"type": "file", "path": str(minute_file.relative_to(project_root))}] if not failed else [], warnings=fetch_warnings, error={"message": "minute_fetch failed"} if failed else None)
     elif "minute_fetch" in steps:
         add_step("minute_fetch", "skipped", {"_startedAt": now_dt.isoformat(), "_endedAt": now_dt.isoformat()}, outputs=[], warnings=[], error=None)
 
@@ -501,7 +529,10 @@ def run_cmd(args: argparse.Namespace) -> int:
                     # 3. 提取收盘价、判断是否有 15:00 的 bar
                     last_bar = lines[-1]
                     close_price = float(last_bar.get("close", last_bar.get("price", 0)))
-                    has_close_bar = any("15:00" in str(r.get("time", "")) for r in lines)
+                    
+                    # 取 asOf 的前 5 个字符，例如 "15:00"
+                    target_time = as_of.split("T")[1][:5] if "T" in as_of else as_of[:5]
+                    has_close_bar = any(target_time in str(r.get("time", "")) for r in lines)
                     
                     # 简单判断一些指标 (可根据实际需求调整)
                     amt = float(last_bar.get("amount", 0)) # 这里如果是指数，可能有 amount 字段，或者按规则算
@@ -511,7 +542,7 @@ def run_cmd(args: argparse.Namespace) -> int:
                     pct_ok = True 
                     
                     if not has_close_bar:
-                        qa_warnings.append(WarningItem(code="NO_CLOSE_BAR", severity="warn", message=f"分时数据缺少 15:00 的收盘 bar", paths=[str(minute_file.relative_to(project_root))]))
+                        qa_warnings.append(WarningItem(code="NO_CLOSE_BAR", severity="warn", message=f"分时数据缺少 {target_time} 的收盘 bar", paths=[str(minute_file.relative_to(project_root))]))
                         
                     # 4. 生成日线并落盘
                     daily_record = {
