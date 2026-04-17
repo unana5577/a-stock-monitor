@@ -18,7 +18,7 @@ treasolo/
 ├── datasets/              # 数据集层：定义业务数据结构
 │   ├── providers/         # 内部包：数据源对接 (akshare, sina, tencent 等)
 │   └── qa/                # 内部包：强校验逻辑 (数据质量、空值、异常波动)
-└── storage/               # 存储层：落盘与读取 (data/m1/, data/runs/ 等的读写)
+└── data/                  # 内部包：数据落盘与读取封装 (封装 data/m1/, data/runs/ 等的读写)
 ```
 
 **说明**: 数据源对接 (`providers`) 和 强校验 (`qa`) 确实应该属于 `datasets` 模块的下层实现，因为它们都是为了保证“吐出合格的数据集”而存在的。
