@@ -4,13 +4,13 @@ services:
     container_name: n8n-m0
     restart: unless-stopped
     ports:
-      - "5678:5678"
+      - "5679:5678"
     environment:
       - N8N_HOST=0.0.0.0
       - N8N_PORT=5678
       - N8N_PROTOCOL=http
       - NODE_ENV=production
-      - WEBHOOK_URL=http://localhost:5678/
+      - WEBHOOK_URL=http://localhost:5679/
       - GENERIC_TIMEZONE=Asia/Shanghai
       - EXECUTIONS_DATA_SAVE_ON_ERROR=all
       - EXECUTIONS_DATA_SAVE_ON_SUCCESS=all
