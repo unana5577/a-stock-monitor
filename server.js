@@ -3574,6 +3574,9 @@ const server = http.createServer(async (req, res) => {
           args = ['scripts/m1_backfill_index.py', '--symbol', data.symbol, '--missing-window-days', '30'];
           if (data.applyFix) args.push('--apply-fix', '--write');
           if (data.expectEnd) args.push('--expect-end', data.expectEnd);
+        } else if (data.script === 'm1_market_amount.py') {
+          args = ['scripts/m1_market_amount.py'];
+          if (data.day) args.push('--day', data.day);
         } else {
           res.statusCode = 400;
           return res.end(JSON.stringify({ error: 'unknown script' }));
