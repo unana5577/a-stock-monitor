@@ -136,16 +136,16 @@ def run_one(symbol: str, write: bool, missing_window_days: int, expect_end: str 
     
     if is_index:
         name = INDEX_SYMBOLS[symbol]
-        out_root = PROJECT_ROOT / "data/index"
+        out_root = PROJECT_ROOT / "data/index/daily"
     elif is_etf:
         name = ETF_SYMBOLS[symbol]
-        out_root = PROJECT_ROOT / "data/etf"
+        out_root = PROJECT_ROOT / "data/etf/daily"
     else:
         # 如果是新增的没有配置的 ETF，自动按照前缀判断
         if symbol.startswith("sh5") or symbol.startswith("sz1"):
             is_etf = True
             name = f"未知ETF({symbol})"
-            out_root = PROJECT_ROOT / "data/etf"
+            out_root = PROJECT_ROOT / "data/etf/daily"
         else:
             print(f"⚠️ 未知的 symbol 类型: {symbol}")
             return 1
@@ -155,30 +155,14 @@ def run_one(symbol: str, write: bool, missing_window_days: int, expect_end: str 
     symbol_dir = out_root / symbol
     daily_file = symbol_dir / "daily.jsonl"
     
-    # 1. 优先读取标准 M1 目录下的 daily.jsonl
+    # 1. 强制只读取标准 M1 目录下的 daily.jsonl
+    # 旧目录兜底逻辑已在此版本删除，确保路径绝对纯净
     try:
         rows = parse_jsonl(daily_file)
         print(f"  [读取底表] 成功加载 {daily_file.relative_to(PROJECT_ROOT)}")
     except FileNotFoundError:
-        # 2. 如果没有，针对 Index/ETF 尝试读取历史遗留文件
-        legacy_index_file = PROJECT_ROOT / f"data/index_daily/index_{symbol[-6:]}.jsonl"
-        legacy_etf_file = PROJECT_ROOT / f"data/etf_daily/etf_{symbol[-6:]}.jsonl"
-        
-        if is_index and legacy_index_file.exists():
-            try:
-                rows = parse_jsonl(legacy_index_file)
-                print(f"  [读取底表] 成功加载历史大盘底表 {legacy_index_file.relative_to(PROJECT_ROOT)}")
-            except Exception:
-                rows = []
-        elif is_etf and legacy_etf_file.exists():
-            try:
-                rows = parse_jsonl(legacy_etf_file)
-                print(f"  [读取底表] 成功加载历史ETF底表 {legacy_etf_file.relative_to(PROJECT_ROOT)}")
-            except Exception:
-                rows = []
-        else:
-            print(f"  ⚠️ 无任何底表 ({daily_file})，准备全量初始化...")
-            rows = []
+        print(f"  ⚠️ 无任何底表 ({daily_file})，准备全量初始化...")
+        rows = []
             
     cleaned = compute_pct(rows)
     dates = [r["date"] for r in cleaned]
