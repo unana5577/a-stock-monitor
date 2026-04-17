@@ -102,9 +102,11 @@ def fetch_breadth_spot():
 
 
 def save_to_cache_jsonl(data, phase):
-    """保存分时数据到data/minute/breadth-cache.jsonl"""
+    """保存分时数据到data/market/minute/breadth-cache.jsonl"""
     project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    cache_file = os.path.join(project_dir, "data", "minute", "breadth-cache.jsonl")
+    cache_dir = os.path.join(project_dir, "data", "market", "minute")
+    os.makedirs(cache_dir, exist_ok=True)
+    cache_file = os.path.join(cache_dir, "breadth-cache.jsonl")
 
     now = datetime.now()
     record = {
@@ -127,8 +129,10 @@ def save_to_cache_jsonl(data, phase):
 def save_to_history(data, phase):
     """保存快照到历史文件（区分早盘/午盘）"""
     project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    history_file = os.path.join(project_dir, "data", "market", "breadth-history.jsonl")
-    cache_json = os.path.join(project_dir, "data", "breadth-cache.json")
+    history_dir = os.path.join(project_dir, "data", "market")
+    os.makedirs(history_dir, exist_ok=True)
+    history_file = os.path.join(history_dir, "breadth-history.jsonl")
+    cache_json = os.path.join(history_dir, "breadth-cache.json")
 
     now = datetime.now()
     day = now.strftime("%Y-%m-%d")
@@ -200,9 +204,12 @@ def cmd_snapshot():
 
     phase = get_market_phase()
     # 只在11:30和15:00记录
-    if phase not in ["morning", "afternoon"]:
+    if phase not in ["morning", "afternoon"] and '--force' not in sys.argv:
         print(json.dumps({"ok": False, "error": f"非快照时段(phase={phase})"}))
         return 0
+
+    if '--force' in sys.argv and phase not in ["morning", "afternoon"]:
+        phase = "afternoon" # 强制执行时默认存为午盘快照
 
     data = fetch_breadth_spot()
     if not data.get("ok"):
