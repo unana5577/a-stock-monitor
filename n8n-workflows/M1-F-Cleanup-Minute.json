@@ -1,0 +1,55 @@
+{
+  "name": "M1-F-Cleanup-Minute (18:30)",
+  "nodes": [
+    {
+      "id": "trigger",
+      "name": "定时触发",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [0, 0],
+      "parameters": {
+        "rule": { "interval": [ { "field": "cronExpression", "expression": "30 18 * * 1-5" } ] }
+      }
+    },
+    {
+      "id": "manual",
+      "name": "手动触发",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 160]
+    },
+    {
+      "id": "http",
+      "name": "执行清理脚本",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [200, 80],
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8787/api/m1/run",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"script\": \"cleanup_minute_files.py\",\n  \"keepDays\": 3,\n  \"apply\": true\n}",
+        "options": {}
+      }
+    },
+    {
+      "id": "parse",
+      "name": "输出日志",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [400, 80],
+      "parameters": {
+        "jsCode": "return $input.all().map(item => {\n  let raw = item.json.stdout ? item.json.stdout.join('\\n') : '';\n  let summary = `M1-F ❌ 未知错误`;\n  \n  if (raw.includes('任务结束。共处理')) {\n    const match = raw.match(/任务结束。共处理 \\(删除\\/清空\\) (\\d+) 个目标。/);\n    let oldestInfo = \"\";\n    const indexMatch = raw.match(/Index 分时目录[\\s\\S]*?最远保留至: (\\d{4}-\\d{2}-\\d{2})/);\n    const etfMatch = raw.match(/ETF 分时目录[\\s\\S]*?最远保留至: (\\d{4}-\\d{2}-\\d{2})/);\n    if (indexMatch) oldestInfo += `\\n大盘保留至: ${indexMatch[1]}`;\n    if (etfMatch) oldestInfo += `\\nETF保留至: ${etfMatch[1]}`;\n    \n    if (match) {\n      summary = `M1-F ✅ 分时清理完毕\\n共删除了 ${match[1]} 个历史文件，保留最近3天。${oldestInfo}`;\n    }\n  } else if (raw.includes('❌')) {\n    summary = `M1-F ❌ 清理失败: ${raw.split('\\n').find(l => l.includes('❌'))}`;\n  }\n  \n  return { json: { summary } };\n});"
+      }
+    }
+  ],
+  "connections": {
+    "定时触发": { "main": [ [ { "node": "执行清理脚本", "type": "main", "index": 0 } ] ] },
+    "手动触发": { "main": [ [ { "node": "执行清理脚本", "type": "main", "index": 0 } ] ] },
+    "执行清理脚本": { "main": [ [ { "node": "输出日志", "type": "main", "index": 0 } ] ] }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
