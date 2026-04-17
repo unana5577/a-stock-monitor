@@ -26,7 +26,6 @@ INDEX_SPECS: list[IndexLegacySpec] = [
     IndexLegacySpec(symbol="sh000688", name="科创50", legacy_file=PROJECT_ROOT / "data/index_daily/index_000688.jsonl"),
     IndexLegacySpec(symbol="sh000300", name="沪深300", legacy_file=PROJECT_ROOT / "data/index_daily/index_000300.jsonl"),
     IndexLegacySpec(symbol="sh000852", name="中证1000", legacy_file=PROJECT_ROOT / "data/index_daily/index_000852.jsonl"),
-    IndexLegacySpec(symbol="sz399303", name="国证2000", legacy_file=PROJECT_ROOT / "data/index_daily/index_399303.jsonl"),
 ]
 
 

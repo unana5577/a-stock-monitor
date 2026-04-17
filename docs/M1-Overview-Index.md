@@ -16,13 +16,13 @@
 ## 5 条核心工作流明细表
 
 ### 1. 全市场成交额抓取
-- **用途**：每 5 分钟算一次“全市场成交额”和“ETF占比”。
+- **用途**：每 5 分钟算一次“全市场成交额”和“ETF占比”。(注：开盘时验证)
 - **导入 n8n 用的文件**：[n8n-workflows/M1-Market-Amount.json](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/n8n-workflows/M1-Market-Amount.json)
 - **底层 Python 脚本**：[treasolo/m1_market_amount.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/treasolo/m1_market_amount.py)
 - **抓下来的数据存在哪**：`data/m1/market/market_amount.jsonl`
 
 ### 2. 市场涨跌情绪抓取
-- **用途**：每 5 分钟算一次“上涨/下跌/平盘家数”。
+- **用途**：每 5 分钟算一次“上涨/下跌/平盘家数”。(注：已按照“麻烦的接口.md”使用新浪全市场接口，需开盘验证)
 - **导入 n8n 用的文件**：[n8n-workflows/M1-Breadth-Fetch.json](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/n8n-workflows/M1-Breadth-Fetch.json)
 - **底层 Python 脚本**：[treasolo/breadth_manager.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/treasolo/breadth_manager.py)
 - **抓下来的数据存在哪**：`data/minute/breadth-cache.jsonl`
@@ -47,9 +47,9 @@
 
 ---
 
-## 附录：当前监控的 7 大宽基指数对照表
+## 附录：当前监控的 6 大核心指数对照表
 
-这是上述工作流中 `<代码>` 所对应的具体指数，**如果找不到文件，请核对这 7 个代码目录**：
+这是上述工作流中 `<代码>` 所对应的具体指数，**如果找不到文件，请核对这 6 个代码目录**：
 
 | 指数代码 | 指数名称 | 说明 |
 | :--- | :--- | :--- |
@@ -57,6 +57,5 @@
 | `sz399001` | 深证成指 | 核心大盘 |
 | `sz399006` | 创业板指 | 核心大盘 |
 | `sh000688` | 科创50 | 核心大盘 |
-| `sh000300` | 沪深300 | 核心大盘 (本次新增) |
-| `sh000852` | 中证1000 | 核心大盘 (本次新增) |
-| `sz399303` | 国证2000 | 替代中证2000，走势极度相近 (本次新增) |
+| `sh000300` | 沪深300 | 核心大盘 |
+| `sh000852` | 中证1000 | 核心大盘 |

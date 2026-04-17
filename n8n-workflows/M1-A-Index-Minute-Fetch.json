@@ -95,7 +95,7 @@
         "url": "http://host.docker.internal:8787/api/m1/run",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"script\": \"m1_minute_fetch_indices.py\",\n  \"symbols\": \"{{ $json.symbols }}\",\n  \"day\": \"{{ $today.toFormat('yyyy-MM-dd') }}\",\n  \"force\": {{ $json.force ? 'true' : 'false' }}\n}",
+        "jsonBody": "={\n  \"script\": \"m1_minute_fetch_indices.py\",\n  \"symbols\": \"sh000001,sz399001,sz399006,sh000688,sh000300,sh000852\",\n  \"day\": \"{{ $today.toFormat('yyyy-MM-dd') }}\",\n  \"force\": {{ $json.force ? 'true' : 'false' }}\n}",
         "options": {}
       }
     },

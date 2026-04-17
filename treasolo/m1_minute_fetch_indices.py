@@ -46,7 +46,7 @@ def append_jsonl(path: Path, record: dict) -> bool:
 
 def main() -> int:
     p = argparse.ArgumentParser()
-    p.add_argument("--symbols", default="sh000001,sz399001,sz399006,sh000688,sh000300,sz399303,sh000852")
+    p.add_argument("--symbols", default="sh000001,sz399001,sz399006,sh000688,sh000300,sh000852")
     p.add_argument("--day", default="")
     p.add_argument("--force", action="store_true")
     args = p.parse_args()
@@ -75,11 +75,7 @@ def main() -> int:
     skipped = []
     for sym in symbols:
         try:
-            # 特殊处理：如果是深证的指数（399开头），新浪接口里代码通常是 sz399xxx
             search_sym = sym
-            if sym == "sz399303":  # 国证2000
-                search_sym = "sz399303"
-            
             row = df[df["代码"] == search_sym]
             if row.empty:
                 skipped.append(sym)
