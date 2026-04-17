@@ -3555,6 +3555,41 @@ const server = http.createServer(async (req, res) => {
     res.end(JSON.stringify({ ok: true, items }));
     return;
   }
+  if (url.pathname === '/api/m1/run' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', () => {
+      try {
+        const data = JSON.parse(body || '{}');
+        let args = [];
+        if (data.script === 'm1_minute_to_daily.py') {
+          args = ['scripts/m1_minute_to_daily.py', '--symbol', data.symbol];
+          if (data.day) args.push('--day', data.day);
+        } else if (data.script === 'm1_backfill_index.py') {
+          args = ['scripts/m1_backfill_index.py', '--symbol', data.symbol, '--missing-window-days', '30'];
+          if (data.applyFix) args.push('--apply-fix', '--write');
+          if (data.expectEnd) args.push('--expect-end', data.expectEnd);
+        } else {
+          res.statusCode = 400;
+          return res.end(JSON.stringify({ error: 'unknown script' }));
+        }
+        
+        execFile('python3', args, { cwd: __dirname, timeout: 120000, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          res.end(JSON.stringify({
+            ok: !err,
+            stdout: (stdout || '').trim().split('\n'),
+            stderr: stderr
+          }));
+        });
+      } catch (e) {
+        res.statusCode = 400;
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+
   if (url.pathname === '/api/runner/run' && req.method === 'POST') {
     let body = '';
     req.on('data', chunk => body += chunk);

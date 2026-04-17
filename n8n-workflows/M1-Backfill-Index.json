@@ -1,0 +1,70 @@
+{
+  "name": "M1-Backfill-Index (18:00 & 09:00)",
+  "nodes": [
+    {
+      "id": "trigger-evening",
+      "name": "18:00触发",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [0, 0],
+      "parameters": { "rule": { "interval": [ { "field": "cronExpression", "expression": "0 18 * * 1-5" } ] } }
+    },
+    {
+      "id": "trigger-morning",
+      "name": "09:00触发",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [0, 150],
+      "parameters": { "rule": { "interval": [ { "field": "cronExpression", "expression": "0 9 * * 1-5" } ] } }
+    },
+    {
+      "id": "manual",
+      "name": "手动触发",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 300]
+    },
+    {
+      "id": "set-symbols",
+      "name": "生成四大指数",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [250, 150],
+      "parameters": {
+        "jsCode": "const symbols = ['sh000001', 'sz399001', 'sz399006', 'sh000688'];\nreturn symbols.map(s => ({ json: { symbol: s } }));"
+      }
+    },
+    {
+      "id": "http",
+      "name": "调用本地回补脚本",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [450, 150],
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8787/api/m1/run",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"script\": \"m1_backfill_index.py\",\n  \"symbol\": \"{{ $json.symbol }}\",\n  \"applyFix\": true,\n  \"expectEnd\": \"{{ $today.toFormat('yyyy-MM-dd') }}\"\n}",
+        "options": {}
+      }
+    },
+    {
+      "id": "parse",
+      "name": "输出执行结果",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 150],
+      "parameters": {
+        "jsCode": "return $input.all().map(item => ({\n  json: {\n    stdout: item.json.stdout ? item.json.stdout.join('\\n') : 'Error'\n  }\n}));"
+      }
+    }
+  ],
+  "connections": {
+    "18:00触发": { "main": [ [ { "node": "生成四大指数", "type": "main", "index": 0 } ] ] },
+    "09:00触发": { "main": [ [ { "node": "生成四大指数", "type": "main", "index": 0 } ] ] },
+    "手动触发": { "main": [ [ { "node": "生成四大指数", "type": "main", "index": 0 } ] ] },
+    "生成四大指数": { "main": [ [ { "node": "调用本地回补脚本", "type": "main", "index": 0 } ] ] },
+    "调用本地回补脚本": { "main": [ [ { "node": "输出执行结果", "type": "main", "index": 0 } ] ] }
+  }
+}

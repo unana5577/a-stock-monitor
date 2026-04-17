@@ -1,0 +1,61 @@
+{
+  "name": "M1-B-Minute2Daily (15:01)",
+  "nodes": [
+    {
+      "id": "trigger",
+      "name": "定时触发",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [0, 0],
+      "parameters": { "rule": { "interval": [ { "field": "cronExpression", "expression": "1 15 * * 1-5" } ] } }
+    },
+    {
+      "id": "manual",
+      "name": "手动触发",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 200]
+    },
+    {
+      "id": "set-symbols",
+      "name": "生成四大指数",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [200, 100],
+      "parameters": {
+        "jsCode": "const symbols = ['sh000001', 'sz399001', 'sz399006', 'sh000688'];\nreturn symbols.map(s => ({ json: { symbol: s } }));"
+      }
+    },
+    {
+      "id": "http",
+      "name": "调用本地 M1-B",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [400, 100],
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8787/api/m1/run",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"script\": \"m1_minute_to_daily.py\",\n  \"symbol\": \"{{ $json.symbol }}\",\n  \"day\": \"{{ $today.toFormat('yyyy-MM-dd') }}\"\n}",
+        "options": {}
+      }
+    },
+    {
+      "id": "parse",
+      "name": "输出执行结果",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [600, 100],
+      "parameters": {
+        "jsCode": "return $input.all().map(item => ({\n  json: {\n    stdout: item.json.stdout ? item.json.stdout.join('\\n') : 'Error'\n  }\n}));"
+      }
+    }
+  ],
+  "connections": {
+    "定时触发": { "main": [ [ { "node": "生成四大指数", "type": "main", "index": 0 } ] ] },
+    "手动触发": { "main": [ [ { "node": "生成四大指数", "type": "main", "index": 0 } ] ] },
+    "生成四大指数": { "main": [ [ { "node": "调用本地 M1-B", "type": "main", "index": 0 } ] ] },
+    "调用本地 M1-B": { "main": [ [ { "node": "输出执行结果", "type": "main", "index": 0 } ] ] }
+  }
+}
