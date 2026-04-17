@@ -18,3 +18,7 @@ Symptom: n8n IF 节点报 compareOperationFunctions[compareData.operation] is no
 Root cause: IF 节点配置中使用了 'equals' 而非官方早期支持的 'equal'
 Fix: 将 IF 节点 JSON 中的 'operation': 'equals' 统一替换为 'operation': 'equal'
 
+Symptom: 发现 data/index_daily/index_000001.jsonl 中 4-16 数据缺失且近期 amount 数量级异常（东财接口被封导致错乱）。
+Root cause: 历史代码直接依赖了失效接口并写入旧文件。
+Fix: TODO(M1/M2) 评估历史数据迁移与覆盖方案，暂时不动该文件，新逻辑（M0）产生的数据已隔离到 data/market/market-amount-daily.jsonl。
+
