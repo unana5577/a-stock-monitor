@@ -118,6 +118,9 @@
     "参数(收盘补点)": { "main": [ [ { "node": "落盘指数分时", "type": "main", "index": 0 } ] ] },
     "参数(手动)": { "main": [ [ { "node": "落盘指数分时", "type": "main", "index": 0 } ] ] },
     "落盘指数分时": { "main": [ [ { "node": "输出日志", "type": "main", "index": 0 } ] ] }
+  },
+  "settings": {
+    "executionOrder": "v1"
   }
 }
 
