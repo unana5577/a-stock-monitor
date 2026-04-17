@@ -3565,6 +3565,11 @@ const server = http.createServer(async (req, res) => {
         if (data.script === 'm1_minute_to_daily.py') {
           args = ['scripts/m1_minute_to_daily.py', '--symbol', data.symbol];
           if (data.day) args.push('--day', data.day);
+        } else if (data.script === 'm1_minute_fetch_indices.py') {
+          args = ['scripts/m1_minute_fetch_indices.py'];
+          if (data.symbols) args.push('--symbols', data.symbols);
+          if (data.day) args.push('--day', data.day);
+          if (data.force) args.push('--force');
         } else if (data.script === 'm1_backfill_index.py') {
           args = ['scripts/m1_backfill_index.py', '--symbol', data.symbol, '--missing-window-days', '30'];
           if (data.applyFix) args.push('--apply-fix', '--write');

@@ -1,0 +1,123 @@
+{
+  "name": "M1-A-Index-Minute-Fetch (30m + 15:00补点)",
+  "nodes": [
+    {
+      "id": "trigger-30m",
+      "name": "30分钟触发",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [0, 0],
+      "parameters": {
+        "rule": {
+          "interval": [
+            { "field": "cronExpression", "expression": "0,30 9-11 * * 1-5" },
+            { "field": "cronExpression", "expression": "0,30 13-14 * * 1-5" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "trigger-close",
+      "name": "15:00补点触发",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [0, 160],
+      "parameters": {
+        "rule": { "interval": [ { "field": "cronExpression", "expression": "0 15 * * 1-5" } ] }
+      }
+    },
+    {
+      "id": "manual",
+      "name": "手动触发",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 320]
+    },
+    {
+      "id": "params-normal",
+      "name": "参数(常规)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [220, 0],
+      "parameters": {
+        "values": {
+          "string": [
+            { "name": "symbols", "value": "sh000001,sz399001,sz399006,sh000688" }
+          ],
+          "boolean": [
+            { "name": "force", "value": false }
+          ]
+        }
+      }
+    },
+    {
+      "id": "params-close",
+      "name": "参数(收盘补点)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [220, 160],
+      "parameters": {
+        "values": {
+          "string": [
+            { "name": "symbols", "value": "sh000001,sz399001,sz399006,sh000688" }
+          ],
+          "boolean": [
+            { "name": "force", "value": true }
+          ]
+        }
+      }
+    },
+    {
+      "id": "params-manual",
+      "name": "参数(手动)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [220, 320],
+      "parameters": {
+        "values": {
+          "string": [
+            { "name": "symbols", "value": "sh000001,sz399001,sz399006,sh000688" }
+          ],
+          "boolean": [
+            { "name": "force", "value": true }
+          ]
+        }
+      }
+    },
+    {
+      "id": "http",
+      "name": "落盘指数分时",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [460, 160],
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8787/api/m1/run",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"script\": \"m1_minute_fetch_indices.py\",\n  \"symbols\": \"{{ $json.symbols }}\",\n  \"day\": \"{{ $today.toFormat('yyyy-MM-dd') }}\",\n  \"force\": {{ $json.force }}\n}",
+        "options": {}
+      }
+    },
+    {
+      "id": "out",
+      "name": "输出日志",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [700, 160],
+      "parameters": {
+        "jsCode": "const lines = $json.stdout || []; return [{ json: { ok: $json.ok, log: lines.join('\\n') } }];"
+      }
+    }
+  ],
+  "connections": {
+    "30分钟触发": { "main": [ [ { "node": "参数(常规)", "type": "main", "index": 0 } ] ] },
+    "15:00补点触发": { "main": [ [ { "node": "参数(收盘补点)", "type": "main", "index": 0 } ] ] },
+    "手动触发": { "main": [ [ { "node": "参数(手动)", "type": "main", "index": 0 } ] ] },
+    "参数(常规)": { "main": [ [ { "node": "落盘指数分时", "type": "main", "index": 0 } ] ] },
+    "参数(收盘补点)": { "main": [ [ { "node": "落盘指数分时", "type": "main", "index": 0 } ] ] },
+    "参数(手动)": { "main": [ [ { "node": "落盘指数分时", "type": "main", "index": 0 } ] ] },
+    "落盘指数分时": { "main": [ [ { "node": "输出日志", "type": "main", "index": 0 } ] ] }
+  }
+}
+
