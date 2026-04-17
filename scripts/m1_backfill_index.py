@@ -135,6 +135,7 @@ def run_one(
             
             if not df_new.empty:
                 print(f"  [接口拉取] 成功获取 {len(df_new)} 条增量日线数据")
+                added_dates = []
                 for _, row in df_new.iterrows():
                     date_str = str(row['date'])[:10]
                     if expect_end and date_str > expect_end:
@@ -153,8 +154,9 @@ def run_one(
                         "pct": round(pct, 2)
                     }
                     cleaned.append(new_record)
+                    added_dates.append(date_str)
                 dates = [r["date"] for r in cleaned]
-                print(f"  [合并完成] 当前最新日期已更新至: {dates[-1]}")
+                print(f"  [合并完成] 补充日期: {', '.join(added_dates)}")
                 missing = iter_missing_days(dates, window_days=missing_window_days)
             else:
                 print(f"  [接口拉取] 接口返回数据中没有大于 {last_date} 的记录")

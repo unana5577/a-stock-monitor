@@ -56,7 +56,7 @@
       "typeVersion": 2,
       "position": [650, 150],
       "parameters": {
-        "jsCode": "return $input.all().map(item => {\n  let raw = item.json.stdout ? item.json.stdout.join('\\n') : '';\n  let summary = `M1-Backfill ✅ 无增量更新`;\n  if (raw.includes('[接口拉取] 成功获取')) {\n    const countMatch = raw.match(/成功获取 (\\d+) 条/);\n    const dateMatch = raw.match(/当前最新日期已更新至: (\\d{4}-\\d{2}-\\d{2})/);\n    if (countMatch && dateMatch) {\n      summary = `M1-Backfill ✅ 更新成功\\n新增了 ${countMatch[1]} 条记录，最新至 ${dateMatch[1]}`;\n    }\n  } else if (raw.includes('❌')) {\n    summary = `M1-Backfill ❌ 失败`;\n  }\n  return { json: { summary } };\n});"
+        "jsCode": "return $input.all().map(item => {\n  let raw = item.json.stdout ? item.json.stdout.join('\\n') : '';\n  let summary = `M1-Backfill ✅ 无增量更新`;\n  if (raw.includes('[接口拉取] 成功获取')) {\n    const countMatch = raw.match(/成功获取 (\\d+) 条/);\n    const datesMatch = raw.match(/补充日期: (.*)/);\n    if (countMatch && datesMatch) {\n      summary = `M1-Backfill ✅ 回补成功\\n新增了 ${countMatch[1]} 条记录: ${datesMatch[1]}`;\n    }\n  } else if (raw.includes('❌')) {\n    summary = `M1-Backfill ❌ 失败`;\n  }\n  return { json: { summary } };\n});"
       }
     }
   ],
