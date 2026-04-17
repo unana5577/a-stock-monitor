@@ -3563,22 +3563,22 @@ const server = http.createServer(async (req, res) => {
         const data = JSON.parse(body || '{}');
         let args = [];
         if (data.script === 'm1_minute_to_daily.py') {
-          args = ['scripts/m1_minute_to_daily.py', '--symbol', data.symbol];
+          args = ['treasolo/m1_minute_to_daily.py', '--symbol', data.symbol];
           if (data.day) args.push('--day', data.day);
         } else if (data.script === 'm1_minute_fetch_indices.py') {
-          args = ['scripts/m1_minute_fetch_indices.py'];
+          args = ['treasolo/m1_minute_fetch_indices.py'];
           if (data.symbols) args.push('--symbols', data.symbols);
           if (data.day) args.push('--day', data.day);
           if (data.force) args.push('--force');
         } else if (data.script === 'm1_backfill_index.py') {
-          args = ['scripts/m1_backfill_index.py', '--symbol', data.symbol, '--missing-window-days', '30'];
+          args = ['treasolo/m1_backfill_index.py', '--symbol', data.symbol, '--missing-window-days', '30'];
           if (data.applyFix) args.push('--apply-fix', '--write');
           if (data.expectEnd) args.push('--expect-end', data.expectEnd);
         } else if (data.script === 'm1_market_amount.py') {
-          args = ['scripts/m1_market_amount.py'];
+          args = ['treasolo/m1_market_amount.py'];
           if (data.day) args.push('--day', data.day);
         } else if (data.script === 'breadth_manager.py') {
-          args = ['scripts/breadth_manager.py', data.cmd || 'spot'];
+          args = ['treasolo/breadth_manager.py', data.cmd || 'spot'];
         } else {
           res.statusCode = 400;
           return res.end(JSON.stringify({ error: 'unknown script' }));
