@@ -375,17 +375,15 @@ def run_cmd(args: argparse.Namespace) -> int:
         market_error = None
         try:
             import akshare as ak
-            df_sh = ak.stock_zh_index_daily_em(symbol="sh000001")
-            df_sz = ak.stock_zh_index_daily_em(symbol="sz399001")
-            # 过滤出当天数据
-            df_sh_today = df_sh[df_sh['date'].astype(str).str.startswith(day)]
-            df_sz_today = df_sz[df_sz['date'].astype(str).str.startswith(day)]
+            df_index = ak.stock_zh_index_spot_sina()
+            df_sh = df_index[df_index['代码'] == 'sh000001']
+            df_sz = df_index[df_index['代码'] == 'sz399001']
             
-            if df_sh_today.empty or df_sz_today.empty:
-                market_error = f"akshare.stock_zh_index_daily_em 返回数据中没有找到 {day} 的记录"
+            if df_sh.empty or df_sz.empty:
+                market_error = f"akshare.stock_zh_index_spot_sina 返回数据中没有找到 sh000001 或 sz399001"
             else:
-                sh_amt = float(df_sh_today.iloc[0]['amount'])
-                sz_amt = float(df_sz_today.iloc[0]['amount'])
+                sh_amt = float(df_sh.iloc[0]['成交额'])
+                sz_amt = float(df_sz.iloc[0]['成交额'])
                 market_total = sh_amt + sz_amt
                 if market_total <= 0:
                     market_error = f"计算出的全市场成交额异常: {market_total}"
@@ -454,7 +452,7 @@ def run_cmd(args: argparse.Namespace) -> int:
                 warnings=qa_warnings,
                 error={"message": "QA validation failed for amount_merge"} if failed and qa_warnings else None,
                 providers=[
-                    {"datasetId": "market_amount_daily", "providerId": "akshare.stock_zh_index_daily_em", "asOf": as_of},
+                    {"datasetId": "market_amount_daily", "providerId": "akshare.stock_zh_index_spot_sina", "asOf": as_of},
                     {"datasetId": "etf_amount_minute", "providerId": "akshare.fund_etf_category_sina", "asOf": as_of},
                     {"datasetId": "etf_amount_daily", "providerId": "akshare.fund_etf_category_sina", "asOf": as_of}
                 ]

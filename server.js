@@ -3569,7 +3569,8 @@ const server = http.createServer(async (req, res) => {
           const lines = (stdout || '').trim().split('\n');
           const outRaw = lines[lines.length - 1]; // runner's last line is the JSON
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
-          if (!err && outRaw && outRaw.startsWith('{')) {
+          // 只要输出了合法的 JSON，就算 runner 内部 failed（exit code 1），也返回 200 给 n8n
+          if (outRaw && outRaw.startsWith('{')) {
             res.end(outRaw);
           } else {
             res.statusCode = 500;
@@ -5260,8 +5261,8 @@ except Exception as e:
   });
 });
 
-server.listen(PORT, '127.0.0.1', () => {
-  console.log(`proxy server on http://127.0.0.1:${PORT} [Ashare+Tencent]`);
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`proxy server on http://localhost:${PORT} [Ashare+Tencent]`);
 });
 
 // ============ 定时写入成交额任务 ============
