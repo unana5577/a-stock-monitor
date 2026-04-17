@@ -20,6 +20,7 @@ __pycache__/
 # Runtime/logs
 runtime/
 server.log
+logs/
 
 # Local tool folders
 .openclaw/
