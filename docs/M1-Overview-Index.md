@@ -47,6 +47,22 @@
 
 ---
 
+## ETF 专属工作流 (含分时与日线)
+
+### 6. ETF：盘中分时抓取 (全字段)
+- **用途**：每 30 分钟抓取核心 ETF 分时数据，包含 `price`, `pct`, `amount`, `vol`, `open`, `high`, `low` 等完整字段。
+- **导入 n8n 用的文件**：[n8n-workflows/M1-C-ETF-Minute-Fetch.json](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/n8n-workflows/M1-C-ETF-Minute-Fetch.json)
+- **底层 Python 脚本**：[treasolo/m1_minute_fetch_etf.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/treasolo/m1_minute_fetch_etf.py)
+- **抓下来的数据存在哪**：`data/market/minute/<代码>/<日期>.jsonl`
+
+### 7. ETF：收盘抢发日线
+- **用途**：每天 15:01，用 ETF 的最后一次分时数据，生成当天的收盘日线。
+- **导入 n8n 用的文件**：[n8n-workflows/M1-D-ETF-Minute2Daily.json](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/n8n-workflows/M1-D-ETF-Minute2Daily.json)
+- **底层 Python 脚本**：[treasolo/m1_minute_to_daily_etf.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/treasolo/m1_minute_to_daily_etf.py)
+- **抓下来的数据存在哪**：`data/m1/etf/<代码>/daily.jsonl`
+
+---
+
 ## 附录：当前监控的 6 大核心指数对照表
 
 这是上述工作流中 `<代码>` 所对应的具体指数，**如果找不到文件，请核对这 6 个代码目录**：

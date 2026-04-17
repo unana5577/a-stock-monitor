@@ -3574,6 +3574,14 @@ const server = http.createServer(async (req, res) => {
           args = ['treasolo/m1_backfill_index.py', '--symbol', data.symbol, '--missing-window-days', '30'];
           if (data.applyFix) args.push('--apply-fix', '--write');
           if (data.expectEnd) args.push('--expect-end', data.expectEnd);
+        } else if (data.script === 'm1_minute_fetch_etf.py') {
+          args = ['treasolo/m1_minute_fetch_etf.py'];
+          if (data.symbols) args.push('--symbols', data.symbols);
+          if (data.day) args.push('--day', data.day);
+          if (data.force) args.push('--force');
+        } else if (data.script === 'm1_minute_to_daily_etf.py') {
+          args = ['treasolo/m1_minute_to_daily_etf.py', '--symbol', data.symbol];
+          if (data.day) args.push('--day', data.day);
         } else if (data.script === 'm1_market_amount.py') {
           args = ['treasolo/m1_market_amount.py'];
           if (data.day) args.push('--day', data.day);
