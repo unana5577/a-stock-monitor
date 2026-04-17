@@ -188,7 +188,7 @@ def run_one(
         "missingDaysCount": len(missing),
     }
     meta_file.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"  ✅ write: {daily_file.relative_to(PROJECT_ROOT)}")
+    print(f"  ✅ write: {daily_file.relative_to(PROJECT_ROOT)} (provider: {provider})")
     return 0
 
 
