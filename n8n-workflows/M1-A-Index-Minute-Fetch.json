@@ -106,7 +106,7 @@
       "typeVersion": 2,
       "position": [700, 160],
       "parameters": {
-        "jsCode": "const lines = $json.stdout || []; return [{ json: { ok: $json.ok, log: lines.join('\\n') } }];"
+        "jsCode": "return $input.all().map(item => {\n  let raw = item.json.stdout ? item.json.stdout.join('') : '{}';\n  let parsed = {};\n  try { parsed = JSON.parse(raw); } catch(e) {}\n  \n  let summary = `M1-A ❌ 未知错误`;\n  if (parsed.skipped) {\n    summary = `M1-A ⏭️ day=${parsed.day} asOf=${parsed.asOf}\\n跳过抓取: ${parsed.reason === 'not_trading_session' ? '非交易时段' : parsed.reason}`;\n  } else if (parsed.ok) {\n    summary = `M1-A ✅ day=${parsed.day} asOf=${parsed.asOf}\\n成功抓取分时: ${(parsed.wrote || []).join(', ')}`;\n  }\n  \n  return { json: { summary } };\n});"
       }
     }
   ],
