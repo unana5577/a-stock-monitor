@@ -156,7 +156,7 @@ def run_one(
                     cleaned.append(new_record)
                     added_dates.append(date_str)
                 dates = [r["date"] for r in cleaned]
-                print(f"  [合并完成] 补充日期: {', '.join(added_dates)}")
+                print(f"  [合并完成] {spec.name}({spec.symbol}) 补充日期: {', '.join(added_dates)}")
                 missing = iter_missing_days(dates, window_days=missing_window_days)
             else:
                 print(f"  [接口拉取] 接口返回数据中没有大于 {last_date} 的记录")
