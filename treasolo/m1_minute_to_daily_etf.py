@@ -9,7 +9,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 def run_minute_to_daily_etf(symbol: str, day: str):
     print(f"\n[{datetime.now().strftime('%H:%M:%S')}] 正在执行 M1-D: ETF分时转日线 ({symbol})")
     
-    m1_etf_dir = PROJECT_ROOT / "data" / "etf" / symbol
+    m1_etf_dir = PROJECT_ROOT / "data" / "etf" / "daily" / symbol
     daily_file = m1_etf_dir / "daily.jsonl"
     minute_file = PROJECT_ROOT / f"data/etf/minute/{symbol}/{day}.jsonl"
     

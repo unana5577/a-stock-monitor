@@ -3582,6 +3582,10 @@ const server = http.createServer(async (req, res) => {
         } else if (data.script === 'm1_minute_to_daily_etf.py') {
           args = ['treasolo/m1_minute_to_daily_etf.py', '--symbol', data.symbol];
           if (data.day) args.push('--day', data.day);
+        } else if (data.script === 'cleanup_minute_files.py') {
+          args = ['treasolo/cleanup_minute_files.py'];
+          if (data.keepDays) args.push('--keep-days', String(data.keepDays));
+          if (data.apply) args.push('--apply');
         } else if (data.script === 'm1_market_amount.py') {
           args = ['treasolo/m1_market_amount.py'];
           if (data.day) args.push('--day', data.day);

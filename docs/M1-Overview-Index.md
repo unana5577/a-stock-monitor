@@ -93,6 +93,15 @@ data/
 
 ---
 
+## 运维与清理
+
+### 8. 分时数据过期清理 (保留 T-3)
+- **用途**：每天 18:30 自动扫描 `index/minute/` 和 `etf/minute/` 目录，按文件倒序严格保留每个标的最新的 3 个文件（即最近 3 个交易日），删除更早的分时数据，防止磁盘爆满。同时会清空 `market/minute/breadth-cache.jsonl` 情绪分时，为第二天归零。
+- **导入 n8n 用的文件**：[n8n-workflows/M1-F-Cleanup-Minute.json](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/n8n-workflows/M1-F-Cleanup-Minute.json)
+- **底层 Python 脚本**：[treasolo/cleanup_minute_files.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/treasolo/cleanup_minute_files.py)
+
+---
+
 ## 附录：当前监控的核心标的对照表
 
 ### 1. 6 大核心宽基指数

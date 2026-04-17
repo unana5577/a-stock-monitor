@@ -8,7 +8,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 def run_minute_to_daily(symbol: str, day: str):
     print(f"\n[{datetime.now().strftime('%H:%M:%S')}] 正在执行 M1-B: 分时转日线 ({symbol})")
     
-    m1_index_dir = PROJECT_ROOT / "data" / "index" / symbol
+    m1_index_dir = PROJECT_ROOT / "data" / "index" / "daily" / symbol
     daily_file = m1_index_dir / "daily.jsonl"
     minute_file = PROJECT_ROOT / f"data/index/minute/{symbol}/{day}.jsonl"
     
