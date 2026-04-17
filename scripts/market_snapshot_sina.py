@@ -94,9 +94,9 @@ def fetch_market_snapshot():
     print("  1. 获取A股涨跌家数...")
     try:
         stocks_df = ak.stock_zh_a_spot()
-        up = stocks_df[stocks_df['涨跌幅'] > 0].shape[0]
-        down = stocks_df[stocks_df['涨跌幅'] < 0].shape[0]
-        flat = stocks_df[stocks_df['涨跌幅'] == 0].shape[0]
+        up = stocks_df[stocks_df['涨跌额'] > 0].shape[0]
+        down = stocks_df[stocks_df['涨跌额'] < 0].shape[0]
+        flat = stocks_df[stocks_df['涨跌额'] == 0].shape[0]
         total = up + down + flat
         ratio = up / down if down > 0 else float('inf')
 
