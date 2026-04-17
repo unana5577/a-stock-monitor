@@ -28,7 +28,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://localhost:8787/api/runner/run",
+        "url": "http://host.docker.internal:8787/api/runner/run",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={\n  \"plan\": \"m0m1\",\n  \"triggerType\": \"n8n\",\n  \"triggerSource\": \"{{ $('Set').item.json.source }}\",\n  \"steps\": \"m0-A\",\n  \"day\": \"{{ $('Set').item.json.day }}\",\n  \"runId\": \"{{ $('Set').item.json.runId }}\"\n}",
