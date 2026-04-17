@@ -24,6 +24,9 @@ INDEX_SPECS: list[IndexLegacySpec] = [
     IndexLegacySpec(symbol="sz399001", name="深证成指", legacy_file=PROJECT_ROOT / "data/index_daily/index_399001.jsonl"),
     IndexLegacySpec(symbol="sz399006", name="创业板指", legacy_file=PROJECT_ROOT / "data/index_daily/index_399006.jsonl"),
     IndexLegacySpec(symbol="sh000688", name="科创50", legacy_file=PROJECT_ROOT / "data/index_daily/index_000688.jsonl"),
+    IndexLegacySpec(symbol="sh000300", name="沪深300", legacy_file=PROJECT_ROOT / "data/index_daily/index_000300.jsonl"),
+    IndexLegacySpec(symbol="sh000852", name="中证1000", legacy_file=PROJECT_ROOT / "data/index_daily/index_000852.jsonl"),
+    IndexLegacySpec(symbol="sz399303", name="国证2000", legacy_file=PROJECT_ROOT / "data/index_daily/index_399303.jsonl"),
 ]
 
 
@@ -100,25 +103,42 @@ def run_one(
     spec: IndexLegacySpec, out_root: Path, write: bool, missing_window_days: int, expect_end: str | None, apply_fix: bool = False
 ) -> int:
     print(f"\n[{datetime.now().strftime('%H:%M:%S')}] {spec.name} ({spec.symbol})")
-    rows = parse_legacy_jsonl(spec.legacy_file)
+    
+    # 1. 尝试解析旧格式底表，如果不存在则退级为空列表，准备全量初始化
+    try:
+        rows = parse_legacy_jsonl(spec.legacy_file)
+    except FileNotFoundError:
+        print(f"  ⚠️ 旧底表不存在 ({spec.legacy_file})，准备初始化...")
+        rows = []
     cleaned = compute_pct(rows)
 
     dates = [r["date"] for r in cleaned]
-    missing = iter_missing_days(dates, window_days=missing_window_days)
-    tail_missing: list[str] = []
-    if expect_end:
-        end_d = date.fromisoformat(dates[-1])
-        exp_d = date.fromisoformat(expect_end)
-        if end_d < exp_d:
-            holidays = load_holidays()
-            cur = end_d + timedelta(days=1)
-            while cur <= exp_d:
-                d = cur.isoformat()
-                if cur.weekday() < 5 and d not in holidays:
-                    tail_missing.append(d)
-                cur += timedelta(days=1)
+    if not dates:
+        start_date = (datetime.now() - timedelta(days=45)).strftime("%Y-%m-%d")
+        missing = [start_date]
+        tail_missing = [start_date]
+        print(f"  ⚠️ 无历史记录，准备全量回填近期的日线数据")
+    else:
+        missing = iter_missing_days(dates, window_days=missing_window_days)
+        tail_missing: list[str] = []
+        if expect_end:
+            end_d = date.fromisoformat(dates[-1])
+            exp_d = date.fromisoformat(expect_end)
+            if end_d < exp_d:
+                holidays = load_holidays()
+                cur = end_d + timedelta(days=1)
+                while cur <= exp_d:
+                    d = cur.isoformat()
+                    if cur.weekday() < 5 and d not in holidays:
+                        tail_missing.append(d)
+                    cur += timedelta(days=1)
+
     print(f"  legacy: {spec.legacy_file.relative_to(PROJECT_ROOT)}")
-    print(f"  records: {len(cleaned)}  range: {dates[0]} ~ {dates[-1]}")
+    if dates:
+        print(f"  records: {len(cleaned)}  range: {dates[0]} ~ {dates[-1]}")
+    else:
+        print(f"  records: 0  range: N/A")
+
     if missing:
         print(f"  missing(days): {len(missing)}  example: {missing[:5]}")
     else:
@@ -127,7 +147,7 @@ def run_one(
         print(f"  missing(tail): {len(tail_missing)}  days: {tail_missing}")
 
     if apply_fix and tail_missing:
-        last_date = dates[-1]
+        last_date = dates[-1] if dates else "1970-01-01"
         print(f"  [回补触发] 发现缺失，最后日期 {last_date} < 预期 {expect_end}")
         try:
             df = ak.stock_zh_index_daily_tx(symbol=spec.symbol)
@@ -141,7 +161,7 @@ def run_one(
                     if expect_end and date_str > expect_end:
                         continue
                         
-                    prev_close = cleaned[-1]["close"]
+                    prev_close = cleaned[-1]["close"] if cleaned else float(row['open'])
                     current_close = float(row['close'])
                     pct = (current_close - prev_close) / prev_close * 100 if prev_close > 0 else 0.0
                     
@@ -185,8 +205,8 @@ def run_one(
         "symbol": spec.symbol,
         "asOf": datetime.now().isoformat(),
         "recordCount": len(cleaned),
-        "startDate": dates[0],
-        "endDate": dates[-1],
+        "startDate": dates[0] if dates else "",
+        "endDate": dates[-1] if dates else "",
         "missingDaysCount": len(missing),
     }
     meta_file.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
