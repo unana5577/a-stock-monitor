@@ -31,16 +31,8 @@
         "method": "POST",
         "url": "http://127.0.0.1:8787/api/runner/run",
         "sendBody": true,
-        "bodyParameters": {
-          "parameters": [
-            { "name": "plan", "value": "m0m1" },
-            { "name": "triggerType", "value": "n8n" },
-            { "name": "triggerSource", "value": "={{ $('Set').item.json.source }}" },
-            { "name": "steps", "value": "m0-B" },
-            { "name": "day", "value": "={{ $('Set').item.json.day }}" },
-            { "name": "runId", "value": "={{ $('Set').item.json.runId }}" }
-          ]
-        },
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"plan\": \"m0m1\",\n  \"triggerType\": \"n8n\",\n  \"triggerSource\": \"{{ $('Set').item.json.source }}\",\n  \"steps\": \"m0-B\",\n  \"day\": \"{{ $('Set').item.json.day }}\",\n  \"runId\": \"{{ $('Set').item.json.runId }}\"\n}",
         "options": {}
       },
       "id": "http",
