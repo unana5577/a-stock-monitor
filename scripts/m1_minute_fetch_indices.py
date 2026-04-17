@@ -95,7 +95,7 @@ def main() -> int:
         if ok:
             wrote.append(sym)
 
-    print(json.dumps({"ok": True, "day": day, "asOf": as_of, "wrote": wrote, "skipped": skipped}, ensure_ascii=False))
+    print(json.dumps({"ok": True, "day": day, "asOf": as_of, "wrote": wrote, "skipped": skipped, "symbols": symbols}, ensure_ascii=False))
     return 0
 
 
