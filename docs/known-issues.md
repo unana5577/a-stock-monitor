@@ -14,3 +14,7 @@ Symptom: n8n IF 节点报 compareOperationFunctions[compareData.operation] is no
 Root cause: 旧版 n8n 不支持 operation=isTrue 等较新比较操作
 Fix: IF 条件改用 equals true；交易时段计算避免依赖 $now.setZone，改用 Intl.DateTimeFormat(timeZone='Asia/Shanghai')
 
+Symptom: n8n IF 节点报 compareOperationFunctions[compareData.operation] is not a function (equals)
+Root cause: IF 节点配置中使用了 'equals' 而非官方早期支持的 'equal'
+Fix: 将 IF 节点 JSON 中的 'operation': 'equals' 统一替换为 'operation': 'equal'
+
