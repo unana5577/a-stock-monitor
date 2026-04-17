@@ -57,7 +57,7 @@
           "string": [
             {
               "value1": "={{ $json.status }}",
-              "operation": "equals",
+              "operation": "equal",
               "value2": "failed"
             }
           ]
