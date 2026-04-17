@@ -44,3 +44,19 @@
 - **导入 n8n 用的文件**：[n8n-workflows/M1-Backfill-Index.json](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/n8n-workflows/M1-Backfill-Index.json)
 - **底层 Python 脚本**：[treasolo/m1_backfill_index.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/treasolo/m1_backfill_index.py)
 - **抓下来的数据存在哪**：与第4条是同一个文件 `data/m1/index/<代码>/daily.jsonl`，直接覆盖更新。
+
+---
+
+## 附录：当前监控的 7 大宽基指数对照表
+
+这是上述工作流中 `<代码>` 所对应的具体指数，**如果找不到文件，请核对这 7 个代码目录**：
+
+| 指数代码 | 指数名称 | 说明 |
+| :--- | :--- | :--- |
+| `sh000001` | 上证指数 | 核心大盘 |
+| `sz399001` | 深证成指 | 核心大盘 |
+| `sz399006` | 创业板指 | 核心大盘 |
+| `sh000688` | 科创50 | 核心大盘 |
+| `sh000300` | 沪深300 | 核心大盘 (本次新增) |
+| `sh000852` | 中证1000 | 核心大盘 (本次新增) |
+| `sz399303` | 国证2000 | 替代中证2000，走势极度相近 (本次新增) |
