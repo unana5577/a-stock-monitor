@@ -82,6 +82,49 @@ const app = createApp({
       return items.filter(item => !holdIds.has(item.symbol) && !waitIds.has(item.symbol) && !sellIds.has(item.symbol));
     });
 
+    // --- Format Helpers ---
+    const fmtPct = (v) => {
+      if (v == null || isNaN(v)) return '-';
+      const num = Number(v).toFixed(2);
+      return num > 0 ? `+${num}%` : `${num}%`;
+    };
+
+    const fmtHeatDelta = (v) => {
+      if (v == null || isNaN(v)) return '-';
+      const num = Number(v).toFixed(2);
+      return num > 0 ? `+${num}%` : `${num}%`;
+    };
+
+    const getItemStats = (item) => {
+      const ydayPct = item.昨日涨跌幅 ?? null;
+      let nowPct = currentPrices.value[item.symbol]?.pct;
+      if (nowPct == null) {
+        nowPct = item.指标数据?.pct ?? item.指标数据?.Pct ?? null;
+      }
+      
+      let tag = '-';
+      if (ydayPct != null && nowPct != null) {
+        const y = Number(ydayPct);
+        const n = Number(nowPct);
+        if (y <= -1 && n >= 0.5) tag = '修复转强';
+        else if (y < 0 && n > 0) tag = '转强';
+        else if (y > 0 && n < 0) tag = '转弱';
+        else if (n >= 1) tag = '今日强势';
+        else if (y < 0 && n < 0 && n > y) tag = '跌势收敛';
+        else if (y < 0 && n < 0 && n < y) tag = '跌势加剧';
+        else if (n <= -1) tag = '今日走弱';
+      }
+
+      let shareChange = item.指标数据?.Amount_Share_Change_Pct ?? item.指标数据?.Amount_Share_Change ?? null;
+
+      return {
+        ydayPct,
+        nowPct,
+        tag,
+        shareChange
+      };
+    };
+
     // --- Helpers ---
     const formatAmount = (val) => {
       if (!val) return '---';
@@ -466,7 +509,10 @@ const app = createApp({
       getMomentumTextColor,
       getGridItem,
       getProcessedGrid,
-      getGridHeaders
+      getGridHeaders,
+      fmtPct,
+      fmtHeatDelta,
+      getItemStats
     };
   }
 });
