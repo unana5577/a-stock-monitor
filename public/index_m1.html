@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>M1 Quant Dashboard</title>
+  
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            'q-bg': '#F4F4F5',        /* 极浅灰背景，柔和透气 */
+            'q-panel': '#FFFFFF',     /* 纯白面板 */
+            'q-border': '#E4E4E7',    /* 极细边框色 */
+            'q-text': '#18181B',      /* 主标题颜色 */
+            'q-subtext': '#71717A',   /* 副标题/辅助文字 */
+            'q-up': '#EF4444',        /* A股标准红 */
+            'q-down': '#10B981',      /* A股标准绿 */
+            'q-flat': '#A1A1AA',      /* 平盘灰 */
+            'q-primary': '#2563EB',   /* 主题蓝/链接色 */
+            'q-sidebar': '#FFFFFF',   /* 侧边栏纯白 */
+            'q-side-text': '#52525B', /* 侧边栏文字深灰 */
+            'q-side-hover': '#F4F4F5',/* 侧边栏悬浮色极浅灰 */
+            'q-side-active': '#18181B'/* 侧边栏激活文字深黑 */
+          },
+          fontFamily: {
+            mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
+            sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', '"PingFang SC"', '"Segoe UI"', 'Roboto', 'sans-serif'],
+          },
+          boxShadow: {
+            'q': '0 1px 2px 0 rgba(0, 0, 0, 0.05)', /* 极淡阴影 */
+          }
+        }
+      }
+    }
+  </script>
+  
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <!-- <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script> -->
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+  
+  <style>
+    body {
+      background-color: #F4F4F5;
+      color: #18181B;
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+      margin: 0;
+      padding: 0;
+      -webkit-font-smoothing: antialiased;
+    }
+    
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #D4D4D8; border-radius: 2px; }
+    ::-webkit-scrollbar-thumb:hover { background: #A1A1AA; }
+
+    .q-panel {
+      background: #FFFFFF;
+      border: 1px solid #E4E4E7;
+      border-radius: 6px;
+      box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.02);
+    }
+
+    .stat-value {
+      font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+      letter-spacing: -0.02em;
+    }
+    
+    [v-cloak] { display: none; }
+  </style>
+</head>
+<body class="h-screen overflow-hidden flex">
+
+  <div id="app" v-cloak class="flex w-full h-full">
+    
+    <!-- ==============================
+         LEFT SIDEBAR (左侧导航栏)
+         ============================== -->
+    <aside class="w-16 md:w-56 flex flex-col bg-q-sidebar border-r border-q-border transition-all duration-300 z-20">
+      
+      <!-- Logo Area -->
+      <div class="h-14 flex items-center justify-center md:justify-start md:px-5 border-b border-q-border">
+        <div class="w-3 h-3 rounded-full bg-q-primary animate-pulse"></div>
+        <span class="hidden md:block ml-3 font-bold text-q-text tracking-wider text-sm">M1 <span class="text-q-subtext font-normal">QUANT</span></span>
+      </div>
+
+      <!-- Navigation Links -->
+      <nav class="flex-1 py-4 flex flex-col gap-1 px-2">
+        <!-- Overview Tab -->
+        <button 
+          @click="activeTab = 'overview'" 
+          class="flex items-center justify-center md:justify-start px-0 md:px-3 py-2.5 rounded-md transition-colors group"
+          :class="activeTab === 'overview' ? 'bg-q-primary/20 text-q-primary' : 'text-q-side-text hover:bg-q-side-hover hover:text-q-side-active'"
+        >
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>
+          <span class="hidden md:block ml-3 text-sm font-medium">盘中概览</span>
+        </button>
+
+        <!-- Market Tab -->
+        <button 
+          @click="activeTab = 'market'" 
+          class="flex items-center justify-center md:justify-start px-0 md:px-3 py-2.5 rounded-md transition-colors group"
+          :class="activeTab === 'market' ? 'bg-q-primary/20 text-q-primary' : 'text-q-side-text hover:bg-q-side-hover hover:text-q-side-active'"
+        >
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg>
+          <span class="hidden md:block ml-3 text-sm font-medium">ETF行情</span>
+        </button>
+        
+        <!-- Placeholder Tabs -->
+        <div class="mt-4 mb-2 px-3 text-[10px] uppercase tracking-wider text-q-subtext hidden md:block">探索</div>
+        <button class="flex items-center justify-center md:justify-start px-0 md:px-3 py-2.5 rounded-md text-q-subtext cursor-not-allowed" title="待接入">
+          <svg class="w-5 h-5 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+          <span class="hidden md:block ml-3 text-sm font-medium opacity-40">竞价选股</span>
+        </button>
+      </nav>
+
+      <!-- System Status (Bottom) -->
+      <div class="p-3 border-t border-q-border text-center md:text-left">
+        <div class="hidden md:flex justify-between items-center text-xs text-q-subtext mb-1">
+          <span>Sys. Sync</span>
+          <span class="font-mono text-[10px]">{{ lastUpdate }}</span>
+        </div>
+        <div class="w-2 h-2 rounded-full bg-green-500 mx-auto md:mx-0 shadow-[0_0_5px_rgba(16,185,129,0.3)]"></div>
+      </div>
+    </aside>
+
+    <!-- ==============================
+         RIGHT MAIN AREA (右侧工作区)
+         ============================== -->
+    <main class="flex-1 flex flex-col h-full overflow-hidden bg-q-bg">
+      
+      <!-- Top Global Bar (Sticky) -->
+      <header class="h-14 bg-white border-b border-q-border px-6 flex justify-between items-center shrink-0 z-10">
+        <div class="text-sm font-bold text-q-text">
+          {{ activeTab === 'overview' ? '盘中概览 Overview' : 'ETF行情 Market' }}
+        </div>
+        
+        <!-- Global Market Data Snippet -->
+        <div class="flex items-center gap-5 text-[13px]">
+          <div class="flex items-center gap-1.5">
+            <span class="text-q-subtext">Total Amt</span>
+            <span class="stat-value font-medium">{{ formatAmount(marketAmount?.market_amount) }}</span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <span class="text-q-subtext">ETF Vol</span>
+            <span class="stat-value font-medium">{{ formatAmount(marketAmount?.etf_amount) }}</span>
+          </div>
+          <div class="flex items-center gap-1.5 bg-blue-50 px-2 py-0.5 rounded text-q-primary">
+            <span class="text-[11px] uppercase font-bold">ETF Share</span>
+            <span class="stat-value font-bold">{{ marketAmount?.etf_share_pct || 0 }}%</span>
+          </div>
+        </div>
+      </header>
+
+      <!-- Scrollable Content Area -->
+      <div class="flex-1 overflow-y-auto p-4 md:p-6 space-y-6">
+        
+        <!-- ==============================
+             TAB 1: OVERVIEW (盘中概览)
+             ============================== -->
+        <div v-show="activeTab === 'overview'" class="space-y-6">
+          
+          <!-- 1. AI 宏观解读与仓位建议 -->
+          <div class="q-panel flex flex-col md:flex-row overflow-hidden min-h-[200px]">
+            <!-- 仪表盘区域 (左侧) -->
+            <div class="w-full md:w-1/4 lg:w-1/5 border-b md:border-b-0 md:border-r border-q-border bg-gray-50/50 flex flex-col p-4 relative">
+              <div class="text-[11px] font-semibold text-q-subtext uppercase tracking-widest mb-12">大盘建议仓位</div>
+              <div class="w-full px-2 mt-auto">
+                <div class="flex justify-between text-[10px] text-gray-400 mb-1.5 font-mono">
+                  <span>0% 空仓</span>
+                  <span>100% 满仓</span>
+                </div>
+                <div class="h-2 w-full bg-gray-200 rounded-full overflow-hidden">
+                  <div class="h-full bg-q-primary rounded-full transition-all duration-1000" style="width: 50%"></div>
+                </div>
+                <div class="text-center mt-4">
+                  <span class="text-3xl font-bold text-q-text font-mono">50<span class="text-sm text-gray-500">%</span></span>
+                </div>
+              </div>
+            </div>
+            <!-- 文本与控制台区域 (右侧) -->
+            <div class="w-full md:w-3/4 lg:w-4/5 p-5 flex flex-col">
+              <div class="flex justify-between items-center mb-3">
+                <div class="flex items-center gap-2">
+                  <span class="w-2 h-2 rounded-full bg-q-primary"></span>
+                  <span class="font-bold text-q-text text-sm">AI 盘面智能复盘</span>
+                  <span class="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded border border-blue-100">DeepSeek-v3.2</span>
+                </div>
+                <button class="text-xs text-q-primary hover:underline flex items-center gap-1">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                  调整 Prompt
+                </button>
+              </div>
+              <div class="text-[13px] text-gray-700 leading-relaxed flex-1 flex flex-col justify-center">
+                <!-- Mock AI Text -->
+                <div class="space-y-2">
+                  <p><strong class="text-q-text">走势判断：</strong>大盘处于震荡筑底阶段，3000点整数关口存在强支撑，短期向下空间有限。</p>
+                  <p><strong class="text-q-text">资金面：</strong>北向资金呈现净流入态势，主要集中在核心资产及高股息板块；ETF 资金呈现“越跌越买”特征。</p>
+                  <p><strong class="text-q-text">操作策略：</strong>建议维持中等仓位（50%左右），耐心等待右侧突破信号确认，切忌盲目追高。关注国债与红利资产的防守价值。</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 2. 市场情绪与成交额对比 -->
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            <!-- 大盘情绪 (Breadth) -->
+            <div class="q-panel p-5 flex flex-col lg:col-span-1">
+              <div class="text-[11px] font-semibold text-q-subtext uppercase tracking-widest mb-4">市场情绪 (Breadth)</div>
+              <div class="flex-1 flex flex-col justify-center">
+                <div class="flex justify-between text-[13px] font-medium mb-2">
+                  <span class="text-q-up">涨: {{ breadthData?.up || 0 }}</span>
+                  <span class="text-q-flat">平: {{ breadthData?.flat || 0 }}</span>
+                  <span class="text-q-down">跌: {{ breadthData?.down || 0 }}</span>
+                </div>
+                <!-- 进度条 -->
+                <div class="h-2.5 w-full bg-gray-100 rounded-full overflow-hidden flex">
+                  <div class="bg-q-up h-full transition-all" :style="{width: (breadthData?.up / Math.max(1, breadthData?.total || 1) * 100) + '%'}"></div>
+                  <div class="bg-q-flat h-full transition-all" :style="{width: (breadthData?.flat / Math.max(1, breadthData?.total || 1) * 100) + '%'}"></div>
+                  <div class="bg-q-down h-full transition-all" :style="{width: (breadthData?.down / Math.max(1, breadthData?.total || 1) * 100) + '%'}"></div>
+                </div>
+                <div class="mt-3 flex justify-between items-center text-xs">
+                  <span class="text-gray-500">上涨占比</span>
+                  <span class="font-bold text-q-text stat-value text-sm">{{ ((breadthData?.up / Math.max(1, breadthData?.total || 1)) * 100).toFixed(1) }}%</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 成交额对比 (Volume Chart) -->
+            <div class="q-panel p-5 flex flex-col lg:col-span-2">
+              <div class="flex justify-between items-end mb-2">
+                <div class="text-[11px] font-semibold text-q-subtext uppercase tracking-widest">成交额对比 (Volume vs Yday)</div>
+                <!-- 图例兼作数据展示，极度省空间 -->
+                <div class="flex gap-4 text-xs">
+                  <div class="flex items-center gap-1.5">
+                    <div class="w-2 h-2 bg-q-primary rounded-sm"></div>
+                    <span class="text-gray-500">今日</span>
+                    <span class="font-bold text-q-text stat-value">{{ formatAmount(marketAmount?.market_amount) }}</span>
+                  </div>
+                  <div class="flex items-center gap-1.5">
+                    <div class="w-2 h-2 border border-gray-400 border-dashed rounded-sm"></div>
+                    <span class="text-gray-500">昨日同期</span>
+                    <span class="font-bold text-gray-500 stat-value">---</span>
+                  </div>
+                </div>
+              </div>
+              <div id="chart-volume" class="flex-1 w-full min-h-[100px]"></div>
+            </div>
+            
+          </div>
+
+          <!-- 3. 核心资产分时矩阵 (宽基 + 国债 + 金融占位) -->
+          <div>
+            <div class="text-[11px] font-semibold text-q-subtext uppercase tracking-widest mb-3 flex items-center gap-2">
+              核心资产矩阵 (Core Assets)
+              <span class="px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded text-[9px] font-mono border border-gray-200">1m-Interval</span>
+            </div>
+            
+            <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+              <!-- 真实渲染的指数/ETF分时图 -->
+              <div v-for="sym in indexSymbols" :key="sym" class="q-panel overflow-hidden flex flex-col relative group transition-all duration-200 hover:shadow-md hover:border-blue-300">
+                <div class="px-3 pt-2.5 pb-0 flex justify-between items-start z-10">
+                  <div>
+                    <div class="text-sm font-bold text-q-text leading-tight">{{ symbolNames[sym] || sym }}</div>
+                    <div class="text-[10px] text-gray-400 font-mono mt-0.5">{{ sym.toUpperCase() }}</div>
+                  </div>
+                  <div class="text-right">
+                    <div class="stat-value text-sm font-bold" :class="getPriceColor(currentPrices[sym]?.pct)">
+                      {{ currentPrices[sym]?.price?.toFixed(3) || '---' }}
+                    </div>
+                    <div class="stat-value text-[11px] font-medium mt-0.5" :class="getPriceColor(currentPrices[sym]?.pct)">
+                      <span v-if="currentPrices[sym]?.pct > 0">+</span>{{ currentPrices[sym]?.pct?.toFixed(2) || '0.00' }}%
+                    </div>
+                  </div>
+                </div>
+                <!-- 极限压实的分时图高度 -->
+                <div :id="'chart-minute-' + sym" class="h-16 w-full mt-1 z-0"></div>
+                
+                <!-- Loading 遮罩 -->
+                <div v-if="!chartsLoaded[sym]" class="absolute inset-0 flex items-center justify-center bg-white/60 backdrop-blur-[1px] z-20">
+                  <svg class="animate-spin h-4 w-4 text-q-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                </div>
+              </div>
+
+              <!-- 金融三大板块占位符 (待底层对齐) -->
+              <div v-for="name in ['银行', '证券', '保险']" :key="name" class="q-panel bg-gray-50/50 overflow-hidden flex flex-col relative border-dashed border-gray-300 opacity-60">
+                <div class="px-3 pt-2.5 flex justify-between items-start">
+                  <div>
+                    <div class="text-sm font-bold text-gray-500 leading-tight">{{ name }}</div>
+                    <div class="text-[10px] text-gray-400 font-mono mt-0.5">PENDING</div>
+                  </div>
+                </div>
+                <div class="flex-1 flex items-center justify-center text-[10px] text-gray-400 uppercase tracking-widest mt-2 mb-4">
+                  Waiting M1 Sync
+                </div>
+              </div>
+
+            </div>
+          </div>
+          
+        </div>
+
+        <!-- ==============================
+             TAB 2: MARKET (板块与ETF行情)
+             ============================== -->
+        <div v-show="activeTab === 'market'" class="space-y-6">
+          
+          <!-- 1. AI 板块轮动解读与主线建议 -->
+          <div class="q-panel flex flex-col md:flex-row overflow-hidden">
+            <!-- 仪表盘区域 (左侧) -->
+            <div class="w-full md:w-1/4 lg:w-1/5 border-b md:border-b-0 md:border-r border-q-border bg-gray-50/50 flex flex-col items-center justify-center p-4 relative">
+              <div class="text-[11px] font-semibold text-q-subtext uppercase tracking-widest absolute top-3 left-4">赚钱效应/进攻仓位</div>
+              <div class="w-full mt-8 px-2">
+                <div class="flex justify-between text-[10px] text-gray-400 mb-1.5 font-mono">
+                  <span>冰点</span>
+                  <span>过热</span>
+                </div>
+                <div class="h-2 w-full bg-gray-200 rounded-full overflow-hidden">
+                  <div class="h-full bg-purple-500 rounded-full transition-all duration-1000" style="width: 65%"></div>
+                </div>
+                <div class="text-center mt-4">
+                  <span class="text-3xl font-bold text-q-text font-mono">65<span class="text-sm text-gray-500">%</span></span>
+                </div>
+              </div>
+            </div>
+            <!-- 文本与控制台区域 (右侧)  -->
+            <div class="w-full md:w-3/4 lg:w-4/5 p-5 flex flex-col">
+              <div class="flex justify-between items-center mb-3">
+                <div class="flex items-center gap-2">
+                  <span class="w-2 h-2 rounded-full bg-purple-500"></span>
+                  <span class="font-bold text-q-text text-sm">AI 板块轮动解析</span>
+                  <span class="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">DeepSeek-v3.2</span>
+                </div>
+                <button class="text-xs text-purple-600 hover:underline flex items-center gap-1">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                  调整 Prompt
+                </button>
+              </div>
+              <div class="text-[13px] text-gray-700 leading-relaxed flex-1 flex items-center">
+                <!-- Mock AI Text -->
+                <div>
+                  <p class="mb-1"><strong class="text-q-text">主线追踪：</strong>当前市场主线聚焦在红利低波与上游资源品，科技成长板块（如半导体、通信）处于高位震荡回调期。</p>
+                  <p class="mb-1"><strong class="text-q-text">跷跷板效应：</strong>股债跷跷板显著，大盘走弱时资金明显向30年国债ETF避险；同时“中字头”与“微盘股”呈现强负相关。</p>
+                  <p><strong class="text-q-text">操作建议：</strong>对已进入“高位/离场”池的标的严格执行纪律，切勿补仓；建议在“震荡/观望”池中寻找超跌反弹的左侧布局机会。</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 2. 任意板块行情与归一分析 -->
+          <div class="q-panel p-5 flex flex-col">
+            <div class="flex justify-between items-center mb-4">
+              <div class="text-[11px] font-semibold text-q-subtext uppercase tracking-widest">归一分析 (Normalized Analysis)</div>
+              <!-- Mock 控制台 -->
+              <div class="flex gap-2 items-center">
+                <input type="text" placeholder="输入代码/名称对比 (如 sh512880)" class="text-xs border border-gray-300 rounded px-2 py-1 w-48 focus:outline-none focus:border-q-primary">
+                <div class="flex bg-gray-100 rounded p-0.5">
+                  <button class="px-2 py-0.5 text-xs rounded text-gray-500 hover:text-gray-700">5日</button>
+                  <button class="px-2 py-0.5 text-xs rounded text-gray-500 hover:text-gray-700">20日</button>
+                  <button class="px-2 py-0.5 text-xs rounded bg-white shadow-sm font-medium text-q-text">60日</button>
+                </div>
+              </div>
+            </div>
+            <!-- 多线对比图表 -->
+            <div id="chart-correlation" class="w-full h-[220px]"></div>
+          </div>
+
+          <!-- 3. 上涨周期统计 -->
+          <div class="q-panel p-5 overflow-hidden flex flex-col">
+            <div class="flex justify-between items-center mb-6">
+              <div class="text-[14px] font-medium text-q-text flex items-center gap-2">
+                上涨周期统计 <span class="text-gray-400 text-xs font-normal">（关注板块）</span>
+              </div>
+              <div class="text-xs text-gray-500 flex gap-3 items-center">
+                <select class="border border-gray-300 rounded px-2 py-1 text-q-text focus:outline-none">
+                  <option>近1个月</option>
+                  <option selected>近2个月</option>
+                </select>
+                <span class="text-gray-400 font-mono">{{ getGridHeaders()[0]?.substring(5) || '...' }} ~ {{ getGridHeaders()[59]?.substring(5) || '...' }}</span>
+              </div>
+            </div>
+            
+            <div class="overflow-x-auto pb-2 custom-scrollbar">
+              <div class="min-w-[800px]">
+                
+                <!-- 表头 -->
+                <div class="flex text-xs text-gray-500 mb-2 border-b border-gray-100 pb-2">
+                  <div class="w-12 shrink-0">分类</div>
+                  <div class="w-12 shrink-0">属性</div>
+                  <div class="w-24 shrink-0">板块</div>
+                  <div class="flex-1 flex relative items-end h-6 ml-4">
+                    <div v-for="(date, i) in getGridHeaders()" :key="i" class="flex-1 relative">
+                      <span v-if="i % 5 === 0 && date" class="absolute bottom-0 left-1/2 -translate-x-1/2 text-[10px] text-gray-400 font-mono whitespace-nowrap">
+                        {{ date.substring(5) }}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                
+                <!-- 表格行 (循环 ETF) -->
+                <div v-for="sym in etfSymbols" :key="sym" class="flex items-center py-[2px] border-b border-gray-50 group hover:bg-gray-50/50">
+                  <div class="w-12 shrink-0 text-xs text-gray-400">未分类</div>
+                  <div class="w-12 shrink-0 text-xs text-gray-500">题材</div>
+                  <div class="w-24 shrink-0 text-sm font-medium text-q-text truncate pr-2" :title="symbolNames[sym] || sym">
+                    {{ (symbolNames[sym] || sym).replace('ETF', '') }}
+                  </div>
+                  
+                  <div class="flex-1 flex relative h-[18px] ml-4">
+                    <div v-for="(cell, i) in getProcessedGrid(sym)" :key="i" class="flex-1 relative flex items-center justify-center border-r border-gray-100 last:border-r-0">
+                      <!-- 上涨胶囊 -->
+                      <div v-if="cell.isUp" 
+                           class="absolute h-[14px] bg-[#C7D2FE] z-10 flex items-center justify-center text-[9px] text-indigo-700 font-bold"
+                           :class="{
+                             'rounded-l-full': cell.isStart,
+                             'rounded-r-full': cell.isEnd,
+                             'left-0 right-0': !cell.isStart && !cell.isEnd,
+                             'left-[1px] right-0': cell.isStart && !cell.isEnd,
+                             'left-0 right-[1px]': !cell.isStart && cell.isEnd,
+                             'left-[1px] right-[1px] rounded-full': cell.isStart && cell.isEnd
+                           }"
+                           :title="cell.item ? `${cell.item.date}: ${cell.item.pct.toFixed(2)}%` : ''">
+                         <span v-if="cell.streakLabel && cell.streakLabel > 1" class="scale-90 transform">{{ cell.streakLabel }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                
+              </div>
+            </div>
+            
+            <div class="mt-4 pt-3 border-t border-gray-100 text-xs text-gray-500 leading-relaxed">
+              属性口径：近20交易日上涨天数≥12且累计涨幅≥6%且最大连涨≥4天 → <span class="text-q-text font-medium">主线</span>（最多3个，超出按累计涨幅取前3），其余为<span class="text-q-text font-medium">题材</span>。
+            </div>
+          </div>
+
+          <!-- 4. ETF 生命周期监测池 -->
+          <div class="q-panel p-5">
+            <div class="flex justify-between items-center mb-6">
+              <div class="text-[14px] font-medium text-q-text">
+                生命周期监测池 <span class="text-gray-400 text-xs font-normal">（ETF阶段跟踪）</span>
+              </div>
+              <div class="flex items-center gap-1 bg-gray-100 p-0.5 rounded-md">
+                <button 
+                  @click="activeLifecycleTab = 'intraday'"
+                  class="px-3 py-1 text-xs rounded-sm transition-all"
+                  :class="activeLifecycleTab === 'intraday' ? 'bg-white text-q-text shadow-sm font-medium' : 'text-gray-500 hover:text-gray-700'"
+                >
+                  盘中 (Beta)
+                </button>
+                <button 
+                  @click="activeLifecycleTab = 'after'"
+                  class="px-3 py-1 text-xs rounded-sm transition-all"
+                  :class="activeLifecycleTab === 'after' ? 'bg-white text-q-text shadow-sm font-medium' : 'text-gray-500 hover:text-gray-700'"
+                >
+                  盘后 (T-1)
+                </button>
+              </div>
+            </div>
+            
+            <!-- 盘中占位符 -->
+            <div v-if="activeLifecycleTab === 'intraday'" class="py-20 flex flex-col items-center justify-center text-gray-400 border-2 border-dashed border-gray-100 rounded-lg">
+              <svg class="w-10 h-10 mb-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+              <p class="text-sm font-medium text-gray-500">盘中实时动态生命周期逻辑开发中...</p>
+              <p class="text-xs mt-1">目前请切换至【盘后 (T-1)】查看每日静态复盘结果。</p>
+            </div>
+            
+            <!-- 盘后数据展示 -->
+            <div v-if="activeLifecycleTab === 'after'" class="space-y-8">
+              
+              <!-- 区块 1：高位 / 离场池 -->
+              <div v-if="etfLifecycleSell && etfLifecycleSell.length > 0">
+                <div class="flex items-center gap-2 mb-3">
+                  <div class="w-1.5 h-4 bg-green-500 rounded-sm"></div>
+                  <h3 class="text-xs font-bold text-green-700 uppercase tracking-widest">高位 / 离场池 (Sell/Risk)</h3>
+                  <span class="text-[10px] bg-green-50 text-green-600 px-1.5 rounded-full font-mono">{{ etfLifecycleSell.length }}</span>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  <div v-for="item in etfLifecycleSell" :key="item.symbol" class="border border-gray-100 rounded-lg p-4 bg-white hover:shadow-md hover:border-green-200 transition-all relative overflow-hidden group">
+                    <div class="absolute top-0 left-0 right-0 h-1 bg-green-500"></div>
+                    <div class="flex justify-between items-start mb-3">
+                      <div>
+                        <div class="text-[15px] font-bold text-q-text flex items-center gap-2">
+                          {{ (item.ETF名称 || '').replace('ETF', '') }}
+                          <span class="text-[10px] px-1.5 py-0.5 rounded font-medium bg-green-50 text-green-600">
+                            {{ item.阶段信号 }}
+                          </span>
+                        </div>
+                        <div class="text-[10px] text-gray-400 font-mono mt-1">{{ (item.symbol || '').replace('sh','').replace('sz','') }}</div>
+                      </div>
+                    </div>
+                    <div class="space-y-2 mb-3 bg-gray-50/50 p-2.5 rounded text-xs">
+                      <div class="flex justify-between items-center">
+                        <span class="text-gray-500">动能态势</span>
+                        <span class="font-medium text-gray-700">{{ item.动能 }}</span>
+                      </div>
+                      <div class="flex justify-between items-center">
+                        <span class="text-gray-500">资金行为</span>
+                        <span class="font-medium text-gray-700 truncate w-32 text-right" :title="item.资金行为">{{ item.资金行为 }}</span>
+                      </div>
+                    </div>
+                    <div class="text-[11px] text-gray-500 leading-relaxed line-clamp-3" :title="item.操作建议">
+                      <span class="font-semibold text-gray-700">AI建议:</span> {{ item.操作建议 }}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 区块 2：建仓 / 持有池 -->
+              <div v-if="etfLifecycleHold && etfLifecycleHold.length > 0">
+                <div class="flex items-center gap-2 mb-3">
+                  <div class="w-1.5 h-4 bg-red-500 rounded-sm"></div>
+                  <h3 class="text-xs font-bold text-red-700 uppercase tracking-widest">建仓 / 持有池 (Buy/Hold)</h3>
+                  <span class="text-[10px] bg-red-50 text-red-600 px-1.5 rounded-full font-mono">{{ etfLifecycleHold.length }}</span>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  <div v-for="item in etfLifecycleHold" :key="item.symbol" class="border border-gray-100 rounded-lg p-4 bg-white hover:shadow-md hover:border-red-200 transition-all relative overflow-hidden group">
+                    <div class="absolute top-0 left-0 right-0 h-1 bg-red-500"></div>
+                    <div class="flex justify-between items-start mb-3">
+                      <div>
+                        <div class="text-[15px] font-bold text-q-text flex items-center gap-2">
+                          {{ (item.ETF名称 || '').replace('ETF', '') }}
+                          <span class="text-[10px] px-1.5 py-0.5 rounded font-medium bg-red-50 text-red-600">
+                            {{ item.阶段信号 }}
+                          </span>
+                        </div>
+                        <div class="text-[10px] text-gray-400 font-mono mt-1">{{ (item.symbol || '').replace('sh','').replace('sz','') }}</div>
+                      </div>
+                    </div>
+                    <div class="space-y-2 mb-3 bg-gray-50/50 p-2.5 rounded text-xs">
+                      <div class="flex justify-between items-center">
+                        <span class="text-gray-500">动能态势</span>
+                        <span class="font-medium text-gray-700">{{ item.动能 }}</span>
+                      </div>
+                      <div class="flex justify-between items-center">
+                        <span class="text-gray-500">资金行为</span>
+                        <span class="font-medium text-gray-700 truncate w-32 text-right" :title="item.资金行为">{{ item.资金行为 }}</span>
+                      </div>
+                    </div>
+                    <div class="text-[11px] text-gray-500 leading-relaxed line-clamp-3" :title="item.操作建议">
+                      <span class="font-semibold text-gray-700">AI建议:</span> {{ item.操作建议 }}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- 区块 3：震荡 / 观望池 -->
+              <div v-if="etfLifecycleWait && etfLifecycleWait.length > 0">
+                <div class="flex items-center gap-2 mb-3">
+                  <div class="w-1.5 h-4 bg-yellow-400 rounded-sm"></div>
+                  <h3 class="text-xs font-bold text-yellow-700 uppercase tracking-widest">震荡 / 观望池 (Wait/Observe)</h3>
+                  <span class="text-[10px] bg-yellow-50 text-yellow-600 px-1.5 rounded-full font-mono">{{ etfLifecycleWait.length }}</span>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  <div v-for="item in etfLifecycleWait" :key="item.symbol" class="border border-gray-100 rounded-lg p-4 bg-white hover:shadow-md hover:border-yellow-300 transition-all relative overflow-hidden group">
+                    <div class="absolute top-0 left-0 right-0 h-1 bg-yellow-400"></div>
+                    <div class="flex justify-between items-start mb-3">
+                      <div>
+                        <div class="text-[15px] font-bold text-q-text flex items-center gap-2">
+                          {{ (item.ETF名称 || '').replace('ETF', '') }}
+                          <span class="text-[10px] px-1.5 py-0.5 rounded font-medium bg-yellow-50 text-yellow-700">
+                            {{ item.阶段信号 }}
+                          </span>
+                        </div>
+                        <div class="text-[10px] text-gray-400 font-mono mt-1">{{ (item.symbol || '').replace('sh','').replace('sz','') }}</div>
+                      </div>
+                    </div>
+                    <div class="space-y-2 mb-3 bg-gray-50/50 p-2.5 rounded text-xs">
+                      <div class="flex justify-between items-center">
+                        <span class="text-gray-500">动能态势</span>
+                        <span class="font-medium text-gray-700">{{ item.动能 }}</span>
+                      </div>
+                      <div class="flex justify-between items-center">
+                        <span class="text-gray-500">资金行为</span>
+                        <span class="font-medium text-gray-700 truncate w-32 text-right" :title="item.资金行为">{{ item.资金行为 }}</span>
+                      </div>
+                    </div>
+                    <div class="text-[11px] text-gray-500 leading-relaxed line-clamp-3" :title="item.操作建议">
+                      <span class="font-semibold text-gray-700">AI建议:</span> {{ item.操作建议 }}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+    </main>
+
+  </div>
+
+  <script src="./ui_m1.js"></script>
+</body>
+</html>

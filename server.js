@@ -3555,6 +3555,133 @@ const server = http.createServer(async (req, res) => {
     res.end(JSON.stringify({ ok: true, items }));
     return;
   }
+
+  // --- [M1 沙盒 BFF 路由] ---
+  if (url.pathname === '/api/m1/data/breadth' && req.method === 'GET') {
+    try {
+      const breadthPath = path.join(__dirname, 'data/market/minute/breadth-cache.jsonl');
+      let data = [];
+      if (fs.existsSync(breadthPath)) {
+        const lines = fs.readFileSync(breadthPath, 'utf8').trim().split('\n');
+        data = lines.filter(l => l).map(l => {
+          try { return JSON.parse(l); } catch(e) { return null; }
+        }).filter(Boolean);
+      }
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.end(JSON.stringify({ ok: true, data }));
+    } catch (e) {
+      res.statusCode = 500;
+      res.end(JSON.stringify({ ok: false, error: e.message }));
+    }
+    return;
+  }
+
+  if (url.pathname === '/api/m1/data/volume_history' && req.method === 'GET') {
+    try {
+      const marketAmountPath = path.join(__dirname, 'data/market/market_amount.jsonl');
+      let data = [];
+      if (fs.existsSync(marketAmountPath)) {
+        const lines = fs.readFileSync(marketAmountPath, 'utf8').trim().split('\n');
+        data = lines.filter(l => l).map(l => {
+          try { return JSON.parse(l); } catch(e) { return null; }
+        }).filter(Boolean);
+      }
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.end(JSON.stringify({ ok: true, data }));
+    } catch (e) {
+      res.statusCode = 500;
+      res.end(JSON.stringify({ ok: false, error: e.message }));
+    }
+    return;
+  }
+
+  if (url.pathname === '/api/m1/data/overview' && req.method === 'GET') {
+    try {
+      const warmupPath = path.join(__dirname, 'data/warmup/warmup-60.json');
+      const lifecyclePath = path.join(__dirname, 'data/lifecycle/lifecycle.json');
+      const marketAmountPath = path.join(__dirname, 'data/market/market_amount.jsonl');
+
+      let warmup = null;
+      let lifecycle = null;
+      let market_amount = null;
+
+      if (fs.existsSync(warmupPath)) {
+        warmup = JSON.parse(fs.readFileSync(warmupPath, 'utf8'));
+      }
+      if (fs.existsSync(lifecyclePath)) {
+        lifecycle = JSON.parse(fs.readFileSync(lifecyclePath, 'utf8'));
+      }
+      if (fs.existsSync(marketAmountPath)) {
+        // 读取最后一行
+        const lines = fs.readFileSync(marketAmountPath, 'utf8').trim().split('\n');
+        if (lines.length > 0) {
+          try {
+            market_amount = JSON.parse(lines[lines.length - 1]);
+          } catch (e) {}
+        }
+      }
+
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.end(JSON.stringify({ ok: true, warmup, lifecycle, market_amount }));
+    } catch (e) {
+      res.statusCode = 500;
+      res.end(JSON.stringify({ ok: false, error: e.message }));
+    }
+    return;
+  }
+
+  if (url.pathname === '/api/m1/data/minute' && req.method === 'GET') {
+    const symbol = url.searchParams.get('symbol');
+    const day = url.searchParams.get('day') || new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }).split(' ')[0].replace(/\//g, '-');
+    
+    if (!symbol) {
+      res.statusCode = 400;
+      return res.end(JSON.stringify({ ok: false, error: 'missing symbol parameter' }));
+    }
+
+    try {
+      let minutePath = path.join(__dirname, `data/index/minute/${symbol}/${day}.jsonl`);
+      if (!fs.existsSync(minutePath)) {
+        minutePath = path.join(__dirname, `data/etf/minute/${symbol}/${day}.jsonl`);
+      }
+
+      let data = [];
+      let pre_close = null;
+      let name = symbol;
+
+      if (fs.existsSync(minutePath)) {
+        const lines = fs.readFileSync(minutePath, 'utf8').trim().split('\n');
+        data = lines.filter(l => l).map(l => {
+          try { return JSON.parse(l); } catch(e) { return null; }
+        }).filter(Boolean);
+      }
+
+      // 从 warmup 数据中获取昨收价和名称
+      const warmupPath = path.join(__dirname, 'data/warmup/warmup-60.json');
+      if (fs.existsSync(warmupPath)) {
+        try {
+          const warmup = JSON.parse(fs.readFileSync(warmupPath, 'utf8'));
+          if (warmup.history && warmup.history[symbol]) {
+            const history = warmup.history[symbol];
+            if (history.length > 0) {
+              // 无论如何，昨收就是 history 里最后一天（即昨日）的收盘价
+              pre_close = history[history.length - 1].close;
+            }
+          }
+        } catch (e) {}
+      }
+
+      // ETF 分时数据自带 pre_close，大盘指数的分时数据可能没有，统一在这里补充
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.end(JSON.stringify({ ok: true, symbol, name, day, pre_close, data }));
+    } catch (e) {
+      res.statusCode = 500;
+      res.end(JSON.stringify({ ok: false, error: e.message }));
+    }
+    return;
+  }
+  // --- [M1 沙盒 BFF 路由结束] ---
+
   if (url.pathname === '/api/m1/run' && req.method === 'POST') {
     let body = '';
     req.on('data', chunk => body += chunk);
