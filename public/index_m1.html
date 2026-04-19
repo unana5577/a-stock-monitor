@@ -554,37 +554,31 @@
                   <span class="text-[10px] bg-yellow-50 text-yellow-600 px-1.5 rounded-full font-mono">{{ etfLifecycleWait.length }}</span>
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                  <div v-for="item in etfLifecycleWait" :key="item.symbol" class="border border-gray-100 rounded-lg p-4 bg-white hover:shadow-md hover:border-yellow-300 transition-all relative overflow-hidden group">
-                    <div class="absolute top-0 left-0 right-0 h-1 bg-yellow-400"></div>
-                    <div class="flex justify-between items-start mb-3">
-                      <div>
-                        <div class="text-[15px] font-bold text-q-text flex items-center gap-2">
-                          {{ (item.ETF名称 || '').replace('ETF', '') }}
-                          <span class="text-[10px] px-1.5 py-0.5 rounded font-medium bg-yellow-50 text-yellow-700">
-                            {{ item.阶段信号 }}
-                          </span>
-                        </div>
-                        <div class="text-[10px] text-gray-400 font-mono mt-1">{{ (item.symbol || '').replace('sh','').replace('sz','') }}</div>
+                  <div v-for="item in etfLifecycleWait" :key="item.symbol" class="border rounded-lg p-2 hover:shadow-sm transition-all relative overflow-hidden group">
+                    <div class="absolute top-0 left-0 right-0 h-[3px] bg-yellow-400"></div>
+                    <div class="flex items-center justify-between mt-1">
+                      <div class="flex items-center gap-2">
+                        <div class="text-sm font-semibold text-q-text">{{ (item.ETF名称 || '').replace('ETF', '') }}</div>
+                        <!-- 预留 Top 排名标签位置 -->
+                        <span v-if="item.topRank" class="inline-flex items-center px-1.5 py-0.5 rounded text-[7px] leading-3 bg-indigo-600 text-white">Top{{ item.topRank }}</span>
+                      </div>
+                      <div class="flex items-center gap-2">
+                        <div class="text-xs font-semibold" :class="getAdviceTextColor(item.操作建议)">{{ item.操作建议 || '-' }}</div>
                       </div>
                     </div>
-                    <div class="mb-3 bg-gray-50/50 p-2.5 rounded">
-                      <div class="text-[11px] text-gray-600 mt-1">
-                        <span>昨 {{ fmtPct(getItemStats(item).ydayPct) }}</span>
-                        <span class="mx-2 text-gray-300">|</span>
-                        <span>今 {{ fmtPct(getItemStats(item).nowPct) }}</span>
-                        <span class="mx-2 text-gray-300">|</span>
-                        <span>趋势 {{ getItemStats(item).tag }}</span>
-                      </div>
-                      <div class="text-[11px] text-gray-500 mt-1">
-                        <span>{{ item.动能 || '-' }}</span>
-                        <span class="mx-2 text-gray-300">|</span>
-                        <span class="truncate inline-block align-bottom max-w-[80px]" :title="item.资金行为">{{ item.资金行为 || '-' }}</span>
-                        <span class="mx-2 text-gray-300">|</span>
-                        <span>热度Δ {{ fmtHeatDelta(getItemStats(item).shareChange) }}</span>
-                      </div>
+                    <div class="text-xs text-gray-600 mt-2">
+                      <span>昨 {{ fmtPct(getItemStats(item).ydayPct) }}</span>
+                      <span class="mx-2">|</span>
+                      <span>今 {{ fmtPct(getItemStats(item).nowPct) }}</span>
+                      <span class="mx-2">|</span>
+                      <span>趋势 {{ getItemStats(item).tag }}</span>
                     </div>
-                    <div class="text-[11px] text-gray-500 leading-relaxed line-clamp-3" :title="item.操作建议">
-                      <span class="font-semibold text-gray-700">AI建议:</span> {{ item.操作建议 }}
+                    <div class="text-xs text-gray-500 mt-1.5 mb-1">
+                      <span>{{ item.动能 || '-' }}</span>
+                      <span class="mx-2">|</span>
+                      <span>{{ item.资金行为 || '-' }}</span>
+                      <span class="mx-2">|</span>
+                      <span>热度Δ {{ fmtHeatDelta(getItemStats(item).shareChange) }}</span>
                     </div>
                   </div>
                 </div>
