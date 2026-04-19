@@ -491,19 +491,19 @@
                         <div class="text-[10px] text-gray-400 font-mono mt-1">{{ (item.symbol || '').replace('sh','').replace('sz','') }}</div>
                       </div>
                     </div>
-                    <div class="space-y-1 mb-3 bg-gray-50/50 p-2.5 rounded text-[11px]">
-                      <div class="text-gray-600">
+                    <div class="mb-3 bg-gray-50/50 p-2.5 rounded">
+                      <div class="text-[11px] text-gray-600 mt-1">
                         <span>昨 {{ fmtPct(getItemStats(item).ydayPct) }}</span>
-                        <span class="mx-1.5 text-gray-300">|</span>
+                        <span class="mx-2 text-gray-300">|</span>
                         <span>今 {{ fmtPct(getItemStats(item).nowPct) }}</span>
-                        <span class="mx-1.5 text-gray-300">|</span>
+                        <span class="mx-2 text-gray-300">|</span>
                         <span>趋势 {{ getItemStats(item).tag }}</span>
                       </div>
-                      <div class="text-gray-500 mt-1">
+                      <div class="text-[11px] text-gray-500 mt-1">
                         <span>{{ item.动能 || '-' }}</span>
-                        <span class="mx-1.5 text-gray-300">|</span>
-                        <span class="truncate max-w-[70px] inline-block align-bottom" :title="item.资金行为">{{ item.资金行为 || '-' }}</span>
-                        <span class="mx-1.5 text-gray-300">|</span>
+                        <span class="mx-2 text-gray-300">|</span>
+                        <span class="truncate inline-block align-bottom max-w-[80px]" :title="item.资金行为">{{ item.资金行为 || '-' }}</span>
+                        <span class="mx-2 text-gray-300">|</span>
                         <span>热度Δ {{ fmtHeatDelta(getItemStats(item).shareChange) }}</span>
                       </div>
                     </div>
@@ -535,19 +535,19 @@
                         <div class="text-[10px] text-gray-400 font-mono mt-1">{{ (item.symbol || '').replace('sh','').replace('sz','') }}</div>
                       </div>
                     </div>
-                    <div class="space-y-1 mb-3 bg-gray-50/50 p-2.5 rounded text-[11px]">
-                      <div class="text-gray-600">
+                    <div class="mb-3 bg-gray-50/50 p-2.5 rounded">
+                      <div class="text-[11px] text-gray-600 mt-1">
                         <span>昨 {{ fmtPct(getItemStats(item).ydayPct) }}</span>
-                        <span class="mx-1.5 text-gray-300">|</span>
+                        <span class="mx-2 text-gray-300">|</span>
                         <span>今 {{ fmtPct(getItemStats(item).nowPct) }}</span>
-                        <span class="mx-1.5 text-gray-300">|</span>
+                        <span class="mx-2 text-gray-300">|</span>
                         <span>趋势 {{ getItemStats(item).tag }}</span>
                       </div>
-                      <div class="text-gray-500 mt-1">
+                      <div class="text-[11px] text-gray-500 mt-1">
                         <span>{{ item.动能 || '-' }}</span>
-                        <span class="mx-1.5 text-gray-300">|</span>
-                        <span class="truncate max-w-[70px] inline-block align-bottom" :title="item.资金行为">{{ item.资金行为 || '-' }}</span>
-                        <span class="mx-1.5 text-gray-300">|</span>
+                        <span class="mx-2 text-gray-300">|</span>
+                        <span class="truncate inline-block align-bottom max-w-[80px]" :title="item.资金行为">{{ item.资金行为 || '-' }}</span>
+                        <span class="mx-2 text-gray-300">|</span>
                         <span>热度Δ {{ fmtHeatDelta(getItemStats(item).shareChange) }}</span>
                       </div>
                     </div>
@@ -579,19 +579,19 @@
                         <div class="text-[10px] text-gray-400 font-mono mt-1">{{ (item.symbol || '').replace('sh','').replace('sz','') }}</div>
                       </div>
                     </div>
-                    <div class="space-y-1 mb-3 bg-gray-50/50 p-2.5 rounded text-[11px]">
-                      <div class="text-gray-600">
+                    <div class="mb-3 bg-gray-50/50 p-2.5 rounded">
+                      <div class="text-[11px] text-gray-600 mt-1">
                         <span>昨 {{ fmtPct(getItemStats(item).ydayPct) }}</span>
-                        <span class="mx-1.5 text-gray-300">|</span>
+                        <span class="mx-2 text-gray-300">|</span>
                         <span>今 {{ fmtPct(getItemStats(item).nowPct) }}</span>
-                        <span class="mx-1.5 text-gray-300">|</span>
+                        <span class="mx-2 text-gray-300">|</span>
                         <span>趋势 {{ getItemStats(item).tag }}</span>
                       </div>
-                      <div class="text-gray-500 mt-1">
+                      <div class="text-[11px] text-gray-500 mt-1">
                         <span>{{ item.动能 || '-' }}</span>
-                        <span class="mx-1.5 text-gray-300">|</span>
-                        <span class="truncate max-w-[70px] inline-block align-bottom" :title="item.资金行为">{{ item.资金行为 || '-' }}</span>
-                        <span class="mx-1.5 text-gray-300">|</span>
+                        <span class="mx-2 text-gray-300">|</span>
+                        <span class="truncate inline-block align-bottom max-w-[80px]" :title="item.资金行为">{{ item.资金行为 || '-' }}</span>
+                        <span class="mx-2 text-gray-300">|</span>
                         <span>热度Δ {{ fmtHeatDelta(getItemStats(item).shareChange) }}</span>
                       </div>
                     </div>
