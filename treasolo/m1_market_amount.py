@@ -5,8 +5,32 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-def fetch_and_save(day: str):
+def load_holidays() -> set[str]:
+    p = PROJECT_ROOT / "config/holidays.json"
+    if not p.exists():
+        return set()
+    try:
+        obj = json.loads(p.read_text(encoding="utf-8"))
+        return set(obj.get("holidays") or [])
+    except Exception:
+        return set()
+
+def is_trading_session(now: datetime) -> bool:
+    if now.weekday() >= 5:
+        return False
+    d = now.strftime("%Y-%m-%d")
+    if d in load_holidays():
+        return False
+    minutes = now.hour * 60 + now.minute
+    return (570 <= minutes <= 690) or (780 <= minutes <= 900)
+
+def fetch_and_save(day: str, force: bool):
     print(f"\n[{datetime.now().strftime('%H:%M:%S')}] 正在执行 M1-Market-Amount: 抓取全市场与ETF成交额")
+    
+    now = datetime.now()
+    if not force and not is_trading_session(now):
+        print("  ⏭️ 非交易时段，跳过抓取")
+        return 0
     
     # 1. 抓取全市场成交额
     try:
@@ -68,5 +92,6 @@ def fetch_and_save(day: str):
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("--day", default=datetime.now().strftime("%Y-%m-%d"))
+    p.add_argument("--force", action="store_true")
     args = p.parse_args()
-    exit(fetch_and_save(args.day))
+    exit(fetch_and_save(args.day, args.force))

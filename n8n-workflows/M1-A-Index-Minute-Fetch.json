@@ -1,17 +1,17 @@
 {
-  "name": "M1-A-Index-Minute-Fetch (30m + 15:00补点)",
+  "name": "M1-A-Index-Minute-Fetch (1m + 15:00补点)",
   "nodes": [
     {
-      "id": "trigger-30m",
-      "name": "30分钟触发",
+      "id": "trigger-1m",
+      "name": "1分钟触发",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.1,
       "position": [0, 0],
       "parameters": {
         "rule": {
           "interval": [
-            { "field": "cronExpression", "expression": "0,30 9-11 * * 1-5" },
-            { "field": "cronExpression", "expression": "0,30 13-14 * * 1-5" }
+            { "field": "cronExpression", "expression": "* 9-11 * * 1-5" },
+            { "field": "cronExpression", "expression": "* 13-14 * * 1-5" }
           ]
         }
       }
@@ -111,7 +111,7 @@
     }
   ],
   "connections": {
-    "30分钟触发": { "main": [ [ { "node": "参数(常规)", "type": "main", "index": 0 } ] ] },
+    "1分钟触发": { "main": [ [ { "node": "参数(常规)", "type": "main", "index": 0 } ] ] },
     "15:00补点触发": { "main": [ [ { "node": "参数(收盘补点)", "type": "main", "index": 0 } ] ] },
     "手动触发": { "main": [ [ { "node": "参数(手动)", "type": "main", "index": 0 } ] ] },
     "参数(常规)": { "main": [ [ { "node": "落盘指数分时", "type": "main", "index": 0 } ] ] },

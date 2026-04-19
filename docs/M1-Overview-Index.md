@@ -31,6 +31,12 @@ data/
        └── minute/
             ├── sh511130/2026-04-17.jsonl
             └── sh512480/2026-04-17.jsonl
+
+  ├── warmup/                  # 预热与缓存聚合
+  │    └── warmup-60.json      # 提取自 index与etf的最近60天日线聚合
+  │
+  └── lifecycle/               # 业务分析与计算结果
+       └── lifecycle.json      # 基于 warmup-60 计算出的各板块生命周期、均线及建议
 ```
 
 ---
@@ -46,7 +52,7 @@ data/
 ## 5 条核心工作流明细表
 
 ### 1. 全市场成交额抓取
-- **用途**：每 5 分钟算一次“全市场成交额”和“ETF占比”。(注：开盘时验证)
+- **用途**：每 1 分钟算一次“全市场成交额”和“ETF占比”。(注：开盘时验证)
 - **导入 n8n 用的文件**：[n8n-workflows/M1-Market-Amount.json](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/n8n-workflows/M1-Market-Amount.json)
 - **底层 Python 脚本**：[treasolo/m1_market_amount.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/treasolo/m1_market_amount.py)
 - **抓下来的数据存在哪**：`data/market/market_amount.jsonl`
@@ -58,7 +64,7 @@ data/
 - **抓下来的数据存在哪**：`data/market/minute/breadth-cache.jsonl`
 
 ### 3. 大盘指数：盘中分时抓取
-- **用途**：每 30 分钟抓取 6 大指数当前的分钟价，用于画分时线。
+- **用途**：每 1 分钟抓取 6 大指数当前的分钟价，用于画分时线。
 - **导入 n8n 用的文件**：[n8n-workflows/M1-A-Index-Minute-Fetch.json](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/n8n-workflows/M1-A-Index-Minute-Fetch.json)
 - **底层 Python 脚本**：[treasolo/m1_minute_fetch_indices.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/treasolo/m1_minute_fetch_indices.py)
 - **抓下来的数据存在哪**：`data/index/minute/<代码>/<日期>.jsonl`
@@ -80,7 +86,7 @@ data/
 ## ETF 专属工作流 (含分时与日线)
 
 ### 6. ETF：盘中分时抓取 (全字段)
-- **用途**：每 30 分钟抓取核心 ETF 分时数据，包含 `price`, `pct`, `amount`, `vol`, `open`, `high`, `low` 等完整字段。
+- **用途**：每 1 分钟抓取核心 ETF 分时数据，包含 `price`, `pct`, `amount`, `vol`, `open`, `high`, `low` 等完整字段。
 - **导入 n8n 用的文件**：[n8n-workflows/M1-C-ETF-Minute-Fetch.json](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/n8n-workflows/M1-C-ETF-Minute-Fetch.json)
 - **底层 Python 脚本**：[treasolo/m1_minute_fetch_etf.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/treasolo/m1_minute_fetch_etf.py)
 - **抓下来的数据存在哪**：`data/etf/minute/<代码>/<日期>.jsonl`
@@ -128,3 +134,10 @@ data/
 | `sh516510` | 云计算ETF | 行业主题 |
 | `sh562500` | 机器人ETF | 行业主题 |
 | `sh563530` | 数字经济ETF | 行业主题 |
+### 9. 数据预热与生命周期分析 (聚合生成)
+- **用途**：每天 18:10，读取所有大盘与 ETF 的最新 60 天日线数据，组装为精简的 `warmup-60.json`，随后立即根据这 60 天数据计算出每个标的的生命周期状态、均线、乖离率和操作建议，保存为 `lifecycle.json`。供前端秒级加载。
+- **导入 n8n 用的文件**：[n8n-workflows/M1-G-Warmup-Lifecycle.json](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/n8n-workflows/M1-G-Warmup-Lifecycle.json)
+- **底层 Python 脚本**：[treasolo/m1_warmup.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/treasolo/m1_warmup.py) 与 [treasolo/m1_lifecycle.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/treasolo/m1_lifecycle.py)
+- **抓下来的数据存在哪**：
+  - 预热文件：`data/warmup/warmup-60.json`
+  - 生命周期分析：`data/lifecycle/lifecycle.json`

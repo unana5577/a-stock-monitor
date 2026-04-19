@@ -3591,6 +3591,10 @@ const server = http.createServer(async (req, res) => {
           if (data.day) args.push('--day', data.day);
         } else if (data.script === 'breadth_manager.py') {
           args = ['treasolo/breadth_manager.py', data.cmd || 'spot'];
+        } else if (data.script === 'm1_warmup.py') {
+          args = ['treasolo/m1_warmup.py'];
+        } else if (data.script === 'm1_lifecycle.py') {
+          args = ['treasolo/m1_lifecycle.py'];
         } else {
           res.statusCode = 400;
           return res.end(JSON.stringify({ error: 'unknown script' }));
