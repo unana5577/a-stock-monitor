@@ -53,23 +53,31 @@ const app = createApp({
       const items = etfLifecycleItems.value || [];
       return items.filter(item => {
         const signal = item.阶段信号 || '';
-        return signal.includes('建仓') || signal.includes('持有') || signal.includes('低吸') || signal.includes('潜伏期') || signal.includes('趋势确立') || signal.includes('主升浪');
+        const advice = item.操作建议 || '';
+        return signal.includes('建仓') || signal.includes('低吸') || signal.includes('潜伏期') || signal.includes('趋势确立') || signal.includes('主升浪') || advice.includes('持有') || advice.includes('持股');
       });
     });
     
     const etfLifecycleWait = computed(() => {
       const items = etfLifecycleItems.value || [];
+      const holdIds = new Set(etfLifecycleHold.value.map(i => i.symbol));
       return items.filter(item => {
+        if (holdIds.has(item.symbol)) return false; // 互斥，如果在持有池里，就不在震荡池
         const signal = item.阶段信号 || '';
-        return signal.includes('观望') || signal.includes('震荡') || signal.includes('超跌反弹') || signal.includes('背离期') || signal.includes('筑底期');
+        const advice = item.操作建议 || '';
+        return signal.includes('观望') || signal.includes('震荡') || signal.includes('超跌反弹') || signal.includes('背离期') || signal.includes('筑底期') || advice.includes('观望');
       });
     });
     
     const etfLifecycleSell = computed(() => {
       const items = etfLifecycleItems.value || [];
+      const holdIds = new Set(etfLifecycleHold.value.map(i => i.symbol));
+      const waitIds = new Set(etfLifecycleWait.value.map(i => i.symbol));
       return items.filter(item => {
+        if (holdIds.has(item.symbol) || waitIds.has(item.symbol)) return false;
         const signal = item.阶段信号 || '';
-        return signal.includes('离场') || signal.includes('高位回调') || signal.includes('止盈') || signal.includes('止损') || signal.includes('减仓') || signal.includes('回避') || signal.includes('加速期') || signal.includes('衰退期') || signal.includes('杀跌期');
+        const advice = item.操作建议 || '';
+        return signal.includes('离场') || signal.includes('高位回调') || signal.includes('止盈') || signal.includes('止损') || signal.includes('减仓') || signal.includes('回避') || signal.includes('加速期') || signal.includes('衰退期') || signal.includes('杀跌期') || advice.includes('减仓');
       });
     });
 
