@@ -3625,6 +3625,32 @@ const server = http.createServer(async (req, res) => {
           try { return JSON.parse(l); } catch(e) { return null; }
         }).filter(Boolean);
       }
+      
+      // 如果分时缓存被清空（例如盘后），则尝试读取快照兜底
+      if (data.length === 0) {
+        const latest = loadLatestBreadthRecord() || loadBreadthFromArchive(latestTradingDay());
+        if (latest && typeof latest.upCount === 'number') {
+          data.push({
+             ok: true,
+             up: latest.upCount,
+             down: latest.downCount,
+             flat: latest.flatCount || 0,
+             total: latest.upCount + latest.downCount + (latest.flatCount || 0)
+          });
+        } else {
+          // fallback to old breadth-cache.json if archive not found
+          const snapPath = path.join(__dirname, 'data/market/breadth-cache.json');
+          if (fs.existsSync(snapPath)) {
+            try {
+              const snap = JSON.parse(fs.readFileSync(snapPath, 'utf8'));
+              if (snap && typeof snap.up === 'number') {
+                data.push(snap);
+              }
+            } catch(e) {}
+          }
+        }
+      }
+      
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.end(JSON.stringify({ ok: true, data }));
     } catch (e) {

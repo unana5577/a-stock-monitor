@@ -1,5 +1,5 @@
 {
-  "name": "M1-F-Cleanup-Minute (18:30)",
+  "name": "M1-F-Cleanup-Minute (09:15)",
   "nodes": [
     {
       "id": "trigger",
@@ -8,7 +8,7 @@
       "typeVersion": 1.1,
       "position": [0, 0],
       "parameters": {
-        "rule": { "interval": [ { "field": "cronExpression", "expression": "30 18 * * 1-5" } ] }
+        "rule": { "interval": [ { "field": "cronExpression", "expression": "15 9 * * 1-5" } ] }
       }
     },
     {

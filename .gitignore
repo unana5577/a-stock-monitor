@@ -28,3 +28,5 @@ openclaw_workspace/
 
 # Optional local ops folder
 cron/
+
+test_llm_prompt.py

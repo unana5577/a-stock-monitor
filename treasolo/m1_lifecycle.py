@@ -74,8 +74,8 @@ def build_lifecycle():
             benchmark_map[name] = df_map[sym]
             
     # 3. 准备 market_amount_df
-    # 读取 market_amount.jsonl，取每天最后一条记录
-    market_amount_file = PROJECT_ROOT / "data/market/market_amount.jsonl"
+    # 读取 daily.jsonl, 取每天最后一条记录
+    market_amount_file = PROJECT_ROOT / "data/market/daily/amount/daily.jsonl"
     market_daily = {}
     if market_amount_file.exists():
         with open(market_amount_file, "r", encoding="utf-8") as f:

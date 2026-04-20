@@ -79,6 +79,40 @@ def run():
             "下跌家数": breadth.get("down", 0),
             "平盘家数": breadth.get("flat", 0)
         }
+    else:
+        # Fallback to the archive if breadth-cache.jsonl is cleared
+        day_nodash = day.replace("-", "")
+        archive_path = PROJECT_ROOT / f"data/archive-{day_nodash}.jsonl"
+        archive_records = load_jsonl_all(archive_path)
+        if archive_records and len(archive_records[-1]) >= 24:
+            last_record = archive_records[-1]
+            try:
+                up_cnt = int(last_record[22] or 0)
+                down_cnt = int(last_record[23] or 0)
+                if up_cnt > 0 or down_cnt > 0:
+                    breadth_data = {
+                        "上涨家数": up_cnt,
+                        "下跌家数": down_cnt,
+                        "平盘家数": 0
+                    }
+            except:
+                pass
+        
+        # If archive didn't have it, fallback to market-breadth-cache
+        if not breadth_data:
+            snap_path = PROJECT_ROOT / "data/market/breadth-cache.json"
+            if snap_path.exists():
+                try:
+                    with open(snap_path, "r") as f:
+                        snap = json.load(f)
+                        if "up" in snap:
+                            breadth_data = {
+                                "上涨家数": snap.get("up", 0),
+                                "下跌家数": snap.get("down", 0),
+                                "平盘家数": snap.get("flat", 0)
+                            }
+                except:
+                    pass
         
     # 2. 量能 (Volume)
     amount_series = load_jsonl_all(PROJECT_ROOT / f"data/market/minute/amount/{day}.jsonl")
