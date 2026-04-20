@@ -358,9 +358,10 @@
               <div class="flex gap-2 items-center">
                 <input type="text" placeholder="输入代码/名称对比 (如 sh512880)" class="text-xs border border-gray-300 rounded px-2 py-1 w-48 focus:outline-none focus:border-q-primary">
                 <div class="flex bg-gray-100 rounded p-0.5">
-                  <button class="px-2 py-0.5 text-xs rounded text-gray-500 hover:text-gray-700">5日</button>
-                  <button class="px-2 py-0.5 text-xs rounded text-gray-500 hover:text-gray-700">20日</button>
-                  <button class="px-2 py-0.5 text-xs rounded bg-white shadow-sm font-medium text-q-text">60日</button>
+                  <button @click="corrDays = 1; renderCorrelationChart()" :class="corrDays === 1 ? 'bg-white shadow-sm font-medium text-q-text' : 'text-gray-500 hover:text-gray-700'" class="px-2 py-0.5 text-xs rounded transition-all">当日</button>
+                  <button @click="corrDays = 5; renderCorrelationChart()" :class="corrDays === 5 ? 'bg-white shadow-sm font-medium text-q-text' : 'text-gray-500 hover:text-gray-700'" class="px-2 py-0.5 text-xs rounded transition-all">5日</button>
+                  <button @click="corrDays = 20; renderCorrelationChart()" :class="corrDays === 20 ? 'bg-white shadow-sm font-medium text-q-text' : 'text-gray-500 hover:text-gray-700'" class="px-2 py-0.5 text-xs rounded transition-all">20日</button>
+                  <button @click="corrDays = 60; renderCorrelationChart()" :class="corrDays === 60 ? 'bg-white shadow-sm font-medium text-q-text' : 'text-gray-500 hover:text-gray-700'" class="px-2 py-0.5 text-xs rounded transition-all">60日</button>
                 </div>
               </div>
             </div>
@@ -504,6 +505,8 @@
                       <span class="mx-2">|</span>
                       <span>热度Δ {{ fmtHeatDelta(getItemStats(item).shareChange) }}</span>
                     </div>
+                    <!-- 1分钟分时图 -->
+                    <div :id="'chart-minute-' + item.symbol" class="h-10 w-full mt-1.5 opacity-80"></div>
                   </div>
                 </div>
               </div>
@@ -542,6 +545,8 @@
                       <span class="mx-2">|</span>
                       <span>热度Δ {{ fmtHeatDelta(getItemStats(item).shareChange) }}</span>
                     </div>
+                    <!-- 1分钟分时图 -->
+                    <div :id="'chart-minute-' + item.symbol" class="h-10 w-full mt-1.5 opacity-80"></div>
                   </div>
                 </div>
               </div>
@@ -580,6 +585,8 @@
                       <span class="mx-2">|</span>
                       <span>热度Δ {{ fmtHeatDelta(getItemStats(item).shareChange) }}</span>
                     </div>
+                    <!-- 1分钟分时图 -->
+                    <div :id="'chart-minute-' + item.symbol" class="h-10 w-full mt-1.5 opacity-80"></div>
                   </div>
                 </div>
               </div>

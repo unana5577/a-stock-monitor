@@ -3632,7 +3632,14 @@ const server = http.createServer(async (req, res) => {
 
   if (url.pathname === '/api/m1/data/minute' && req.method === 'GET') {
     const symbol = url.searchParams.get('symbol');
-    const day = url.searchParams.get('day') || new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }).split(' ')[0].replace(/\//g, '-');
+    const getBeijingDate = () => {
+      const d = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Shanghai' }));
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const date = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${date}`;
+    };
+    const day = url.searchParams.get('day') || getBeijingDate();
     
     if (!symbol) {
       res.statusCode = 400;
@@ -3656,22 +3663,40 @@ const server = http.createServer(async (req, res) => {
         }).filter(Boolean);
       }
 
-      // 从 warmup 数据中获取昨收价和名称
-      const warmupPath = path.join(__dirname, 'data/warmup/warmup-60.json');
-      if (fs.existsSync(warmupPath)) {
-        try {
-          const warmup = JSON.parse(fs.readFileSync(warmupPath, 'utf8'));
-          if (warmup.history && warmup.history[symbol]) {
-            const history = warmup.history[symbol];
-            if (history.length > 0) {
-              // 无论如何，昨收就是 history 里最后一天（即昨日）的收盘价
-              pre_close = history[history.length - 1].close;
-            }
-          }
-        } catch (e) {}
+      // 从 daily 数据中获取严谨的昨收价 (T-1 close)
+      let dailyPath = path.join(__dirname, `data/index/daily/${symbol}/daily.jsonl`);
+      if (!fs.existsSync(dailyPath)) {
+        dailyPath = path.join(__dirname, `data/etf/daily/${symbol}/daily.jsonl`);
+      }
+      if (!fs.existsSync(dailyPath)) {
+        dailyPath = path.join(__dirname, `data/etf/${symbol}/daily.jsonl`);
       }
 
-      // ETF 分时数据自带 pre_close，大盘指数的分时数据可能没有，统一在这里补充
+      if (fs.existsSync(dailyPath)) {
+        try {
+          const lines = fs.readFileSync(dailyPath, 'utf8').trim().split('\n');
+          const dailyData = lines.filter(l => l).map(l => {
+            try { return JSON.parse(l); } catch(e) { return null; }
+          }).filter(Boolean);
+
+          if (dailyData.length > 0) {
+            const lastDay = dailyData[dailyData.length - 1];
+            if (lastDay.date >= day && dailyData.length > 1) {
+              // 如果最后一条已经是今天（或未来），则昨收是倒数第二条
+              pre_close = dailyData[dailyData.length - 2].close;
+            } else if (lastDay.date < day) {
+              // 如果最后一条是今天之前，那它就是昨收
+              pre_close = lastDay.close;
+            } else {
+              pre_close = lastDay.close;
+            }
+          }
+        } catch (e) {
+          console.error(`Failed to read daily.jsonl for ${symbol} pre_close:`, e.message);
+        }
+      }
+
+      // ETF 分时数据自带 pre_close 和 pct，大盘指数的分时数据可能没有，统一在这里补充基准
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.end(JSON.stringify({ ok: true, symbol, name, day, pre_close, data }));
     } catch (e) {

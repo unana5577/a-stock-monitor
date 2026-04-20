@@ -13,6 +13,7 @@ const app = createApp({
     const breadthData = ref({ up: 0, flat: 0, down: 0, total: 0 });
     const volumeHistory = ref([]);
     const warmupHistory = ref({});
+    const corrDays = ref(60); // 1 for intraday, others for historical
     
     // Indices config
     const indexSymbols = ['sh000001', 'sz399001', 'sz399006', 'sh000688', 'sh000300', 'sh000852', 'sh511130', 'sh511260'];
@@ -39,6 +40,7 @@ const app = createApp({
     
     // Charting state
     const currentPrices = ref({});
+    const minuteDataCache = ref({});
     const chartsLoaded = ref({});
     const chartInstances = {};
 
@@ -332,35 +334,69 @@ const app = createApp({
 
     const renderCorrelationChart = () => {
       const el = document.getElementById('chart-correlation');
-      if (!el || Object.keys(warmupHistory.value).length === 0) return;
+      if (!el) return;
       if (!chartInstances['correlation']) chartInstances['correlation'] = echarts.init(el);
       
       const chart = chartInstances['correlation'];
-      
-      // Pick a few symbols to draw (e.g., semiconductor, cloud, comms)
       const symbolsToDraw = ['sh512480', 'sh516510', 'sh515880', 'sh563530'];
       const seriesData = [];
       let xAxisData = [];
 
-      symbolsToDraw.forEach((sym, idx) => {
-        if (warmupHistory.value[sym]) {
-          const hist = warmupHistory.value[sym];
-          if (xAxisData.length === 0) xAxisData = hist.map(h => h.date);
-          
-          // Normalize to start at 0%
-          const basePrice = hist[0].close;
-          const pcts = hist.map(h => ((h.close - basePrice) / basePrice) * 100);
-          
-          seriesData.push({
-            name: symbolNames[sym] || sym,
-            type: 'line',
-            data: pcts,
-            smooth: true,
-            symbol: 'none',
-            lineStyle: { width: 2 }
-          });
-        }
-      });
+      if (corrDays.value === 1) {
+        // Intraday (1m) data
+        const times = [];
+        let d = new Date();
+        d.setHours(9, 30, 0, 0);
+        for(let i=0; i<120; i++) { times.push(d.toTimeString().substring(0,5)); d.setMinutes(d.getMinutes()+1); }
+        d.setHours(13, 0, 0, 0);
+        for(let i=0; i<120; i++) { times.push(d.toTimeString().substring(0,5)); d.setMinutes(d.getMinutes()+1); }
+        xAxisData = times;
+
+        symbolsToDraw.forEach((sym) => {
+          const mData = minuteDataCache.value[sym];
+          if (mData && mData.data) {
+            const pcts = [];
+            mData.data.forEach((pt, idx) => {
+              if (idx < 240) {
+                const ptPct = pt.pct !== undefined ? pt.pct : (mData.pre_close ? ((pt.price - mData.pre_close) / mData.pre_close) * 100 : 0);
+                pcts.push(ptPct);
+              }
+            });
+            seriesData.push({
+              name: symbolNames[sym] || sym,
+              type: 'line',
+              data: pcts,
+              smooth: true,
+              symbol: 'none',
+              lineStyle: { width: 2 }
+            });
+          }
+        });
+      } else {
+        // Historical (daily) data
+        if (Object.keys(warmupHistory.value).length === 0) return;
+        symbolsToDraw.forEach((sym) => {
+          if (warmupHistory.value[sym]) {
+            let hist = warmupHistory.value[sym];
+            if (hist.length > corrDays.value) {
+              hist = hist.slice(-corrDays.value);
+            }
+            if (xAxisData.length === 0) xAxisData = hist.map(h => h.date);
+            
+            const basePrice = hist[0].close;
+            const pcts = hist.map(h => ((h.close - basePrice) / basePrice) * 100);
+            
+            seriesData.push({
+              name: symbolNames[sym] || sym,
+              type: 'line',
+              data: pcts,
+              smooth: true,
+              symbol: 'none',
+              lineStyle: { width: 2 }
+            });
+          }
+        });
+      }
 
       const option = {
         tooltip: { trigger: 'axis', valueFormatter: (val) => val.toFixed(2) + '%' },
@@ -371,17 +407,18 @@ const app = createApp({
         series: seriesData
       };
       
-      chart.setOption(option);
+      chart.setOption(option, true); // true to clear old lines if switching modes
     };
 
     const renderMinuteChart = (sym, dataPoints, preClose) => {
-      if (!chartInstances[sym]) {
-        const el = document.getElementById(`chart-minute-${sym}`);
-        if (!el) return;
-        chartInstances[sym] = echarts.init(el);
-      }
+      const el = document.getElementById(`chart-minute-${sym}`);
+      if (!el) return;
       
-      const chart = chartInstances[sym];
+      let chart = echarts.getInstanceByDom(el);
+      if (!chart) {
+        chart = echarts.init(el);
+        chartInstances[sym] = chart;
+      }
       
       const times = [];
       let d = new Date();
@@ -399,11 +436,9 @@ const app = createApp({
         dataPoints.forEach((pt, idx) => {
           if (idx < 240) {
             prices.push(pt.price);
-            if (preClose) {
-              const p = ((pt.price - preClose) / preClose) * 100;
-              pcts.push(p);
-              latestPct = p;
-            }
+            const ptPct = pt.pct !== undefined ? pt.pct : (preClose ? ((pt.price - preClose) / preClose) * 100 : 0);
+            pcts.push(ptPct);
+            latestPct = ptPct;
             latestPrice = pt.price;
           }
         });
@@ -450,12 +485,36 @@ const app = createApp({
     };
 
     const fetchMinuteData = async () => {
-      const promises = indexSymbols.map(async (sym) => {
+      const allSymbols = [...new Set([...indexSymbols, ...etfSymbols])];
+      const promises = allSymbols.map(async (sym) => {
         try {
           const res = await fetch(`${API_BASE}/api/m1/data/minute?symbol=${sym}`);
           const data = await res.json();
           if (data.ok) {
-            nextTick(() => renderMinuteChart(sym, data.data, data.pre_close));
+            const pre_close = data.pre_close;
+            const dataPoints = data.data;
+            
+            let latestPrice = 0;
+            let latestPct = 0;
+            
+            if (dataPoints && dataPoints.length > 0) {
+              const lastPt = dataPoints[dataPoints.length - 1];
+              latestPrice = lastPt.price;
+              latestPct = lastPt.pct !== undefined ? lastPt.pct : (pre_close ? ((lastPt.price - pre_close) / pre_close) * 100 : 0);
+            }
+            
+            minuteDataCache.value[sym] = { pre_close, data: dataPoints || [] };
+            currentPrices.value[sym] = { price: latestPrice, pct: latestPct };
+            nextTick(() => {
+              renderMinuteChart(sym, dataPoints, pre_close);
+              if (sym === 'sh512480' || sym === 'sh516510' || sym === 'sh515880' || sym === 'sh563530') {
+                if (typeof corrDays !== 'undefined') {
+                  if (corrDays.value === 1) renderCorrelationChart();
+                } else {
+                  renderCorrelationChart();
+                }
+              }
+            });
           }
         } catch (err) { console.error(`Failed to fetch minute data for ${sym}:`, err); }
       });
@@ -484,6 +543,9 @@ const app = createApp({
       nextTick(() => {
         if (newVal === 'market') {
           if (chartInstances['correlation']) chartInstances['correlation'].resize();
+          etfSymbols.forEach((sym) => {
+            if (chartInstances[sym]) chartInstances[sym].resize();
+          });
         } else if (newVal === 'overview') {
           if (chartInstances['volume']) chartInstances['volume'].resize();
           indexSymbols.forEach((sym) => {
@@ -491,6 +553,17 @@ const app = createApp({
           });
         }
       });
+    });
+
+    watch(activeLifecycleTab, (newVal) => {
+      if (newVal === 'after') {
+        nextTick(() => {
+          etfSymbols.forEach(sym => {
+            const mData = minuteDataCache.value[sym];
+            if (mData) renderMinuteChart(sym, mData.data, mData.pre_close);
+          });
+        });
+      }
     });
 
     return {
@@ -510,6 +583,8 @@ const app = createApp({
       currentPrices,
       chartsLoaded,
       warmupHistory,
+      corrDays,
+      renderCorrelationChart,
       formatAmount,
       getPriceColor,
       getAdviceBgClass,
