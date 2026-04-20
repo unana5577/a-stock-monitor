@@ -67,10 +67,24 @@ const app = createApp({
       for (const line of lines) {
         if (line.includes('===') || !line.trim()) continue;
         
+        // 尝试匹配老版本的格式，如 **【走势判断】**
+        let isOldFormat = false;
+        const oldTitleMatch = line.match(/^(?:\*\*)?【([^】]+)】(?:\*\*)?/);
+        if (oldTitleMatch) {
+            isOldFormat = true;
+            if (currentTitle) {
+              sections.push({ title: currentTitle, content: currentContent.join('\n').trim() });
+            }
+            currentTitle = oldTitleMatch[1].trim();
+            currentContent = [];
+            continue; // 老格式标题行通常没有正文
+        }
+        
         // 匹配带有 ** 的标题，例如 **走势判断**： 或者直接 走势判断：
-        // 修改正则：更宽松地匹配标题，兼容 Markdown 的粗体语法
-        const titleMatch = line.match(/^(?:\*\*)?([^：:]+?)(?:\*\*)?[：:](.*)/);
-        if (titleMatch && ['走势判断', '资金风格', '操作建议'].includes(titleMatch[1].trim())) {
+        // 允许标题中包含空格，并且处理可能的双角冒号
+        const titleMatch = line.match(/^(?:\*\*)?\s*([^：:]+?)\s*(?:\*\*)?[：:](.*)/);
+        
+        if (!isOldFormat && titleMatch && ['走势判断', '资金风格', '操作建议', '盘面核心特征', '异动与风向', '交易员应对策略'].includes(titleMatch[1].trim())) {
           if (currentTitle) {
             sections.push({ title: currentTitle, content: currentContent.join('\n').trim() });
           }

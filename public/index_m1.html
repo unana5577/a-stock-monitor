@@ -501,7 +501,7 @@
                       <span class="mx-2">|</span>
                       <span>{{ item.资金行为 || '-' }}</span>
                       <span class="mx-2">|</span>
-                      <span>热度Δ {{ fmtHeatDelta(getItemStats(item).shareChange) }}</span>
+                      <span>热度占比 {{ item.指标数据?.Amount_Share_Pct != null ? item.指标数据.Amount_Share_Pct + '%' : '-' }}</span>
                     </div>
                     <div :id="'chart-minute-' + item.symbol" class="h-10 w-full mt-1.5 opacity-80"></div>
                   </div>
@@ -540,7 +540,7 @@
                       <span class="mx-2">|</span>
                       <span>{{ item.资金行为 || '-' }}</span>
                       <span class="mx-2">|</span>
-                      <span>热度Δ {{ fmtHeatDelta(getItemStats(item).shareChange) }}</span>
+                      <span>热度占比 {{ item.指标数据?.Amount_Share_Pct != null ? item.指标数据.Amount_Share_Pct + '%' : '-' }}</span>
                     </div>
                     <div :id="'chart-minute-' + item.symbol" class="h-10 w-full mt-1.5 opacity-80"></div>
                   </div>
@@ -579,7 +579,7 @@
                       <span class="mx-2">|</span>
                       <span>{{ item.资金行为 || '-' }}</span>
                       <span class="mx-2">|</span>
-                      <span>热度Δ {{ fmtHeatDelta(getItemStats(item).shareChange) }}</span>
+                      <span>热度占比 {{ item.指标数据?.Amount_Share_Pct != null ? item.指标数据.Amount_Share_Pct + '%' : '-' }}</span>
                     </div>
                     <div :id="'chart-minute-' + item.symbol" class="h-10 w-full mt-1.5 opacity-80"></div>
                   </div>

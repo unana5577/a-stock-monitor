@@ -3897,6 +3897,10 @@ const server = http.createServer(async (req, res) => {
           args = ['treasolo/m1_warmup.py'];
         } else if (data.script === 'm1_lifecycle.py') {
           args = ['treasolo/m1_lifecycle.py'];
+        } else if (data.script === 'm1_ai_aggregator.py') {
+          args = ['treasolo/m1_ai_aggregator.py'];
+        } else if (data.script === 'm1_ai_reporter.py') {
+          args = ['treasolo/m1_ai_reporter.py'];
         } else {
           res.statusCode = 400;
           return res.end(JSON.stringify({ error: 'unknown script' }));
