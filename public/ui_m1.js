@@ -18,6 +18,9 @@ const app = createApp({
     const marketTotal = ref(0);
     const warmupHistory = ref({});
     const corrDays = ref(60);
+    const aiText = ref('加载中...');
+    const aiUpdatedAt = ref('');
+    const aiLoading = ref(false);
     
     // Indices config
     const indexSymbols = ['sh000001', 'sz399001', 'sz399006', 'sh000688', 'sh000300', 'sh000852', 'sh511130', 'sh511260', 'bank', 'broker', 'insure'];
@@ -50,6 +53,83 @@ const app = createApp({
     const minuteDataCache = ref({});
     const chartsLoaded = ref({});
     const chartInstances = {};
+
+    // 解析AI返回的 Markdown 文本
+    const aiSections = computed(() => {
+      const txt = aiText.value || '';
+      if (txt === '加载中...' || txt === '等待接入...' || txt === '暂无今日 AI 解读数据') return [{ title: '', content: txt }];
+      
+      const lines = txt.split('\n');
+      const sections = [];
+      let currentTitle = '';
+      let currentContent = [];
+      
+      for (const line of lines) {
+        if (line.includes('===') || !line.trim()) continue;
+        
+        // 匹配带有 ** 的标题，例如 **走势判断**： 或者直接 走势判断：
+        // 修改正则：更宽松地匹配标题，兼容 Markdown 的粗体语法
+        const titleMatch = line.match(/^(?:\*\*)?([^：:]+?)(?:\*\*)?[：:](.*)/);
+        if (titleMatch && ['走势判断', '资金风格', '操作建议'].includes(titleMatch[1].trim())) {
+          if (currentTitle) {
+            sections.push({ title: currentTitle, content: currentContent.join('\n').trim() });
+          }
+          currentTitle = titleMatch[1].trim();
+          currentContent = [];
+          
+          // 把冒号后面的内容放进 content，并清理可能残留的 markdown 粗体标记
+          const rest = titleMatch[2].trim();
+          if (rest) currentContent.push(rest.replace(/\*\*/g, ''));
+        } else {
+          if (currentTitle) {
+            // 清理内容里的 markdown 粗体标记
+            currentContent.push(line.replace(/\*\*/g, '').trim());
+          }
+        }
+      }
+      
+      if (currentTitle) {
+        sections.push({ title: currentTitle, content: currentContent.join('\n').trim() });
+      }
+      
+      return sections.length > 0 ? sections : [{ title: '原文', content: txt }];
+    });
+
+    // 解析仓位进度条 (例如提取 "2-4成" -> 30, "6-8成" -> 70, "5成" -> 50)
+    const aiPositionPct = computed(() => {
+      const txt = aiText.value || '';
+      const match = txt.match(/(\d)(?:-(\d))?成仓位/);
+      if (match) {
+        if (match[2]) {
+          return (parseInt(match[1]) + parseInt(match[2])) / 2 * 10;
+        }
+        return parseInt(match[1]) * 10;
+      }
+      // 兼容其他写法
+      const match2 = txt.match(/建议(.*?)([2-8])/);
+      if (match2) return parseInt(match2[2]) * 10;
+      return 50; // 默认50
+    });
+
+    const refreshAi = async (force = false) => {
+      if (aiLoading.value) return;
+      aiLoading.value = true;
+      try {
+        const res = await fetch(`${API_BASE}/api/ai/report${force ? '?force=true' : ''}`);
+        const d = await res.json();
+        if (d.ok && d.data) {
+          aiText.value = d.data.content || '';
+          aiUpdatedAt.value = d.data.asOf || '';
+        } else {
+          aiText.value = '暂无今日 AI 解读数据';
+          aiUpdatedAt.value = '';
+        }
+      } catch (e) {
+        aiText.value = 'AI 解读加载失败';
+      } finally {
+        aiLoading.value = false;
+      }
+    };
 
     // Computed
     const etfLifecycleItems = computed(() => {
@@ -690,6 +770,7 @@ const app = createApp({
 
     // --- Lifecycle Hooks ---
     onMounted(() => {
+      refreshAi();
       fetchOverview();
       fetchMinuteData();
       fetchBreadth();
@@ -734,6 +815,12 @@ const app = createApp({
     });
 
     return {
+      aiText,
+      aiUpdatedAt,
+      aiLoading,
+      aiSections,
+      aiPositionPct,
+      refreshAi,
       activeTab,
       activeLifecycleTab,
       lastUpdate,

@@ -3105,6 +3105,64 @@ const server = http.createServer(async (req, res) => {
     res.end(JSON.stringify({ text: SECTOR_PROMPT }));
     return;
   }
+  if (url.pathname === '/api/ai/report' && req.method === 'GET') {
+    const day = url.searchParams.get('day') || latestTradingDay();
+    const force = url.searchParams.get('force') === 'true';
+    
+    // 把核心处理逻辑封装为异步函数
+    const handleReport = async () => {
+      // 如果要求强刷，立刻拉起脚本重新生成一次，并等待执行完成
+      if (force) {
+        try {
+          await new Promise((resolve, reject) => {
+            const env = Object.assign({}, process.env);
+            execFile('python3', ['treasolo/m1_ai_aggregator.py'], { env }, (err) => {
+              if (err) return reject(err);
+              execFile('python3', ['treasolo/m1_ai_reporter.py'], { env }, (err2) => {
+                if (err2) return reject(err2);
+                resolve();
+              });
+            });
+          });
+        } catch (e) {
+          console.error('[AI Force Refresh Error]', e);
+        }
+      }
+      
+      const p = path.join(__dirname, `data/market/ai/report.jsonl`);
+      if (!fs.existsSync(p)) {
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.end(JSON.stringify({ ok: false, msg: 'no report found' }));
+        return;
+      }
+      
+      try {
+        const lines = fs.readFileSync(p, 'utf-8').split('\n').filter(Boolean);
+        const reports = [];
+        for (let line of lines) {
+          try {
+            const obj = JSON.parse(line);
+            if (obj.date === day) reports.push(obj);
+          } catch(e) {}
+        }
+        
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        if (reports.length === 0) {
+          res.end(JSON.stringify({ ok: false, msg: 'no report for today' }));
+        } else {
+          res.end(JSON.stringify({ ok: true, data: reports[reports.length - 1] }));
+        }
+      } catch(e) {
+        res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ ok: false, error: e.message }));
+      }
+    };
+    
+    // 直接返回 Promise 的结果
+    handleReport();
+    return;
+  }
+  
   if (url.pathname === '/api/ai/debug' && req.method === 'POST') {
     try {
       const raw = await readBody(req);

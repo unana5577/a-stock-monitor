@@ -38,18 +38,6 @@
           </div>
           <div class="text-xs text-gray-400 mt-2">开盘时段30分钟更新一次</div>
           <div class="text-xs text-gray-400">上次更新时间：{{ aiUpdatedAt ? fmtTime(aiUpdatedAt) : '-' }}</div>
-          <div class="text-xs text-gray-400">规则版将先行上线，AI版第3步加入</div>
-        </div>
-        <div class="bg-white rounded-xl shadow p-4">
-          <div class="text-sm text-gray-500 mb-2">Prompt 调试</div>
-          <div class="text-xs text-gray-400 mb-2">模型：deepseek-v3.2</div>
-          <textarea v-model="promptText" class="w-full border rounded p-2 text-xs h-40"></textarea>
-          <div class="flex items-center gap-2 mt-2">
-            <button @click="runPromptDebug" class="px-3 py-2 bg-gray-800 text-white rounded hover:bg-gray-900 transition" :disabled="promptLoading">生成解读</button>
-            <div class="text-xs text-gray-400" v-if="promptLoading">生成中...</div>
-            <div class="text-xs text-red-500" v-if="promptError">{{ promptError }}</div>
-          </div>
-          <div class="text-sm text-gray-600 mt-3 whitespace-pre-wrap" v-if="promptOutput">{{ promptOutput }}</div>
         </div>
       </div>
       <div class="lg:col-span-2 space-y-4">
