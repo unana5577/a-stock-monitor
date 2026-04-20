@@ -238,12 +238,19 @@
                   <div class="flex items-center gap-1.5">
                     <div class="w-2 h-2 bg-q-primary rounded-sm"></div>
                     <span class="text-gray-500">今日</span>
-                    <span class="font-bold text-q-text stat-value">{{ formatAmount(marketAmount?.market_amount) }}</span>
+                    <span class="font-bold text-q-text stat-value">{{ (volumeStats.current || 0).toFixed(2) }}亿</span>
                   </div>
                   <div class="flex items-center gap-1.5">
                     <div class="w-2 h-2 border border-gray-400 border-dashed rounded-sm"></div>
                     <span class="text-gray-500">昨日同期</span>
-                    <span class="font-bold text-gray-500 stat-value">---</span>
+                    <span class="font-bold text-gray-500 stat-value">{{ (volumeStats.ydaySameTime || 0).toFixed(2) }}亿</span>
+                  </div>
+                  <div class="flex items-center gap-1.5 ml-2 border-l border-gray-200 pl-4">
+                    <span class="text-gray-500">预估全天</span>
+                    <span class="font-bold text-q-text stat-value">{{ (volumeStats.forecast || 0).toFixed(2) }}亿</span>
+                    <span class="font-bold stat-value ml-1" :class="volumeStats.deltaPct >= 0 ? 'text-q-up' : 'text-q-down'">
+                      ({{ volumeStats.deltaPct >= 0 ? '+' : '' }}{{ (volumeStats.deltaPct || 0).toFixed(2) }}%)
+                    </span>
                   </div>
                 </div>
               </div>
@@ -285,19 +292,7 @@
                 </div>
               </div>
 
-              <!-- 金融三大板块占位符 (待底层对齐) -->
-              <div v-for="name in ['银行', '证券', '保险']" :key="name" class="q-panel bg-gray-50/50 overflow-hidden flex flex-col relative border-dashed border-gray-300 opacity-60">
-                <div class="px-3 pt-2.5 flex justify-between items-start">
-                  <div>
-                    <div class="text-sm font-bold text-gray-500 leading-tight">{{ name }}</div>
-                    <div class="text-[10px] text-gray-400 font-mono mt-0.5">PENDING</div>
-                  </div>
-                </div>
-                <div class="flex-1 flex items-center justify-center text-[10px] text-gray-400 uppercase tracking-widest mt-2 mb-4">
-                  Waiting M1 Sync
-                </div>
-              </div>
-
+              <!-- 金融三大板块占位符已被真实渲染替代 -->
             </div>
           </div>
           
@@ -505,7 +500,6 @@
                       <span class="mx-2">|</span>
                       <span>热度Δ {{ fmtHeatDelta(getItemStats(item).shareChange) }}</span>
                     </div>
-                    <!-- 1分钟分时图 -->
                     <div :id="'chart-minute-' + item.symbol" class="h-10 w-full mt-1.5 opacity-80"></div>
                   </div>
                 </div>
@@ -545,7 +539,6 @@
                       <span class="mx-2">|</span>
                       <span>热度Δ {{ fmtHeatDelta(getItemStats(item).shareChange) }}</span>
                     </div>
-                    <!-- 1分钟分时图 -->
                     <div :id="'chart-minute-' + item.symbol" class="h-10 w-full mt-1.5 opacity-80"></div>
                   </div>
                 </div>
@@ -585,7 +578,6 @@
                       <span class="mx-2">|</span>
                       <span>热度Δ {{ fmtHeatDelta(getItemStats(item).shareChange) }}</span>
                     </div>
-                    <!-- 1分钟分时图 -->
                     <div :id="'chart-minute-' + item.symbol" class="h-10 w-full mt-1.5 opacity-80"></div>
                   </div>
                 </div>

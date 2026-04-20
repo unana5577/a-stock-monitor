@@ -12,11 +12,15 @@ const app = createApp({
     const lifecycleItems = ref([]);
     const breadthData = ref({ up: 0, flat: 0, down: 0, total: 0 });
     const volumeHistory = ref([]);
+    const intradayVolume = ref([]);
+    const intradayYdayVolume = ref([]);
+    const volumeStats = ref({ current: 0, ydayTotal: 0, ydaySameTime: 0, forecast: 0, deltaPct: 0 });
+    const marketTotal = ref(0);
     const warmupHistory = ref({});
-    const corrDays = ref(60); // 1 for intraday, others for historical
+    const corrDays = ref(60);
     
     // Indices config
-    const indexSymbols = ['sh000001', 'sz399001', 'sz399006', 'sh000688', 'sh000300', 'sh000852', 'sh511130', 'sh511260'];
+    const indexSymbols = ['sh000001', 'sz399001', 'sz399006', 'sh000688', 'sh000300', 'sh000852', 'sh511130', 'sh511260', 'bank', 'broker', 'insure'];
     const etfSymbols = ['sh512400', 'sh512480', 'sh515120', 'sh515880', 'sh516010', 'sh516160', 'sh516510', 'sh562500', 'sh563530'];
     const symbolNames = {
       'sh000001': '上证指数',
@@ -27,6 +31,9 @@ const app = createApp({
       'sh000852': '中证1000',
       'sh511130': '30年国债ETF',
       'sh511260': '10年国债ETF',
+      'bank': '银行',
+      'broker': '证券',
+      'insure': '保险',
       'sh512400': '有色金属ETF',  
       'sh512480': '半导体ETF',
       'sh515120': '创新药ETF',
@@ -294,6 +301,8 @@ const app = createApp({
         const json = await res.json();
         if (json.ok && json.data.length > 0) {
           volumeHistory.value = json.data;
+          intradayVolume.value = json.minute || [];
+          intradayYdayVolume.value = json.minuteYday || [];
           nextTick(() => renderVolumeChart());
         }
       } catch (err) { console.error('Failed to fetch volume history:', err); }
@@ -303,31 +312,169 @@ const app = createApp({
 
     const renderVolumeChart = () => {
       const el = document.getElementById('chart-volume');
-      if (!el || volumeHistory.value.length < 2) return;
+      if (!el || volumeHistory.value.length === 0) return;
       if (!chartInstances['volume']) chartInstances['volume'] = echarts.init(el);
       
       const chart = chartInstances['volume'];
-      // Mock line data based on real market amount scale for UI testing
-      const data = volumeHistory.value.slice(-60).map(d => d.market_amount / 1e8);
-      const xAxis = volumeHistory.value.slice(-60).map(d => d.date);
+      
+      // Calculate yesterday's average volume per minute (the dashed reference line)
+      let ydayTotalAmount = 0;
+      const lastDaily = volumeHistory.value[volumeHistory.value.length - 1];
+      if (lastDaily) {
+        ydayTotalAmount = lastDaily.market_amount / 100000000; // in hundred millions (亿)
+      }
+      const avgPerMinute = ydayTotalAmount / 240;
+
+      // Construct standard 240-minute trading axis
+      const xAxisData = [];
+      let d = new Date();
+      d.setHours(9, 30, 0, 0);
+      for(let i=0; i<120; i++) { xAxisData.push(d.toTimeString().substring(0,5)); d.setMinutes(d.getMinutes()+1); }
+      d.setHours(13, 0, 0, 0);
+      for(let i=0; i<120; i++) { xAxisData.push(d.toTimeString().substring(0,5)); d.setMinutes(d.getMinutes()+1); }
+
+      // Construct today's real minute-by-minute volume curve
+      const todayData = new Array(240).fill(null);
+      let currentTradedMinutes = 0;
+      let finalCumulative = 0;
+      
+      // Extract yesterday's cumulative volume mapping for Plan B forecasting
+      const ydayCumulativeMap = new Map();
+      intradayYdayVolume.value.forEach(pt => {
+        ydayCumulativeMap.set(pt.asOf, pt.market_amount / 100000000);
+      });
+
+      if (intradayVolume.value.length > 0) {
+        let prevCumulative = 0;
+        let firstDataIndex = -1;
+
+        intradayVolume.value.forEach((pt, i) => {
+          const timeStr = pt.asOf;
+          const axisIdx = xAxisData.indexOf(timeStr);
+          if (axisIdx === -1) return; // ignore invalid times
+          
+          currentTradedMinutes = axisIdx + 1;
+          const currentCumulative = pt.market_amount / 100000000;
+          finalCumulative = currentCumulative;
+          let minuteVolume = 0;
+          
+          if (i === 0) {
+            // First data point we receive
+            if (axisIdx === 0) {
+              minuteVolume = currentCumulative;
+              todayData[axisIdx] = minuteVolume;
+            } else {
+              const missingMinutes = axisIdx + 1;
+              const avgMissingVolume = currentCumulative / missingMinutes;
+              for (let m = 0; m <= axisIdx; m++) {
+                todayData[m] = avgMissingVolume;
+              }
+            }
+            firstDataIndex = axisIdx;
+          } else {
+            // Normal delta calculation
+            minuteVolume = currentCumulative - prevCumulative;
+            if (minuteVolume < 0) minuteVolume = 0; // clean glitches
+            todayData[axisIdx] = minuteVolume;
+          }
+          prevCumulative = currentCumulative;
+        });
+        
+        // --- Plan B: Accurate Forecasting based on yesterday's same-time percentage ---
+        const lastAsOf = intradayVolume.value[intradayVolume.value.length - 1].asOf;
+        const ydaySameTimeCumulative = ydayCumulativeMap.get(lastAsOf);
+        
+        if (ydaySameTimeCumulative && ydayTotalAmount > 0) {
+          const ydayProgressRatio = ydaySameTimeCumulative / ydayTotalAmount;
+          
+          let forecastTotal = 0;
+          if (currentTradedMinutes >= 240) {
+            forecastTotal = finalCumulative;
+          } else if (ydayProgressRatio > 0) {
+            // Plan B formula: Today's Total / Yesterday's Progress Ratio
+            forecastTotal = finalCumulative / ydayProgressRatio;
+          } else {
+            // Fallback to linear if ratio is somehow 0
+            forecastTotal = (finalCumulative / currentTradedMinutes) * 240;
+          }
+          
+          volumeStats.value = {
+            current: finalCumulative,
+            ydayTotal: ydayTotalAmount,
+            ydaySameTime: ydaySameTimeCumulative, // Update to accurate cumulative!
+            forecast: forecastTotal,
+            deltaPct: ((forecastTotal - ydayTotalAmount) / ydayTotalAmount) * 100
+          };
+        } else if (currentTradedMinutes > 0 && ydayTotalAmount > 0) {
+          // Fallback to linear projection if yesterday's minute data is missing
+          const ydaySameTimeAmount = avgPerMinute * currentTradedMinutes;
+          let forecastTotal = 0;
+          if (currentTradedMinutes >= 240) {
+            forecastTotal = finalCumulative;
+          } else {
+            forecastTotal = (finalCumulative / currentTradedMinutes) * 240;
+          }
+          
+          volumeStats.value = {
+            current: finalCumulative,
+            ydayTotal: ydayTotalAmount,
+            ydaySameTime: ydaySameTimeAmount,
+            forecast: forecastTotal,
+            deltaPct: ((forecastTotal - ydayTotalAmount) / ydayTotalAmount) * 100
+          };
+        }
+      }
+      
+      // Construct the baseline array for yesterday's average
+      const ydayAvgData = new Array(240).fill(avgPerMinute);
 
       const option = {
-        grid: { left: 30, right: 10, top: 5, bottom: 5 },
-        xAxis: { type: 'category', data: xAxis, show: false },
-        yAxis: { type: 'value', show: false, splitLine: { show: false } },
-        series: [{
-          data: data,
-          type: 'line',
-          smooth: true,
-          lineStyle: { width: 2, color: '#2563EB' },
-          areaStyle: {
-            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-              { offset: 0, color: 'rgba(37, 99, 235, 0.15)' },
-              { offset: 1, color: 'rgba(37, 99, 235, 0)' }
-            ])
+        tooltip: { 
+          trigger: 'axis', 
+          valueFormatter: (val) => val != null ? val.toFixed(2) + '亿' : '-'
+        },
+        grid: { left: 40, right: 10, top: 10, bottom: 20 },
+        xAxis: { 
+          type: 'category', 
+          data: xAxisData, 
+          axisLabel: {
+            color: '#9CA3AF',
+            interval: (index, value) => {
+              return ['09:30', '10:30', '11:30', '13:00', '14:00', '15:00'].includes(value);
+            }
           },
-          symbol: 'none'
-        }]
+          axisTick: { alignWithLabel: true }
+        },
+        yAxis: { 
+          type: 'value', 
+          axisLabel: { formatter: '{value}', color: '#9CA3AF' },
+          splitLine: { lineStyle: { type: 'dashed', color: '#F3F4F6' } }
+        },
+        series: [
+          {
+            name: '今日量能',
+            data: todayData,
+            type: 'line',
+            smooth: true,
+            symbol: 'none',
+            connectNulls: true,
+            lineStyle: { color: '#3B82F6', width: 2 },
+            areaStyle: {
+              color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                { offset: 0, color: 'rgba(59, 130, 246, 0.3)' },
+                { offset: 1, color: 'rgba(59, 130, 246, 0.05)' }
+              ])
+            }
+          },
+          {
+            name: '昨日均量',
+            data: ydayAvgData,
+            type: 'line',
+            smooth: false,
+            symbol: 'none',
+            lineStyle: { color: '#9CA3AF', width: 1, type: 'dashed' }
+          }
+        ]
       };
       chart.setOption(option);
     };
@@ -338,12 +485,15 @@ const app = createApp({
       if (!chartInstances['correlation']) chartInstances['correlation'] = echarts.init(el);
       
       const chart = chartInstances['correlation'];
-      const symbolsToDraw = ['sh512480', 'sh516510', 'sh515880', 'sh563530'];
+      const symbolsToDraw = etfSymbols;
+      const labelToSym = {};
+      symbolsToDraw.forEach((sym) => {
+        labelToSym[symbolNames[sym] || sym] = sym;
+      });
       const seriesData = [];
       let xAxisData = [];
 
       if (corrDays.value === 1) {
-        // Intraday (1m) data
         const times = [];
         let d = new Date();
         d.setHours(9, 30, 0, 0);
@@ -373,7 +523,6 @@ const app = createApp({
           }
         });
       } else {
-        // Historical (daily) data
         if (Object.keys(warmupHistory.value).length === 0) return;
         symbolsToDraw.forEach((sym) => {
           if (warmupHistory.value[sym]) {
@@ -400,14 +549,29 @@ const app = createApp({
 
       const option = {
         tooltip: { trigger: 'axis', valueFormatter: (val) => val.toFixed(2) + '%' },
-        legend: { top: 0, left: 'center', type: 'scroll', icon: 'circle', itemWidth: 8, itemHeight: 8 },
+        legend: { 
+          top: 0, 
+          left: 'center', 
+          type: 'scroll', 
+          icon: 'circle', 
+          itemWidth: 8, 
+          itemHeight: 8,
+          formatter: (name) => {
+            const sym = labelToSym[name];
+            const pct = sym ? currentPrices.value[sym]?.pct : null;
+            if (pct == null || isNaN(pct)) return name;
+            const num = Number(pct).toFixed(2);
+            const sign = Number(pct) > 0 ? '+' : '';
+            return `${name} ${sign}${num}%`;
+          }
+        },
         grid: { left: 40, right: 20, top: 40, bottom: 20 },
         xAxis: { type: 'category', data: xAxisData, axisLine: { lineStyle: { color: '#E2E8F0' } }, axisLabel: { color: '#64748B' } },
         yAxis: { type: 'value', axisLabel: { formatter: '{value}%', color: '#64748B' }, splitLine: { lineStyle: { type: 'dashed', color: '#E2E8F0' } } },
         series: seriesData
       };
       
-      chart.setOption(option, true); // true to clear old lines if switching modes
+      chart.setOption(option, true);
     };
 
     const renderMinuteChart = (sym, dataPoints, preClose) => {
@@ -519,6 +683,9 @@ const app = createApp({
         } catch (err) { console.error(`Failed to fetch minute data for ${sym}:`, err); }
       });
       await Promise.all(promises);
+      if (chartInstances['correlation']) {
+        nextTick(() => renderCorrelationChart());
+      }
     };
 
     // --- Lifecycle Hooks ---
@@ -583,6 +750,8 @@ const app = createApp({
       currentPrices,
       chartsLoaded,
       warmupHistory,
+      volumeHistory,
+      volumeStats,
       corrDays,
       renderCorrelationChart,
       formatAmount,

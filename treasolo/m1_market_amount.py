@@ -61,30 +61,73 @@ def fetch_and_save(day: str, force: bool):
 
     share_pct = round((etf_total / market_total) * 100, 2) if market_total > 0 else 0
 
+    # 3. 落盘
+    # 拆分为 minute 和 daily 两个文件存储
+    time_str = datetime.now().strftime("%H:%M")
     record = {
         "date": day,
         "time": datetime.now().strftime("%H:%M:%S"),
+        "asOf": time_str,
         "market_amount": market_total,
         "etf_amount": etf_total,
         "etf_share_pct": share_pct
     }
 
-    # 3. 落盘
-    out_dir = PROJECT_ROOT / "data" / "market"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out_file = out_dir / "market_amount.jsonl"
+    # 3.1 写入当天的 minute 文件
+    minute_dir = PROJECT_ROOT / "data" / "market" / "minute" / "amount"
+    minute_dir.mkdir(parents=True, exist_ok=True)
+    minute_file = minute_dir / f"{day}.jsonl"
     
-    with open(out_file, "a", encoding="utf-8") as f:
-        f.write(json.dumps(record) + "\n")
+    # 去重：如果同一分钟已经写过了，就跳过
+    skip = False
+    if minute_file.exists():
+        with open(minute_file, 'r', encoding="utf-8") as f:
+            lines = f.readlines()
+            for line in lines[-10:]:
+                if not line.strip(): continue
+                try:
+                    obj = json.loads(line)
+                    if obj.get('asOf') == time_str:
+                        skip = True
+                        break
+                except:
+                    pass
+                    
+    if not skip:
+        with open(minute_file, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+    # 3.2 写入/更新 daily 文件 (每天只保留最新一条)
+    daily_dir = PROJECT_ROOT / "data" / "market" / "daily" / "amount"
+    daily_dir.mkdir(parents=True, exist_ok=True)
+    daily_file = daily_dir / "daily.jsonl"
+    
+    daily_records = []
+    if daily_file.exists():
+        with open(daily_file, 'r', encoding="utf-8") as f:
+            for line in f:
+                if not line.strip(): continue
+                try:
+                    obj = json.loads(line)
+                    if obj.get('date') != day:  # 剔除当天的老数据，只保留历史
+                        daily_records.append(obj)
+                except:
+                    pass
+                    
+    daily_records.append(record)  # 把最新的当天数据加进去
+    
+    with open(daily_file, "w", encoding="utf-8") as f:
+        for r in daily_records:
+            f.write(json.dumps(r, ensure_ascii=False) + "\n")
         
     # 写入 Meta
     meta = {
-        "datasetId": "market_amount",
+        "datasetId": "market_amount_daily",
         "providerId": "akshare.sina",
         "asOf": datetime.now().isoformat(),
         "date": day
     }
-    (out_dir / "market_amount.jsonl.meta.json").write_text(json.dumps(meta, indent=2))
+    (daily_dir / "daily.jsonl.meta.json").write_text(json.dumps(meta, indent=2))
 
     print(f"  ✅ 成功！全市场={market_total/1e8:.2f}亿, ETF={etf_total/1e8:.2f}亿, 占比={share_pct}%")
     return 0

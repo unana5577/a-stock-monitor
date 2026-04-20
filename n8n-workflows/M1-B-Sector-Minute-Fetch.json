@@ -1,0 +1,116 @@
+{
+  "name": "M1-B-Sector-Minute-Fetch (1m + 15:00补点)",
+  "nodes": [
+    {
+      "id": "trigger-1m-sector",
+      "name": "1分钟触发",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [0, 0],
+      "parameters": {
+        "rule": {
+          "interval": [
+            { "field": "cronExpression", "expression": "* 9-11 * * 1-5" },
+            { "field": "cronExpression", "expression": "* 13-14 * * 1-5" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "trigger-close-sector",
+      "name": "15:00补点触发",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [0, 160],
+      "parameters": {
+        "rule": { "interval": [ { "field": "cronExpression", "expression": "0 15 * * 1-5" } ] }
+      }
+    },
+    {
+      "id": "manual-sector",
+      "name": "手动触发",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 320]
+    },
+    {
+      "id": "params-normal-sector",
+      "name": "参数(常规)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [220, 0],
+      "parameters": {
+        "values": {
+          "boolean": [
+            { "name": "force", "value": false }
+          ]
+        }
+      }
+    },
+    {
+      "id": "params-close-sector",
+      "name": "参数(收盘补点)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [220, 160],
+      "parameters": {
+        "values": {
+          "boolean": [
+            { "name": "force", "value": true }
+          ]
+        }
+      }
+    },
+    {
+      "id": "params-manual-sector",
+      "name": "参数(手动)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [220, 320],
+      "parameters": {
+        "values": {
+          "boolean": [
+            { "name": "force", "value": true }
+          ]
+        }
+      }
+    },
+    {
+      "id": "http-sector",
+      "name": "落盘板块分时",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [460, 160],
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8787/api/m1/run",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"script\": \"m1_minute_fetch_sector.py\",\n  \"force\": {{ $json.force ? 'true' : 'false' }}\n}",
+        "options": {}
+      }
+    },
+    {
+      "id": "out-sector",
+      "name": "输出日志",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [700, 160],
+      "parameters": {
+        "jsCode": "return $input.all().map(item => {\n  let raw = item.json.stdout ? item.json.stdout.join('') : '{}';\n  let parsed = {};\n  try { parsed = JSON.parse(raw); } catch(e) {}\n  \n  let summary = `M1-B ❌ 未知错误`;\n  if (parsed.msg === 'Not in trading session') {\n    summary = `M1-B ⏭️ 跳过抓取: 非交易时段`;\n  } else if (parsed.ok) {\n    summary = `M1-B ✅ day=${parsed.day} asOf=${parsed.asOf}\\n成功落盘: ${(parsed.wrote || []).join(', ') || '无'}`;\n  }\n  \n  return { json: { summary } };\n});"
+      }
+    }
+  ],
+  "connections": {
+    "1分钟触发": { "main": [ [ { "node": "参数(常规)", "type": "main", "index": 0 } ] ] },
+    "15:00补点触发": { "main": [ [ { "node": "参数(收盘补点)", "type": "main", "index": 0 } ] ] },
+    "手动触发": { "main": [ [ { "node": "参数(手动)", "type": "main", "index": 0 } ] ] },
+    "参数(常规)": { "main": [ [ { "node": "落盘板块分时", "type": "main", "index": 0 } ] ] },
+    "参数(收盘补点)": { "main": [ [ { "node": "落盘板块分时", "type": "main", "index": 0 } ] ] },
+    "参数(手动)": { "main": [ [ { "node": "落盘板块分时", "type": "main", "index": 0 } ] ] },
+    "落盘板块分时": { "main": [ [ { "node": "输出日志", "type": "main", "index": 0 } ] ] }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

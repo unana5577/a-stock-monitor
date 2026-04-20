@@ -3578,16 +3578,63 @@ const server = http.createServer(async (req, res) => {
 
   if (url.pathname === '/api/m1/data/volume_history' && req.method === 'GET') {
     try {
-      const marketAmountPath = path.join(__dirname, 'data/market/market_amount.jsonl');
-      let data = [];
-      if (fs.existsSync(marketAmountPath)) {
-        const lines = fs.readFileSync(marketAmountPath, 'utf8').trim().split('\n');
-        data = lines.filter(l => l).map(l => {
+      const getBeijingDate = () => {
+        const d = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Shanghai' }));
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const date = String(d.getDate()).padStart(2, '0');
+        return `${year}-${month}-${date}`;
+      };
+      
+      const dailyPath = path.join(__dirname, 'data/market/daily/amount/daily.jsonl');
+      const todayStr = getBeijingDate();
+      const minutePath = path.join(__dirname, `data/market/minute/amount/${todayStr}.jsonl`);
+      
+      let dailyData = [];
+      let minuteData = [];
+      let minuteYdayData = [];
+
+      // Read daily history
+      if (fs.existsSync(dailyPath)) {
+        const lines = fs.readFileSync(dailyPath, 'utf8').trim().split('\n');
+        dailyData = lines.filter(l => l).map(l => {
           try { return JSON.parse(l); } catch(e) { return null; }
         }).filter(Boolean);
       }
+
+      // Find strictly T-1 trading day
+      let ydayStr = null;
+      if (dailyData.length > 0) {
+        // If the last daily record is today, T-1 is the second to last
+        const lastDay = dailyData[dailyData.length - 1].date;
+        if (lastDay >= todayStr && dailyData.length > 1) {
+          ydayStr = dailyData[dailyData.length - 2].date;
+        } else if (lastDay < todayStr) {
+          ydayStr = lastDay;
+        }
+      }
+
+      // Read today's intraday minute data
+      if (fs.existsSync(minutePath)) {
+        const lines = fs.readFileSync(minutePath, 'utf8').trim().split('\n');
+        minuteData = lines.filter(l => l).map(l => {
+          try { return JSON.parse(l); } catch(e) { return null; }
+        }).filter(Boolean);
+      }
+
+      // Read yesterday's intraday minute data for Plan B forecasting
+      if (ydayStr) {
+        const ydayMinutePath = path.join(__dirname, `data/market/minute/amount/${ydayStr}.jsonl`);
+        if (fs.existsSync(ydayMinutePath)) {
+          const lines = fs.readFileSync(ydayMinutePath, 'utf8').trim().split('\n');
+          minuteYdayData = lines.filter(l => l).map(l => {
+            try { return JSON.parse(l); } catch(e) { return null; }
+          }).filter(Boolean);
+        }
+      }
+
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
-      res.end(JSON.stringify({ ok: true, data }));
+      res.end(JSON.stringify({ ok: true, data: dailyData, minute: minuteData, minuteYday: minuteYdayData, ydayStr }));
     } catch (e) {
       res.statusCode = 500;
       res.end(JSON.stringify({ ok: false, error: e.message }));
@@ -3599,7 +3646,7 @@ const server = http.createServer(async (req, res) => {
     try {
       const warmupPath = path.join(__dirname, 'data/warmup/warmup-60.json');
       const lifecyclePath = path.join(__dirname, 'data/lifecycle/lifecycle.json');
-      const marketAmountPath = path.join(__dirname, 'data/market/market_amount.jsonl');
+      const dailyAmountPath = path.join(__dirname, 'data/market/daily/amount/daily.jsonl');
 
       let warmup = null;
       let lifecycle = null;
@@ -3611,9 +3658,9 @@ const server = http.createServer(async (req, res) => {
       if (fs.existsSync(lifecyclePath)) {
         lifecycle = JSON.parse(fs.readFileSync(lifecyclePath, 'utf8'));
       }
-      if (fs.existsSync(marketAmountPath)) {
+      if (fs.existsSync(dailyAmountPath)) {
         // 读取最后一行
-        const lines = fs.readFileSync(marketAmountPath, 'utf8').trim().split('\n');
+        const lines = fs.readFileSync(dailyAmountPath, 'utf8').trim().split('\n');
         if (lines.length > 0) {
           try {
             market_amount = JSON.parse(lines[lines.length - 1]);
@@ -3651,10 +3698,14 @@ const server = http.createServer(async (req, res) => {
       if (!fs.existsSync(minutePath)) {
         minutePath = path.join(__dirname, `data/etf/minute/${symbol}/${day}.jsonl`);
       }
+      if (!fs.existsSync(minutePath) && ['bank', 'broker', 'insure'].includes(symbol)) {
+        minutePath = path.join(__dirname, `data/sector/minute/${symbol}/${day}.jsonl`);
+      }
 
       let data = [];
       let pre_close = null;
       let name = symbol;
+      let source_day = day;
 
       if (fs.existsSync(minutePath)) {
         const lines = fs.readFileSync(minutePath, 'utf8').trim().split('\n');
@@ -3670,6 +3721,9 @@ const server = http.createServer(async (req, res) => {
       }
       if (!fs.existsSync(dailyPath)) {
         dailyPath = path.join(__dirname, `data/etf/${symbol}/daily.jsonl`);
+      }
+      if (!fs.existsSync(dailyPath) && ['bank', 'broker', 'insure'].includes(symbol)) {
+        dailyPath = path.join(__dirname, `data/sector/daily/${symbol}/daily.jsonl`);
       }
 
       if (fs.existsSync(dailyPath)) {
@@ -3696,9 +3750,44 @@ const server = http.createServer(async (req, res) => {
         }
       }
 
+      // 金融板块分钟线兜底：如果 sector minute 文件没落盘（或为空），则复用旧版 runtime/minute 回退逻辑
+      if (['bank', 'broker', 'insure'].includes(symbol) && (!data || !data.length)) {
+        const secid = minuteEmMap(symbol); // e.g. 90.BK0475
+        let series = [];
+        try {
+          series = await loadMinuteSeries(day, symbol, secid);
+        } catch (e) {
+          series = [];
+        }
+
+        if (series && series.length) {
+          const lastTime = String(series[series.length - 1]?.time || '');
+          const seriesDay = lastTime.includes(' ') ? lastTime.split(' ')[0] : (lastTime.includes('T') ? lastTime.split('T')[0] : '');
+          if (seriesDay) source_day = seriesDay;
+
+          if (pre_close == null && secid) {
+            try {
+              const snap = await fetchEastmoneySnapshot([secid]);
+              pre_close = snap?.[secid]?.prevClose || pre_close;
+            } catch (e) {
+              void e;
+            }
+          }
+
+          const baseline = isNum(pre_close) ? pre_close : pickNum(toNumber(series[0]?.open), toNumber(series[0]?.close));
+          data = series.map((p) => {
+            const t = String(p.time || '');
+            const hm = timeToMinuteKey(t) || '';
+            const price = pickNum(toNumber(p.close), toNumber(p.open));
+            const pct = (isNum(price) && isNum(baseline) && baseline) ? +(((price - baseline) / baseline) * 100) : null;
+            return { time: t, asOf: hm, price, pct };
+          }).filter(p => p.asOf);
+        }
+      }
+
       // ETF 分时数据自带 pre_close 和 pct，大盘指数的分时数据可能没有，统一在这里补充基准
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
-      res.end(JSON.stringify({ ok: true, symbol, name, day, pre_close, data }));
+      res.end(JSON.stringify({ ok: true, symbol, name, day, source_day, pre_close, data }));
     } catch (e) {
       res.statusCode = 500;
       res.end(JSON.stringify({ ok: false, error: e.message }));
@@ -3730,6 +3819,9 @@ const server = http.createServer(async (req, res) => {
           args = ['treasolo/m1_minute_fetch_etf.py'];
           if (data.symbols) args.push('--symbols', data.symbols);
           if (data.day) args.push('--day', data.day);
+          if (data.force) args.push('--force');
+        } else if (data.script === 'm1_minute_fetch_sector.py') {
+          args = ['treasolo/m1_minute_fetch_sector.py'];
           if (data.force) args.push('--force');
         } else if (data.script === 'm1_minute_to_daily_etf.py') {
           args = ['treasolo/m1_minute_to_daily_etf.py', '--symbol', data.symbol];
@@ -5446,7 +5538,12 @@ except Exception as e:
   }
 
   // Static File Serving
-  let filePath = path.join(__dirname, 'public', url.pathname === '/' ? 'index.html' : url.pathname);
+  const pathname = url.pathname || '/';
+  const mappedPath =
+    pathname === '/' ? 'index.html'
+      : (pathname === '/m1' || pathname === '/m1/') ? 'index_m1.html'
+      : pathname;
+  let filePath = path.join(__dirname, 'public', mappedPath);
   const ext = path.extname(filePath);
   const mimeTypes = {
     '.html': 'text/html',
