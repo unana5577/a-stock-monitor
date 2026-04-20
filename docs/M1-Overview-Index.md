@@ -162,10 +162,11 @@ data/
 | `sh562500`      | 机器人ETF   | 高端制造  |
 | `sh563530`      | 商业航天ETF | 科技/航天 |
 
-### 10. Warmup & Lifecycle 业务分析
+### 11. AI 盘中智能复盘
 
-- **用途**：每天 16:00 自动执行。首先根据最新的大盘与 ETF 日线数据计算出均线、MACD 等技术指标（Warmup），随后基于这些指标产出“潜伏/加速/震荡”等业务周期判定与操作建议（Lifecycle），供前端展示。
-- **导入 n8n 用的文件**：[n8n-workflows/M1-G-Warmup-Lifecycle.json](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/n8n-workflows/M1-G-Warmup-Lifecycle.json)
-- **底层 Python 脚本**：[treasolo/m1_warmup.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/treasolo/m1_warmup.py) & [treasolo/m1_lifecycle.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/treasolo/m1_lifecycle.py)
-- **抓下来的数据存在哪**：`data/warmup/warmup-60.json` 和 `data/lifecycle/lifecycle.json`
+- **用途**：交易日内每半小时（10:00, 10:30, 11:00, 13:30, 14:00, 14:30）自动执行。首先提取当前的大盘、国债、情绪、量能特征，随后将精简后的特征喂给大模型（DeepSeek-v3），输出三段式的交易员实战点评。
+- **导入 n8n 用的文件**：[n8n-workflows/M1-AI-Intraday-Report.json](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/n8n-workflows/M1-AI-Intraday-Report.json)
+- **底层 Python 脚本**：[treasolo/m1_ai_aggregator.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/treasolo/m1_ai_aggregator.py) & [treasolo/m1_ai_reporter.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/treasolo/m1_ai_reporter.py)
+- **使用的 Prompt**：[prompts/stock-daily-v2.txt](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/prompts/stock-daily-v2.txt)
+- **抓下来的数据存在哪**：`data/market/ai/snapshot.jsonl`（特征底表）和 `data/market/ai/report.jsonl`（大模型推理结果）
 
