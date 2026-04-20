@@ -71,50 +71,57 @@ data/
 
 - **用途**：每 1 分钟抓取 6 大指数当前的分钟价，用于画分时线。
 - **导入 n8n 用的文件**：[n8n-workflows/M1-A-Index-Minute-Fetch.json](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/n8n-workflows/M1-A-Index-Minute-Fetch.json)
-- **底层 Python 脚本**：[treasolo/m1\_minute\_fetch\_indices.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/treasolo/m1_minute_fetch_indices.py)
+- **底层 Python 脚本**：[treasolo/m1_minute_fetch_indices.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/treasolo/m1_minute_fetch_indices.py)
 - **抓下来的数据存在哪**：`data/index/minute/<代码>/<日期>.jsonl`
 
-### 4. 大盘指数：收盘抢发日线
+### 4. 金融三板块：盘中分时抓取
+
+- **用途**：每 1 分钟抓取银行、证券、保险三大行业指数（使用新浪源 `sz399986`, `sz399975`, `sz399809` 替代常被墙的东方财富 BK 板块）的分钟数据。
+- **导入 n8n 用的文件**：[n8n-workflows/M1-B-Sector-Minute-Fetch.json](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/n8n-workflows/M1-B-Sector-Minute-Fetch.json)
+- **底层 Python 脚本**：[treasolo/m1_minute_fetch_sector.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/treasolo/m1_minute_fetch_sector.py)
+- **抓下来的数据存在哪**：`data/sector/minute/<bank/broker/insure>/<日期>.jsonl`
+
+### 5. 大盘指数：收盘抢发日线
 
 - **用途**：每天 15:01，用最后一次分时价，拼出今天的日线收盘价。
 - **导入 n8n 用的文件**：[n8n-workflows/M1-B-Minute2Daily.json](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/n8n-workflows/M1-B-Minute2Daily.json)
 - **底层 Python 脚本**：[treasolo/m1\_minute\_to\_daily.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/treasolo/m1_minute_to_daily.py)
 - **抓下来的数据存在哪**：`data/index/daily/<代码>/daily.jsonl`
 
-### 5. 大盘指数与 ETF：晚间权威对账与回补 (共用)
+### 6. 大盘指数与 ETF：晚间权威对账与回补 (共用)
 
-- **用途**：每天 18:00，去官方接口要最终结算日线，强制覆盖我们 15:01 抢发的数据，保证 100% 准确。支持对所有大盘指数与 ETF 的日线进行漏缺天数补齐。
+- **用途**：每天 18:00，去官方接口要最终结算日线，强制覆盖我们 15:01 抢发的数据，保证 100% 准确。支持对所有大盘指数与 ETF 的日线进行漏缺天数补齐。在此工作流最后，会自动再次触发 Warmup 与 Lifecycle 刷新业务指标。
 - **导入 n8n 用的文件**：[n8n-workflows/M1-E-Backfill-Universal.json](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/n8n-workflows/M1-E-Backfill-Universal.json)
-- **底层 Python 脚本**：[treasolo/m1\_backfill.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/treasolo/m1_backfill.py)
+- **底层 Python 脚本**：[treasolo/m1_backfill.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/treasolo/m1_backfill.py)
 - **抓下来的数据存在哪**：与各自的日线是同一个文件 `data/index/daily/<代码>/daily.jsonl` 或 `data/etf/daily/<代码>/daily.jsonl`，直接覆盖更新。
 
 ***
 
 ## ETF 专属工作流 (含分时与日线)
 
-### 6. ETF：盘中分时抓取 (全字段)
+### 7. ETF：盘中分时抓取 (全字段)
 
 - **用途**：每 1 分钟抓取核心 ETF 分时数据，包含 `price`, `pct`, `amount`, `vol`, `open`, `high`, `low` 等完整字段。
 - **导入 n8n 用的文件**：[n8n-workflows/M1-C-ETF-Minute-Fetch.json](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/n8n-workflows/M1-C-ETF-Minute-Fetch.json)
-- **底层 Python 脚本**：[treasolo/m1\_minute\_fetch\_etf.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/treasolo/m1_minute_fetch_etf.py)
+- **底层 Python 脚本**：[treasolo/m1_minute_fetch_etf.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/treasolo/m1_minute_fetch_etf.py)
 - **抓下来的数据存在哪**：`data/etf/minute/<代码>/<日期>.jsonl`
 
-### 7. ETF：收盘抢发日线
+### 8. ETF：收盘抢发日线
 
 - **用途**：每天 15:01，用 ETF 的最后一次分时数据，生成当天的收盘日线。
 - **导入 n8n 用的文件**：[n8n-workflows/M1-D-ETF-Minute2Daily.json](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/n8n-workflows/M1-D-ETF-Minute2Daily.json)
-- **底层 Python 脚本**：[treasolo/m1\_minute\_to\_daily\_etf.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/treasolo/m1_minute_to_daily_etf.py)
+- **底层 Python 脚本**：[treasolo/m1_minute_to_daily_etf.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/treasolo/m1_minute_to_daily_etf.py)
 - **抓下来的数据存在哪**：`data/etf/daily/<代码>/daily.jsonl`
 
 ***
 
 ## 运维与清理
 
-### 8. 分时数据过期清理 (保留 T-3)
+### 9. 分时数据过期清理 (保留 T-3)
 
 - **用途**：每天 18:30 自动扫描 `index/minute/` 和 `etf/minute/` 目录，按文件倒序严格保留每个标的最新的 3 个文件（即最近 3 个交易日），删除更早的分时数据，防止磁盘爆满。同时会清空 `market/minute/breadth-cache.jsonl` 情绪分时，为第二天归零。
 - **导入 n8n 用的文件**：[n8n-workflows/M1-F-Cleanup-Minute.json](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/n8n-workflows/M1-F-Cleanup-Minute.json)
-- **底层 Python 脚本**：[treasolo/cleanup\_minute\_files.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/treasolo/cleanup_minute_files.py)
+- **底层 Python 脚本**：[treasolo/cleanup_minute_files.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/treasolo/cleanup_minute_files.py)
 
 ***
 
@@ -131,7 +138,15 @@ data/
 | `sh000300` | 沪深300  | 核心大盘 |
 | `sh000852` | 中证1000 | 核心大盘 |
 
-### 2. 11 大行业/主题 ETF
+### 2. 金融三板块 (新浪源行业指数)
+
+| 指数代码 | 指数名称 | 说明 |
+| :--- | :--- | :--- |
+| `sz399986` | 中证银行 | 完美替代 BK0475 |
+| `sz399975` | 证券公司 | 完美替代 BK0473 |
+| `sz399809` | 保险主题 | 完美替代 BK0474 |
+
+### 3. 11 大行业/主题 ETF
 
 | ETF 代码          | ETF 名称   | 说明    |
 | :-------------- | :------- | :---- |
@@ -147,12 +162,10 @@ data/
 | `sh562500`      | 机器人ETF   | 高端制造  |
 | `sh563530`      | 商业航天ETF | 科技/航天 |
 
-### 9. 数据预热与生命周期分析 (聚合生成)
+### 10. Warmup & Lifecycle 业务分析
 
-- **用途**：每天 18:10，读取所有大盘与 ETF 的最新 60 天日线数据，组装为精简的 `warmup-60.json`，随后立即根据这 60 天数据计算出每个标的的生命周期状态、均线、乖离率和操作建议，保存为 `lifecycle.json`。供前端秒级加载。
+- **用途**：每天 16:00 自动执行。首先根据最新的大盘与 ETF 日线数据计算出均线、MACD 等技术指标（Warmup），随后基于这些指标产出“潜伏/加速/震荡”等业务周期判定与操作建议（Lifecycle），供前端展示。
 - **导入 n8n 用的文件**：[n8n-workflows/M1-G-Warmup-Lifecycle.json](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/n8n-workflows/M1-G-Warmup-Lifecycle.json)
-- **底层 Python 脚本**：[treasolo/m1\_warmup.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/treasolo/m1_warmup.py) 与 [treasolo/m1\_lifecycle.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/treasolo/m1_lifecycle.py)
-- **抓下来的数据存在哪**：
-  - 预热文件：`data/warmup/warmup-60.json`
-  - 生命周期分析：`data/lifecycle/lifecycle.json`
+- **底层 Python 脚本**：[treasolo/m1_warmup.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/treasolo/m1_warmup.py) & [treasolo/m1_lifecycle.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/treasolo/m1_lifecycle.py)
+- **抓下来的数据存在哪**：`data/warmup/warmup-60.json` 和 `data/lifecycle/lifecycle.json`
 

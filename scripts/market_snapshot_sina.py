@@ -94,6 +94,9 @@ def fetch_market_snapshot():
     print("  1. 获取A股涨跌家数...")
     try:
         stocks_df = ak.stock_zh_a_spot()
+        # 过滤掉北交所(bj)的股票，对齐同花顺/东方财富的A股常规统计口径
+        stocks_df = stocks_df[~stocks_df['代码'].str.startswith('bj')]
+        
         up = stocks_df[stocks_df['涨跌额'] > 0].shape[0]
         down = stocks_df[stocks_df['涨跌额'] < 0].shape[0]
         flat = stocks_df[stocks_df['涨跌额'] == 0].shape[0]

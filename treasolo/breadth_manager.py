@@ -56,6 +56,9 @@ def fetch_breadth_spot():
         if df is None or df.empty:
             return {"ok": False, "error": "empty data from sina api"}
 
+        # 过滤掉北交所(bj)的股票，对齐同花顺/东方财富的A股常规统计口径
+        df = df[~df['代码'].str.startswith('bj')]
+
         # 确保涨跌幅列是数字，新浪接口返回的叫 '涨跌幅'
         import pandas as pd
         df['涨跌幅'] = pd.to_numeric(df['涨跌幅'], errors='coerce')

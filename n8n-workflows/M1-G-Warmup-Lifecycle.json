@@ -10,7 +10,7 @@
       "parameters": {
         "rule": {
           "interval": [
-            { "field": "cronExpression", "expression": "10 18 * * 1-5" }
+            { "field": "cronExpression", "expression": "0 16 * * 1-5" }
           ]
         }
       }

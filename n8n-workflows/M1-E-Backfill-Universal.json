@@ -58,6 +58,36 @@
       "parameters": {
         "jsCode": "return $input.all().map(item => {\n  let raw = item.json.stdout ? item.json.stdout.join('\\n') : '';\n  let summary = `M1-Backfill ✅ 无增量更新`;\n  if (raw.includes('[接口拉取] 成功获取')) {\n    const countMatch = raw.match(/成功获取 (\\d+) 条/);\n    const datesMatch = raw.match(/\\[合并完成\\] (.*?) 补充日期: (.*)/);\n    if (countMatch && datesMatch) {\n      summary = `M1-Backfill ✅ 回补成功\\n${datesMatch[1]} 新增 ${countMatch[1]} 条: ${datesMatch[2]}`;\n    }\n  } else if (raw.includes('❌')) {\n    summary = `M1-Backfill ❌ 失败`;\n  }\n  return { json: { summary } };\n});"
       }
+    },
+    {
+      "id": "trigger-warmup",
+      "name": "触发晚间分析",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [850, 150],
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8787/api/m1/run",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"script\": \"m1_warmup.py\"\n}",
+        "options": {}
+      }
+    },
+    {
+      "id": "trigger-lifecycle",
+      "name": "触发晚间周期",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1050, 150],
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8787/api/m1/run",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"script\": \"m1_lifecycle.py\"\n}",
+        "options": {}
+      }
     }
   ],
   "connections": {
@@ -65,7 +95,9 @@
     "09:00触发": { "main": [ [ { "node": "生成全量清单", "type": "main", "index": 0 } ] ] },
     "手动触发": { "main": [ [ { "node": "生成全量清单", "type": "main", "index": 0 } ] ] },
     "生成全量清单": { "main": [ [ { "node": "调用本地回补脚本", "type": "main", "index": 0 } ] ] },
-    "调用本地回补脚本": { "main": [ [ { "node": "输出执行结果", "type": "main", "index": 0 } ] ] }
+    "调用本地回补脚本": { "main": [ [ { "node": "输出执行结果", "type": "main", "index": 0 } ] ] },
+    "输出执行结果": { "main": [ [ { "node": "触发晚间分析", "type": "main", "index": 0 } ] ] },
+    "触发晚间分析": { "main": [ [ { "node": "触发晚间周期", "type": "main", "index": 0 } ] ] }
   },
   "settings": {
     "executionOrder": "v1"
