@@ -97,7 +97,34 @@ def main() -> int:
     total_deleted += deleted
     print(f"  => 完毕。保留了 {kept} 个文件，清理了 {deleted} 个文件。最远保留至: {etf_oldest or 'N/A'}")
 
-    # 3. 重置涨跌家数缓存
+    # 3. 清理 Sector (板块) 分时
+    sector_minute_dir = PROJECT_ROOT / "data" / "sector" / "minute"
+    print(f"\n> 扫描 Sector 分时目录: {sector_minute_dir.relative_to(PROJECT_ROOT)}")
+    deleted, kept, sector_oldest = cleanup_directory(sector_minute_dir, args.keep_days, args.apply)
+    total_deleted += deleted
+    print(f"  => 完毕。保留了 {kept} 个文件，清理了 {deleted} 个文件。最远保留至: {sector_oldest or 'N/A'}")
+    
+    # 4. 清理全市场成交额分时
+    market_amount_minute_dir = PROJECT_ROOT / "data" / "market" / "minute" / "amount"
+    print(f"\n> 扫描 Market Amount 分时目录: {market_amount_minute_dir.relative_to(PROJECT_ROOT)}")
+    # market amount doesn't have symbol subdirs, files are directly in amount/
+    # So we need a special handling or fake a symbol dir
+    if market_amount_minute_dir.exists():
+        files = list(market_amount_minute_dir.glob("*.jsonl"))
+        files.sort(key=lambda f: f.name, reverse=True)
+        files_to_keep = files[:args.keep_days]
+        files_to_delete = files[args.keep_days:]
+        
+        for f in files_to_delete:
+            if args.apply:
+                f.unlink()
+            print(f"  [{'DELETED' if args.apply else 'DRY-RUN'}] {f.relative_to(PROJECT_ROOT)}")
+            total_deleted += 1
+        
+        amount_oldest = files_to_keep[-1].name[:10] if files_to_keep else 'N/A'
+        print(f"  => 完毕。保留了 {len(files_to_keep)} 个文件，清理了 {len(files_to_delete)} 个文件。最远保留至: {amount_oldest}")
+
+    # 5. 重置涨跌家数缓存
     print("\n> 重置涨跌家数情绪分时缓存...")
     if reset_breadth_cache(args.apply):
         total_deleted += 1

@@ -3834,41 +3834,6 @@ const server = http.createServer(async (req, res) => {
         }
       }
 
-      // 金融板块分钟线兜底：如果 sector minute 文件没落盘（或为空），则复用旧版 runtime/minute 回退逻辑
-      if (['bank', 'broker', 'insure'].includes(symbol) && (!data || !data.length)) {
-        const secid = minuteEmMap(symbol); // e.g. 90.BK0475
-        let series = [];
-        try {
-          series = await loadMinuteSeries(day, symbol, secid);
-        } catch (e) {
-          series = [];
-        }
-
-        if (series && series.length) {
-          const lastTime = String(series[series.length - 1]?.time || '');
-          const seriesDay = lastTime.includes(' ') ? lastTime.split(' ')[0] : (lastTime.includes('T') ? lastTime.split('T')[0] : '');
-          if (seriesDay) source_day = seriesDay;
-
-          if (pre_close == null && secid) {
-            try {
-              const snap = await fetchEastmoneySnapshot([secid]);
-              pre_close = snap?.[secid]?.prevClose || pre_close;
-            } catch (e) {
-              void e;
-            }
-          }
-
-          const baseline = isNum(pre_close) ? pre_close : pickNum(toNumber(series[0]?.open), toNumber(series[0]?.close));
-          data = series.map((p) => {
-            const t = String(p.time || '');
-            const hm = timeToMinuteKey(t) || '';
-            const price = pickNum(toNumber(p.close), toNumber(p.open));
-            const pct = (isNum(price) && isNum(baseline) && baseline) ? +(((price - baseline) / baseline) * 100) : null;
-            return { time: t, asOf: hm, price, pct };
-          }).filter(p => p.asOf);
-        }
-      }
-
       // ETF 分时数据自带 pre_close 和 pct，大盘指数的分时数据可能没有，统一在这里补充基准
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.end(JSON.stringify({ ok: true, symbol, name, day, source_day, pre_close, data }));
