@@ -12,6 +12,7 @@ services:
       - NODE_ENV=production
       - WEBHOOK_URL=http://localhost:5679/
       - GENERIC_TIMEZONE=Asia/Shanghai
+      - TZ=Asia/Shanghai
       - EXECUTIONS_DATA_SAVE_ON_ERROR=all
       - EXECUTIONS_DATA_SAVE_ON_SUCCESS=all
       - EXECUTIONS_DATA_SAVE_ON_PROGRESS=true
