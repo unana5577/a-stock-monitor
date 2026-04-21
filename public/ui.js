@@ -635,31 +635,62 @@ createApp({
       // 当前累计成交量（最后一分钟的累计值，单位：万元）
       const currentAccumulated = series[series.length - 1].volume;
 
-      // 前一分钟成交量（单位：万元）
-      const prevMinuteVolume = series[series.length - 1].volume - series[series.length - 2].volume;
+      const buildAxis = () => {
+        const axis = [];
+        const d = new Date();
+        d.setHours(9, 30, 0, 0);
+        for (let i = 0; i < 120; i += 1) { axis.push(d.toTimeString().substring(0, 5)); d.setMinutes(d.getMinutes() + 1); }
+        d.setHours(13, 0, 0, 0);
+        for (let i = 0; i < 120; i += 1) { axis.push(d.toTimeString().substring(0, 5)); d.setMinutes(d.getMinutes() + 1); }
+        return axis;
+      };
 
-      // 已交易分钟数（从9:30开始）
-      const lastTime = series[series.length - 1].time; // "HH:MM"
-      const [lastHour, lastMin] = lastTime.split(':').map(Number);
+      const axis = buildAxis();
+      const lastTime = series[series.length - 1].time;
+      const axisIdx = axis.indexOf(lastTime);
+      let tradedMinutes = axisIdx >= 0 ? (axisIdx + 1) : series.length;
+      tradedMinutes = Math.min(240, Math.max(1, tradedMinutes));
 
-      // 计算已交易分钟数
-      let tradedMinutes = 0;
-      if (lastHour < 12) {
-        // 上午：9:30-11:30
-        tradedMinutes = (lastHour - 9) * 60 + (lastMin - 30);
-      } else if (lastHour < 13) {
-        // 午休：11:30之后算到11:30为止
-        tradedMinutes = (11 - 9) * 60 + (30 - 30); // 120分钟
-      } else {
-        // 下午：已过上午120分钟 + 下午时间
-        tradedMinutes = 120 + (lastHour - 13) * 60 + (lastMin - 0);
+      // 获取最后一分钟的真实增量成交额
+      let referenceMinuteVolume = 0;
+      if (series.length >= 2) {
+        referenceMinuteVolume = series[series.length - 1].volume - series[series.length - 2].volume;
+      }
+      if (referenceMinuteVolume < 0) referenceMinuteVolume = 0;
+
+      // 提取时间字符串，如 "11:30"
+      const lastTimeStr = lastTime.substring(0, 5);
+      
+      // 时间段锁定逻辑
+      if (lastTimeStr >= "11:25" && lastTimeStr <= "11:30") {
+         const targetIdx = axis.indexOf("11:24");
+         if (targetIdx !== -1 && targetIdx < series.length - 1) {
+            // 找到 11:24 的对应记录
+            const volAt1124 = series[targetIdx].volume;
+            const volAt1123 = series[targetIdx - 1].volume;
+            referenceMinuteVolume = Math.max(0, volAt1124 - volAt1123);
+         }
+      } else if (lastTimeStr >= "14:55" && lastTimeStr <= "15:00") {
+         const targetIdx = axis.indexOf("14:54");
+         if (targetIdx !== -1 && targetIdx < series.length - 1) {
+            // 找到 14:54 的对应记录
+            const volAt1454 = series[targetIdx].volume;
+            const volAt1453 = series[targetIdx - 1].volume;
+            referenceMinuteVolume = Math.max(0, volAt1454 - volAt1453);
+         }
       }
 
       // 剩余分钟数（全天240分钟：上午120 + 下午120）
-      const remainingMinutes = 240 - tradedMinutes;
+      const remainingMinutes = Math.max(0, 240 - tradedMinutes);
+
+      // 限制最新分钟量级，避免暴增 (最大不超过今日已均量的 3 倍)
+      const avgSoFar = currentAccumulated / tradedMinutes;
+      if (referenceMinuteVolume > avgSoFar * 3) {
+         referenceMinuteVolume = avgSoFar * 3;
+      }
 
       // 预估全天量能（万元）
-      const forecast = currentAccumulated + prevMinuteVolume * remainingMinutes;
+      const forecast = currentAccumulated + referenceMinuteVolume * remainingMinutes;
 
       // 计算预估增量（需要昨日成交额，单位：万元）
       let delta = 0;

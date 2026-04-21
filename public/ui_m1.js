@@ -413,7 +413,18 @@ const app = createApp({
       
       // Calculate yesterday's average volume per minute (the dashed reference line)
       let ydayTotalAmount = 0;
-      const lastDaily = volumeHistory.value[volumeHistory.value.length - 1];
+      const todayStr = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Shanghai' })).toISOString().split('T')[0];
+      
+      // Find the most recent day before today
+      let lastDaily = null;
+      for (let i = volumeHistory.value.length - 1; i >= 0; i--) {
+        const row = volumeHistory.value[i];
+        if (row && row.date < todayStr) {
+          lastDaily = row;
+          break;
+        }
+      }
+      
       if (lastDaily) {
         ydayTotalAmount = lastDaily.market_amount / 100000000; // in hundred millions (亿)
       }
@@ -429,10 +440,11 @@ const app = createApp({
 
       // Construct today's real minute-by-minute volume curve
       const todayData = new Array(240).fill(null);
+      let today3MinData = new Array(240).fill(null); // Initialize here for global scope within function
       let currentTradedMinutes = 0;
       let finalCumulative = 0;
       
-      // Extract yesterday's cumulative volume mapping for Plan B forecasting
+      // Extract yesterday's cumulative volume mapping
       const ydayCumulativeMap = new Map();
       intradayYdayVolume.value.forEach(pt => {
         ydayCumulativeMap.set(pt.asOf, pt.market_amount / 100000000);
@@ -440,83 +452,77 @@ const app = createApp({
 
       if (intradayVolume.value.length > 0) {
         let prevCumulative = 0;
-        let firstDataIndex = -1;
+        let prevAxisIdx = -1;
 
         intradayVolume.value.forEach((pt, i) => {
           const timeStr = pt.asOf;
           const axisIdx = xAxisData.indexOf(timeStr);
           if (axisIdx === -1) return; // ignore invalid times
+          if (prevAxisIdx !== -1 && axisIdx < prevAxisIdx) return;
           
           currentTradedMinutes = axisIdx + 1;
           const currentCumulative = pt.market_amount / 100000000;
           finalCumulative = currentCumulative;
-          let minuteVolume = 0;
           
-          if (i === 0) {
-            // First data point we receive
-            if (axisIdx === 0) {
-              minuteVolume = currentCumulative;
-              todayData[axisIdx] = minuteVolume;
-            } else {
-              const missingMinutes = axisIdx + 1;
-              const avgMissingVolume = currentCumulative / missingMinutes;
-              for (let m = 0; m <= axisIdx; m++) {
-                todayData[m] = avgMissingVolume;
-              }
-            }
-            firstDataIndex = axisIdx;
-          } else {
-            // Normal delta calculation
-            minuteVolume = currentCumulative - prevCumulative;
-            if (minuteVolume < 0) minuteVolume = 0; // clean glitches
-            todayData[axisIdx] = minuteVolume;
+          const spanMinutes = i === 0 ? (axisIdx + 1) : Math.max(1, axisIdx - prevAxisIdx);
+          let segmentVolume = i === 0 ? currentCumulative : (currentCumulative - prevCumulative);
+          if (segmentVolume < 0) segmentVolume = 0;
+          const perMinuteVolume = segmentVolume / spanMinutes;
+
+          const startFill = i === 0 ? 0 : (prevAxisIdx + 1);
+          for (let m = startFill; m <= axisIdx; m++) {
+            todayData[m] = perMinuteVolume;
           }
+
           prevCumulative = currentCumulative;
+          prevAxisIdx = axisIdx;
         });
         
-        // --- Plan B: Accurate Forecasting based on yesterday's same-time percentage ---
         const lastAsOf = intradayVolume.value[intradayVolume.value.length - 1].asOf;
-        const ydaySameTimeCumulative = ydayCumulativeMap.get(lastAsOf);
+        const ydaySameTimeCumulative = ydayCumulativeMap.get(lastAsOf) ?? (avgPerMinute * currentTradedMinutes);
         
-        if (ydaySameTimeCumulative && ydayTotalAmount > 0) {
-          const ydayProgressRatio = ydaySameTimeCumulative / ydayTotalAmount;
+        // Remove the 3-minute aggregation logic and use todayData directly for the curve
+        // today3MinData is no longer needed
+
+        let forecastTotal = finalCumulative;
+        if (currentTradedMinutes > 0 && currentTradedMinutes < 240) {
+          const remainingMinutes = 240 - currentTradedMinutes;
           
-          let forecastTotal = 0;
-          if (currentTradedMinutes >= 240) {
-            forecastTotal = finalCumulative;
-          } else if (ydayProgressRatio > 0) {
-            // Plan B formula: Today's Total / Yesterday's Progress Ratio
-            forecastTotal = finalCumulative / ydayProgressRatio;
-          } else {
-            // Fallback to linear if ratio is somehow 0
-            forecastTotal = (finalCumulative / currentTradedMinutes) * 240;
+          // Time Segment Locking Logic
+          const lastAsOf = intradayVolume.value[intradayVolume.value.length - 1].asOf;
+          let referenceMinuteVolume = todayData[currentTradedMinutes - 1]; // Default to current last minute
+          
+          if (lastAsOf >= "11:25" && lastAsOf <= "11:30") {
+             // Find the volume at 11:24
+             const targetIdx = xAxisData.indexOf("11:24");
+             if (targetIdx !== -1 && targetIdx < currentTradedMinutes && todayData[targetIdx] !== null) {
+                 referenceMinuteVolume = todayData[targetIdx];
+             }
+          } else if (lastAsOf >= "14:55" && lastAsOf <= "15:00") {
+             // Find the volume at 14:54
+             const targetIdx = xAxisData.indexOf("14:54");
+             if (targetIdx !== -1 && targetIdx < currentTradedMinutes && todayData[targetIdx] !== null) {
+                 referenceMinuteVolume = todayData[targetIdx];
+             }
           }
           
-          volumeStats.value = {
-            current: finalCumulative,
-            ydayTotal: ydayTotalAmount,
-            ydaySameTime: ydaySameTimeCumulative, // Update to accurate cumulative!
-            forecast: forecastTotal,
-            deltaPct: ((forecastTotal - ydayTotalAmount) / ydayTotalAmount) * 100
-          };
-        } else if (currentTradedMinutes > 0 && ydayTotalAmount > 0) {
-          // Fallback to linear projection if yesterday's minute data is missing
-          const ydaySameTimeAmount = avgPerMinute * currentTradedMinutes;
-          let forecastTotal = 0;
-          if (currentTradedMinutes >= 240) {
-            forecastTotal = finalCumulative;
-          } else {
-            forecastTotal = (finalCumulative / currentTradedMinutes) * 240;
+          // Use referenceMinuteVolume for forecast, cap it at a reasonable max to avoid spikes 
+          // (e.g. max 3x the average volume of today so far)
+          let v = Number.isFinite(referenceMinuteVolume) && referenceMinuteVolume > 0 ? referenceMinuteVolume : 0;
+          const avgSoFar = finalCumulative / currentTradedMinutes;
+          if (v > avgSoFar * 3) {
+             v = avgSoFar * 3;
           }
-          
-          volumeStats.value = {
-            current: finalCumulative,
-            ydayTotal: ydayTotalAmount,
-            ydaySameTime: ydaySameTimeAmount,
-            forecast: forecastTotal,
-            deltaPct: ((forecastTotal - ydayTotalAmount) / ydayTotalAmount) * 100
-          };
+          forecastTotal = finalCumulative + v * remainingMinutes;
         }
+
+        volumeStats.value = {
+          current: finalCumulative,
+          ydayTotal: ydayTotalAmount,
+          ydaySameTime: ydaySameTimeCumulative,
+          forecast: forecastTotal,
+          deltaPct: ydayTotalAmount > 0 ? ((forecastTotal - ydayTotalAmount) / ydayTotalAmount) * 100 : 0
+        };
       }
       
       // Construct the baseline array for yesterday's average
@@ -546,7 +552,7 @@ const app = createApp({
         },
         series: [
           {
-            name: '今日量能',
+            name: '今日量能(分钟)',
             data: todayData,
             type: 'line',
             smooth: true,
@@ -714,8 +720,8 @@ const app = createApp({
         xAxis: { type: 'category', data: times, show: false },
         yAxis: [{
           type: 'value',
-          min: preClose ? preClose * (1 - maxAbsPct/100) : 'dataMin',
-          max: preClose ? preClose * (1 + maxAbsPct/100) : 'dataMax',
+          min: 'dataMin',
+          max: 'dataMax',
           show: false
         }],
         series: [{
@@ -728,13 +734,7 @@ const app = createApp({
               { offset: 0, color: latestPct >= 0 ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)' },
               { offset: 1, color: latestPct >= 0 ? 'rgba(239, 68, 68, 0)' : 'rgba(16, 185, 129, 0)' }
             ])
-          },
-          markLine: preClose ? {
-            silent: true,
-            symbol: 'none',
-            lineStyle: { color: '#94A3B8', type: 'dashed', width: 1 },
-            data: [{ yAxis: preClose }]
-          } : undefined
+          }
         }]
       };
       

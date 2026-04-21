@@ -9,11 +9,18 @@ import importlib.util
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.append(str(PROJECT_ROOT))
 
-# 动态加载根目录下的 sector_lifecycle.py 文件（避开同名文件夹冲突）
-spec = importlib.util.spec_from_file_location("sector_lifecycle_module", str(PROJECT_ROOT / "sector_lifecycle.py"))
-sector_lifecycle_module = importlib.util.module_from_spec(spec)
-sys.modules["sector_lifecycle_module"] = sector_lifecycle_module
-spec.loader.exec_module(sector_lifecycle_module)
+# 将 scripts/legacy 加入 sys.path，解决 config 等模块引用问题
+sys.path.append(str(PROJECT_ROOT / "scripts" / "legacy"))
+
+# 动态加载根目录下的 sector_lifecycle_module（已移至 scripts/legacy/sector_lifecycle.py）
+try:
+    spec = importlib.util.spec_from_file_location("sector_lifecycle_module", str(PROJECT_ROOT / "scripts/legacy/sector_lifecycle.py"))
+    sector_lifecycle_module = importlib.util.module_from_spec(spec)
+    sys.modules["sector_lifecycle_module"] = sector_lifecycle_module
+    spec.loader.exec_module(sector_lifecycle_module)
+except Exception as e:
+    print(f"Error loading sector_lifecycle_module: {e}")
+    sys.exit(1)
 
 analyze_sector = sector_lifecycle_module.analyze_sector
 select_dynamic_benchmark = sector_lifecycle_module.select_dynamic_benchmark

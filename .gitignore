@@ -1,32 +1,20 @@
-# Node.js
+# 忽略常见的开发环境和产物
 node_modules/
-npm-debug.log
-yarn-error.log
-
-# Environment
-.env
+__pycache__/
+.pytest_cache/
 .DS_Store
 
-# Data
-data/
-
-# Local ops notes (keep private)
-README.ops.md
-
-# Python
-__pycache__/
-*.pyc
-
-# Runtime/logs
-runtime/
-server.log
+# 忽略临时或敏感文件
+.env
+.env.*
+!.env.example
 logs/
-
-# Local tool folders
+*.log
+temp_download/
+runtime/
 .openclaw/
 openclaw_workspace/
 
-# Optional local ops folder
-cron/
-
-test_llm_prompt.py
+# 忽略数据存储（保持代码库干净）
+# 注意：这很重要，否则 60 天的数据会导致 git 仓库极其臃肿
+data/

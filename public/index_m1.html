@@ -245,12 +245,12 @@
                   </div>
                   <div class="flex items-center gap-1.5">
                     <div class="w-2 h-2 border border-gray-400 border-dashed rounded-sm"></div>
-                    <span class="text-gray-500">昨日同期</span>
-                    <span class="font-bold text-gray-500 stat-value">{{ (volumeStats.ydaySameTime || 0).toFixed(2) }}亿</span>
+                    <span class="text-gray-500">预估全天</span>
+                    <span class="font-bold text-gray-500 stat-value">{{ (volumeStats.forecast || 0).toFixed(2) }}亿</span>
                   </div>
                   <div class="flex items-center gap-1.5 ml-2 border-l border-gray-200 pl-4">
-                    <span class="text-gray-500">预估全天</span>
-                    <span class="font-bold text-q-text stat-value">{{ (volumeStats.forecast || 0).toFixed(2) }}亿</span>
+                    <span class="text-gray-500">对比昨日</span>
+                    <span class="font-bold text-q-text stat-value">{{ (volumeStats.ydayTotal || 0).toFixed(2) }}亿</span>
                     <span class="font-bold stat-value ml-1" :class="volumeStats.deltaPct >= 0 ? 'text-q-up' : 'text-q-down'">
                       ({{ volumeStats.deltaPct >= 0 ? '+' : '' }}{{ (volumeStats.deltaPct || 0).toFixed(2) }}%)
                     </span>

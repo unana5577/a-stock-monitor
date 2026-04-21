@@ -2091,7 +2091,7 @@ function buildVolumeCompare(day, volume) {
 
   // 1. 优先从日线数据文件读取
   try {
-    const amountDailyFile = path.join(__dirname, 'data', 'market', 'market-amount-daily.jsonl');
+    const amountDailyFile = path.join(__dirname, 'data', 'market', 'daily', 'amount', 'daily.jsonl');
     if (fs.existsSync(amountDailyFile)) {
       const txt = fs.readFileSync(amountDailyFile, 'utf8').trim();
       const lines = txt.split('\n');
@@ -2099,11 +2099,11 @@ function buildVolumeCompare(day, volume) {
         // 找到昨日或最接近的日期
         for (let i = lines.length - 1; i >= 0; i--) {
           const row = JSON.parse(lines[i]);
-          const rowDate = row[0];  // 日期
-          const rowAmount = row[1];  // 总成交额（元）
+          const rowDate = row.date;  // 日期字段名为 date
+          const rowAmount = row.market_amount;  // 总成交额（元）
 
           if (rowDate < day) {
-            yVolFullDay = rowAmount / 10000;  // 转换为万元
+            yVolFullDay = rowAmount / 10000;  // 元转换为万元
             break;
           }
         }
@@ -2180,6 +2180,12 @@ function buildVolumeCompare(day, volume) {
             if (validPoints > 0) {
               lastMinuteDelta = totalDelta / validPoints;  // 平均增量
             }
+          }
+          
+          // 限制最后1分钟增量（不超过今日平均每分钟的3倍）
+          const avgSoFar = volume / uniqueArr.length;
+          if (lastMinuteDelta > avgSoFar * 3) {
+            lastMinuteDelta = avgSoFar * 3;
           }
 
           // 只有当最后一分钟增量 > 0 时才预测
