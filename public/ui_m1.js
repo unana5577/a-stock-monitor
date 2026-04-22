@@ -173,35 +173,44 @@ const app = createApp({
       return items.filter(item => item.symbol && etfSymbols.includes(item.symbol));
     });
     
-    const etfLifecycleHold = computed(() => {
-      const items = etfLifecycleItems.value || [];
-      return items.filter(item => {
-        const signal = item.阶段信号 || '';
-        const advice = item.操作建议 || '';
-        return signal.includes('建仓') || signal.includes('低吸') || signal.includes('潜伏期') || signal.includes('趋势确立') || signal.includes('主升浪') || advice.includes('持有') || advice.includes('持股');
-      });
-    });
-    
-    const etfLifecycleWait = computed(() => {
-      const items = etfLifecycleItems.value || [];
-      const holdIds = new Set(etfLifecycleHold.value.map(i => i.symbol));
-      return items.filter(item => {
-        if (holdIds.has(item.symbol)) return false; // 互斥，如果在持有池里，就不在震荡池
-        const signal = item.阶段信号 || '';
-        const advice = item.操作建议 || '';
-        return signal.includes('观望') || signal.includes('震荡') || signal.includes('超跌反弹') || signal.includes('背离期') || signal.includes('筑底期') || advice.includes('观望');
-      });
-    });
-    
+    // 核心重构：三维判定（动能 + 乖离风险）
+    // 1. 强势 / 高风险（红色池）：动能向上，但乖离率极大，面临派发，或者主线逼空
     const etfLifecycleSell = computed(() => {
       const items = etfLifecycleItems.value || [];
-      const holdIds = new Set(etfLifecycleHold.value.map(i => i.symbol));
-      const waitIds = new Set(etfLifecycleWait.value.map(i => i.symbol));
       return items.filter(item => {
-        if (holdIds.has(item.symbol) || waitIds.has(item.symbol)) return false;
+        const momentum = item.动能 || '';
         const signal = item.阶段信号 || '';
         const advice = item.操作建议 || '';
-        return signal.includes('离场') || signal.includes('高位回调') || signal.includes('止盈') || signal.includes('止损') || signal.includes('减仓') || signal.includes('回避') || signal.includes('加速期') || signal.includes('衰退期') || signal.includes('杀跌期') || advice.includes('减仓');
+        
+        const isUp = momentum.includes('向上') || momentum.includes('主升');
+        const isExtreme = signal.includes('赶顶') || signal.includes('极值') || advice.includes('止盈') || advice.includes('离场') || advice.includes('减仓') || advice.includes('主线');
+        const isBreakdown = momentum.includes('向下破位') || signal.includes('杀跌') || signal.includes('衰退');
+        
+        return (isUp && isExtreme) || isBreakdown;
+      });
+    });
+
+    // 2. 趋势向上 / 风险可控（绿色池）：动能向上，且乖离率在安全范围内
+    const etfLifecycleHold = computed(() => {
+      const items = etfLifecycleItems.value || [];
+      const sellIds = new Set(etfLifecycleSell.value.map(i => i.symbol));
+      return items.filter(item => {
+        if (sellIds.has(item.symbol)) return false; // 排除已经进入高风险极值池的
+        
+        const momentum = item.动能 || '';
+        return momentum.includes('向上') || momentum.includes('主升');
+      });
+    });
+
+    // 3. 观望 / 回避（黄色池）：其他所有震荡、弱势、没方向的
+    const etfLifecycleWait = computed(() => {
+      const items = etfLifecycleItems.value || [];
+      const sellIds = new Set(etfLifecycleSell.value.map(i => i.symbol));
+      const holdIds = new Set(etfLifecycleHold.value.map(i => i.symbol));
+      return items.filter(item => {
+        if (sellIds.has(item.symbol) || holdIds.has(item.symbol)) return false;
+        // 其余统统归入震荡观望池（如：震荡、弱势修复、弱势向下等）
+        return true;
       });
     });
 
@@ -283,8 +292,13 @@ const app = createApp({
     // --- Computed for Shared View ---
     const getAdviceTextColor = (advice) => {
       if (!advice) return 'text-gray-500';
-      if (advice.includes('建仓') || advice.includes('持') || advice.includes('低吸') || advice.includes('潜伏期') || advice.includes('趋势确立') || advice.includes('主升浪') || advice.includes('洗盘') || advice.includes('承接')) return 'text-red-500';
-      if (advice.includes('止损') || advice.includes('回避') || advice.includes('离场') || advice.includes('止盈') || advice.includes('减仓') || advice.includes('加速期') || advice.includes('衰退期') || advice.includes('杀跌期') || advice.includes('派发') || advice.includes('破位') || advice.includes('分歧') || advice.includes('高位滞涨') || advice.includes('警惕回落')) return 'text-green-500';
+      // 主线特权色（紫色/金色系，这里用紫色表示尊贵）
+      if (advice.includes('主线')) return 'text-purple-600 font-bold';
+      // 高风险（红色）：派发、赶顶、极值、止损、止盈、减仓等
+      if (advice.includes('止损') || advice.includes('回避') || advice.includes('离场') || advice.includes('止盈') || advice.includes('减仓') || advice.includes('加速期') || advice.includes('衰退期') || advice.includes('杀跌') || advice.includes('派发') || advice.includes('破位') || advice.includes('分歧') || advice.includes('高位滞涨') || advice.includes('警惕回落') || advice.includes('向下破位')) return 'text-red-500';
+      // 趋势向好（绿色）：建仓、持股、低吸、主升、洗盘等
+      if (advice.includes('建仓') || advice.includes('持') || advice.includes('低吸') || advice.includes('潜伏期') || advice.includes('确立') || advice.includes('主升') || advice.includes('洗盘') || advice.includes('承接') || advice.includes('强势向上') || advice.includes('多头')) return 'text-green-500';
+      // 观望/弱势（黄色）：震荡、没方向等
       return 'text-yellow-500';
     };
 

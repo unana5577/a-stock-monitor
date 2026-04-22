@@ -297,6 +297,8 @@ def determine_advice(momentum: str, behavior: str) -> str:
             return "持股待涨"
         if behavior == "加速赶顶":
             return "分批止盈"
+        if behavior == "主线逼空(连续新高)":
+            return "主线持有"
         if behavior == "资金撤退":
             return "果断离场"
         if behavior == "恐慌出逃":
@@ -345,6 +347,8 @@ def build_behavior_reason(
         return f"当日涨跌{pct:+.1f}%，资金关注高位（恐慌出逃）"
     if behavior == "加速赶顶":
         return f"偏离均线{bias_20:.1f}%（加速赶顶）"
+    if behavior == "主线逼空(连续新高)":
+        return f"偏离均线{bias_20:.1f}%（主线逼空）"
     if behavior == "超跌反弹":
         return f"偏离均线{bias_20:.1f}%（超跌反弹）"
     return "资金热度平稳（横盘整理）"

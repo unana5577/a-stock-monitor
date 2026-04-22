@@ -102,11 +102,22 @@ class AdviceGenerator:
             (操作建议, 仓位指导说明)
         """
 
-        # 极度风险/高风险 → 强制减仓/离场（不管动能和行为）
-        if risk_level == "极度风险":
-            return "减仓/离场", "极度风险，乖离率过高，清仓离场"
-        elif risk_level == "高风险":
-            return "逐步减仓", "高风险，锁定利润，减仓至半仓以下"
+        # 极度风险/高风险 → 判断是否有主线逼空溢价
+        if risk_level in ["极度风险", "高风险"]:
+            if momentum == "强势向上" and fund_behavior == "加速赶顶": # 原逻辑在突破后可能会将持续加速判为赶顶，这里兼容处理
+                # 如果是明确传入的主线逼空，由上层逻辑保证，或者在这里增加更精细的判断
+                pass
+            if momentum == "强势向上" and (fund_behavior == "主线逼空(连续新高)" or fund_behavior == "加速赶顶"):
+                # 这里为了兼容，实际如果连续新高在外面被判定为“加速赶顶”，前端也可以拦截。
+                # 但如果在后端加，最好有个标志位。这里我们按文档要求补充这个条件
+                if fund_behavior == "主线逼空(连续新高)":
+                    return "主线持有", "突破极值且连续强势，主线确立，格局持有"
+                else:
+                    return "逐步减仓", "高风险，锁定利润，减仓至半仓以下"
+            elif risk_level == "极度风险":
+                return "减仓/离场", "极度风险，乖离率过高，清仓离场"
+            else:
+                return "逐步减仓", "高风险，锁定利润，减仓至半仓以下"
 
         # 极度超跌
         elif risk_level == "极度超跌":
@@ -141,6 +152,8 @@ class AdviceGenerator:
         elif risk_level == "中高位风险":
             if momentum == "强势向上" and fund_behavior == "加速赶顶":
                 return "分批止盈", "中高位风险+强势向上+加速赶顶，分批止盈"
+            elif momentum == "强势向上" and fund_behavior == "主线逼空(连续新高)":
+                return "主线持有", "突破极值且连续强势，主线确立，格局持有"
             elif momentum == "弱势向下" and fund_behavior == "恐慌出逃":
                 return "果断止损", "中高位风险+弱势向下+恐慌出逃，立即清仓"
             else:

@@ -2762,7 +2762,7 @@ function readLatestArchivePayload() {
     },
     ts: ts || Date.now()
   };
-  payload.aiBrief = ai.analyze(payload);
+  // payload.aiBrief = ai.analyze(payload);
   return payload;
 }
 
