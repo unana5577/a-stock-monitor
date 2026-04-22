@@ -83,6 +83,10 @@ def fetch_sectors():
             vol = int(row["成交量"])
             amount = float(row["成交额"])
             
+            # 过滤非交易时段的集合竞价脏数据 (价格为0或者时间太早)
+            if price <= 0 or asOf_str < "09:30":
+                continue
+                
             record = {
                 "time": now.strftime('%Y-%m-%d %H:%M:%S'),
                 "asOf": asOf_str,
