@@ -473,7 +473,7 @@
                         <div class="text-sm font-semibold text-q-text">{{ (item.ETF名称 || item.name || '').replace('ETF', '') }}</div>
                       </div>
                       <div class="flex items-center gap-2">
-                        <div class="text-xs font-bold px-1.5 py-0.5 rounded bg-gray-50 border border-gray-100" :class="getAdviceTextColor(activeLifecycleTab === 'intraday' ? getIntradayItem(item.symbol)?.操作建议 || item.操作建议 : item.操作建议)">
+                        <div class="text-xs font-bold px-1.5 py-0.5 rounded bg-gray-50 border border-gray-100" :class="activeLifecycleTab === 'intraday' ? getAdviceTextColor(getIntradayItem(item.symbol)?.操作建议 || item.操作建议) : getAdviceTextColor(item.操作建议)">
                           {{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.操作建议 || item.操作建议 || '-') : (item.操作建议 || '-') }}
                         </div>
                       </div>
@@ -506,7 +506,7 @@
                     <div class="flex items-center justify-between px-1 mb-2 text-xs">
                       <div class="flex items-center gap-1.5 text-gray-600">
                         <svg class="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                        <span :class="{'font-black text-black': (activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.资金行为 || item.资金行为 || '') : (item.资金行为 || '')).includes('放量')}">
+                        <span :class="{'font-bold text-black': (activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.资金行为 || item.资金行为 || '') : (item.资金行为 || '')).includes('放量')}">
                           {{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.资金行为 || item.资金行为 || '-') : (item.资金行为 || '-') }}
                         </span>
                       </div>
@@ -537,7 +537,7 @@
                         <div class="text-sm font-semibold text-q-text">{{ (item.ETF名称 || item.name || '').replace('ETF', '') }}</div>
                       </div>
                       <div class="flex items-center gap-2">
-                        <div class="text-xs font-bold px-1.5 py-0.5 rounded bg-gray-50 border border-gray-100" :class="getAdviceTextColor(activeLifecycleTab === 'intraday' ? getIntradayItem(item.symbol)?.操作建议 || item.操作建议 : item.操作建议)">
+                        <div class="text-xs font-bold px-1.5 py-0.5 rounded bg-gray-50 border border-gray-100" :class="activeLifecycleTab === 'intraday' ? getAdviceTextColor(getIntradayItem(item.symbol)?.操作建议 || item.操作建议) : getAdviceTextColor(item.操作建议)">
                           {{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.操作建议 || item.操作建议 || '-') : (item.操作建议 || '-') }}
                         </div>
                       </div>
@@ -570,7 +570,7 @@
                     <div class="flex items-center justify-between px-1 mb-2 text-xs">
                       <div class="flex items-center gap-1.5 text-gray-600">
                         <svg class="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                        <span :class="{'font-black text-black': (activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.资金行为 || item.资金行为 || '') : (item.资金行为 || '')).includes('放量')}">
+                        <span :class="{'font-bold text-black': (activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.资金行为 || item.资金行为 || '') : (item.资金行为 || '')).includes('放量')}">
                           {{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.资金行为 || item.资金行为 || '-') : (item.资金行为 || '-') }}
                         </span>
                       </div>
@@ -601,7 +601,7 @@
                         <div class="text-sm font-semibold text-q-text">{{ (item.ETF名称 || item.name || '').replace('ETF', '') }}</div>
                       </div>
                       <div class="flex items-center gap-2">
-                        <div class="text-xs font-bold px-1.5 py-0.5 rounded bg-gray-50 border border-gray-100" :class="getAdviceTextColor(activeLifecycleTab === 'intraday' ? getIntradayItem(item.symbol)?.操作建议 || item.操作建议 : item.操作建议)">
+                        <div class="text-xs font-bold px-1.5 py-0.5 rounded bg-gray-50 border border-gray-100" :class="activeLifecycleTab === 'intraday' ? getAdviceTextColor(getIntradayItem(item.symbol)?.操作建议 || item.操作建议) : getAdviceTextColor(item.操作建议)">
                           {{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.操作建议 || item.操作建议 || '-') : (item.操作建议 || '-') }}
                         </div>
                       </div>
@@ -634,7 +634,7 @@
                     <div class="flex items-center justify-between px-1 mb-2 text-xs">
                       <div class="flex items-center gap-1.5 text-gray-600">
                         <svg class="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                        <span :class="{'font-black text-black': (activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.资金行为 || item.资金行为 || '') : (item.资金行为 || '')).includes('放量')}">
+                        <span :class="{'font-bold text-black': (activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.资金行为 || item.资金行为 || '') : (item.资金行为 || '')).includes('放量')}">
                           {{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.资金行为 || item.资金行为 || '-') : (item.资金行为 || '-') }}
                         </span>
                       </div>

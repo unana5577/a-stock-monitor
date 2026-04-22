@@ -297,10 +297,10 @@ const app = createApp({
       if (!advice) return 'text-gray-500';
       // 主线特权色（紫色/金色系，这里用紫色表示尊贵）
       if (advice.includes('主线')) return 'text-purple-600 font-bold';
-      // 高风险（红色）：派发、赶顶、极值、止损、止盈、减仓等
-      if (advice.includes('止损') || advice.includes('回避') || advice.includes('离场') || advice.includes('止盈') || advice.includes('减仓') || advice.includes('加速期') || advice.includes('衰退期') || advice.includes('杀跌') || advice.includes('派发') || advice.includes('破位') || advice.includes('分歧') || advice.includes('高位滞涨') || advice.includes('警惕回落') || advice.includes('向下破位')) return 'text-red-500';
+      // 高风险（红色）：派发、赶顶、极值、止损、止盈、减仓等，新增冲高、放量（作为盘中资金行为时也需要红）
+      if (advice.includes('止损') || advice.includes('回避') || advice.includes('离场') || advice.includes('止盈') || advice.includes('减仓') || advice.includes('加速期') || advice.includes('衰退期') || advice.includes('杀跌') || advice.includes('派发') || advice.includes('破位') || advice.includes('分歧') || advice.includes('高位滞涨') || advice.includes('警惕回落') || advice.includes('向下破位') || advice.includes('冲高') || advice.includes('赶顶') || advice.includes('放量')) return 'text-red-500';
       // 趋势向好（绿色）：建仓、持股、低吸、主升、洗盘等
-      if (advice.includes('建仓') || advice.includes('持') || advice.includes('低吸') || advice.includes('潜伏期') || advice.includes('确立') || advice.includes('主升') || advice.includes('洗盘') || advice.includes('承接') || advice.includes('强势向上') || advice.includes('多头')) return 'text-green-500';
+      if (advice.includes('建仓') || advice.includes('持') || advice.includes('低吸') || advice.includes('潜伏期') || advice.includes('确立') || advice.includes('主升') || advice.includes('洗盘') || advice.includes('承接') || advice.includes('强势向上') || advice.includes('多头') || advice.includes('企稳')) return 'text-green-500';
       // 观望/弱势（黄色）：震荡、没方向等
       return 'text-yellow-500';
     };
