@@ -277,8 +277,8 @@ const app = createApp({
     
     const getAdviceTextColor = (advice) => {
       if (!advice) return 'text-gray-500';
-      if (advice.includes('建仓') || advice.includes('持') || advice.includes('低吸') || advice.includes('潜伏期') || advice.includes('趋势确立') || advice.includes('主升浪')) return 'text-red-500';
-      if (advice.includes('止损') || advice.includes('回避') || advice.includes('离场') || advice.includes('止盈') || advice.includes('减仓') || advice.includes('加速期') || advice.includes('衰退期') || advice.includes('杀跌期')) return 'text-green-500';
+      if (advice.includes('建仓') || advice.includes('持') || advice.includes('低吸') || advice.includes('潜伏期') || advice.includes('趋势确立') || advice.includes('主升浪') || advice.includes('洗盘') || advice.includes('承接')) return 'text-red-500';
+      if (advice.includes('止损') || advice.includes('回避') || advice.includes('离场') || advice.includes('止盈') || advice.includes('减仓') || advice.includes('加速期') || advice.includes('衰退期') || advice.includes('杀跌期') || advice.includes('派发') || advice.includes('破位') || advice.includes('分歧')) return 'text-green-500';
       return 'text-yellow-500';
     };
 
