@@ -3734,13 +3734,25 @@ const server = http.createServer(async (req, res) => {
 
   if (url.pathname === '/api/m1/data/overview' && req.method === 'GET') {
     try {
+      const getBeijingDate = () => {
+        const d = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Shanghai' }));
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const date = String(d.getDate()).padStart(2, '0');
+        return `${year}-${month}-${date}`;
+      };
+      
       const warmupPath = path.join(__dirname, 'data/warmup/warmup-60.json');
       const lifecyclePath = path.join(__dirname, 'data/lifecycle/lifecycle.json');
       const dailyAmountPath = path.join(__dirname, 'data/market/daily/amount/daily.jsonl');
+      
+      const todayStr = getBeijingDate();
+      const intradayPath = path.join(__dirname, 'data', 'lifecycle', 'intraday', `etf_snapshot_${todayStr}.jsonl`);
 
       let warmup = null;
       let lifecycle = null;
       let market_amount = null;
+      let intraday_snapshot = null;
 
       if (fs.existsSync(warmupPath)) {
         warmup = JSON.parse(fs.readFileSync(warmupPath, 'utf8'));
@@ -3750,16 +3762,24 @@ const server = http.createServer(async (req, res) => {
       }
       if (fs.existsSync(dailyAmountPath)) {
         // 读取最后一行
-        const lines = fs.readFileSync(dailyAmountPath, 'utf8').trim().split('\n');
+        const lines = fs.readFileSync(dailyAmountPath, 'utf8').trim().split('\n').filter(Boolean);
         if (lines.length > 0) {
           try {
             market_amount = JSON.parse(lines[lines.length - 1]);
           } catch (e) {}
         }
       }
+      if (fs.existsSync(intradayPath)) {
+        const lines = fs.readFileSync(intradayPath, 'utf8').trim().split('\n').filter(Boolean);
+        if (lines.length > 0) {
+          try {
+            intraday_snapshot = JSON.parse(lines[lines.length - 1]);
+          } catch (e) {}
+        }
+      }
 
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
-      res.end(JSON.stringify({ ok: true, warmup, lifecycle, market_amount }));
+      res.end(JSON.stringify({ ok: true, warmup, lifecycle, market_amount, intraday_snapshot }));
     } catch (e) {
       res.statusCode = 500;
       res.end(JSON.stringify({ ok: false, error: e.message }));

@@ -455,262 +455,179 @@
               </div>
             </div>
             
-            <!-- 盘中数据展示 -->
-            <div v-if="activeLifecycleTab === 'intraday'" class="space-y-8">
+            <!-- 盘中共用数据展示 (无曲线，基于盘后分组) -->
+            <div v-if="activeLifecycleTab === 'intraday' || activeLifecycleTab === 'after'" class="space-y-8">
               
               <!-- 区块 1：高位 / 高风险 -->
-              <div v-if="intradaySell && intradaySell.length > 0">
+              <div v-if="etfLifecycleSell && etfLifecycleSell.length > 0">
                 <div class="flex items-center gap-2 mb-3">
                   <div class="w-1.5 h-4 bg-green-500 rounded-sm"></div>
                   <h3 class="text-xs font-bold text-green-700 uppercase tracking-widest">高位 / 高风险 (Sell/Risk)</h3>
-                  <span class="text-[10px] bg-green-50 text-green-600 px-1.5 rounded-full font-mono">{{ intradaySell.length }}</span>
+                  <span class="text-[10px] bg-green-50 text-green-600 px-1.5 rounded-full font-mono">{{ etfLifecycleSell.length }}</span>
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                  <div v-for="item in intradaySell" :key="item.symbol" class="border rounded-lg p-2 hover:shadow-sm transition-all relative overflow-hidden group bg-white">
+                  <div v-for="item in etfLifecycleSell" :key="item.symbol" class="border rounded-lg p-2 hover:shadow-sm transition-all relative overflow-hidden group bg-white">
                     <div class="absolute top-0 left-0 right-0 h-[3px] bg-green-500"></div>
                     <div class="flex items-center justify-between mt-1 mb-2">
                       <div class="flex items-center gap-2">
                         <div class="text-sm font-semibold text-q-text">{{ (item.ETF名称 || item.name || '').replace('ETF', '') }}</div>
                       </div>
                       <div class="flex items-center gap-2">
-                        <div class="text-xs font-bold px-1.5 py-0.5 rounded bg-gray-50 border border-gray-100 text-q-text">{{ item.操作建议 || '-' }}</div>
+                        <div class="text-xs font-bold px-1.5 py-0.5 rounded bg-gray-50 border border-gray-100" :class="getAdviceTextColor(activeLifecycleTab === 'intraday' ? getIntradayItem(item.symbol)?.操作建议 || item.操作建议 : item.操作建议)">
+                          {{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.操作建议 || item.操作建议 || '-') : (item.操作建议 || '-') }}
+                        </div>
                       </div>
                     </div>
                     
                     <div class="flex items-center justify-between bg-gray-50/80 rounded px-2 py-1.5 mb-2">
                       <div class="flex flex-col">
-                        <span class="text-[10px] text-gray-400">位置/涨幅</span>
-                        <span class="text-xs font-mono font-medium text-q-text">{{ item.位置名称 || '-' }}</span>
+                        <span class="text-[10px] text-gray-400">涨跌幅</span>
+                        <span class="text-xs font-mono font-medium text-q-text">
+                          <template v-if="activeLifecycleTab === 'intraday'">
+                            {{ getIntradayItem(item.symbol) ? (getIntradayItem(item.symbol).pct > 0 ? '+' : '') + (getIntradayItem(item.symbol).pct?.toFixed(2) || '0.00') + '%' : item.位置名称 || '-' }}
+                          </template>
+                          <template v-else>
+                            {{ item.位置名称 || '-' }}
+                          </template>
+                        </span>
                       </div>
                       <div class="flex flex-col text-right">
                         <span class="text-[10px] text-gray-400">动能空间</span>
-                        <span class="text-xs font-medium" :class="getAdviceTextColor(item.操作建议)">{{ item.动能 || '-' }}</span>
+                        <span class="text-xs font-medium text-gray-600">{{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.动能 || item.动能 || '-') : (item.动能 || '-') }}</span>
                       </div>
                     </div>
                     
                     <div class="flex items-center justify-between px-1 mb-2 text-xs">
                       <div class="flex items-center gap-1.5 text-gray-600">
                         <svg class="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                        <span>{{ item.资金行为 || '-' }}</span>
+                        <span :class="{'font-black text-black': (activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.资金行为 || item.资金行为 || '') : (item.资金行为 || '')).includes('放量')}">
+                          {{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.资金行为 || item.资金行为 || '-') : (item.资金行为 || '-') }}
+                        </span>
                       </div>
-                      <div class="text-gray-500 font-mono">{{ item.热度占比 || '-' }}</div>
+                      <div class="text-gray-500 font-mono">
+                        {{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.热度占比 || item.热度占比 || '-') : (item.热度占比 || (item.指标数据?.Amount_Share_Pct != null ? item.指标数据.Amount_Share_Pct + '%' : '-')) }}
+                      </div>
                     </div>
                     
-                    <div class="text-[11px] text-gray-500 leading-tight bg-gray-50 rounded p-1.5 border border-gray-100 line-clamp-2" :title="item.归因说明">
-                      {{ item.归因说明 || '-' }}
+                    <div class="text-[11px] text-gray-500 leading-tight bg-gray-50 rounded p-1.5 border border-gray-100 line-clamp-2" :title="activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.归因说明 || item.归因说明) : item.归因说明">
+                      {{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.归因说明 || item.归因说明 || '-') : (item.归因说明 || '-') }}
                     </div>
                   </div>
                 </div>
               </div>
 
               <!-- 区块 2：趋势向上 / 风险可控 -->
-              <div v-if="intradayHold && intradayHold.length > 0">
+              <div v-if="etfLifecycleHold && etfLifecycleHold.length > 0">
                 <div class="flex items-center gap-2 mb-3">
                   <div class="w-1.5 h-4 bg-red-500 rounded-sm"></div>
                   <h3 class="text-xs font-bold text-red-700 uppercase tracking-widest">趋势向上 / 风险可控 (Buy/Hold)</h3>
-                  <span class="text-[10px] bg-red-50 text-red-600 px-1.5 rounded-full font-mono">{{ intradayHold.length }}</span>
+                  <span class="text-[10px] bg-red-50 text-red-600 px-1.5 rounded-full font-mono">{{ etfLifecycleHold.length }}</span>
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                  <div v-for="item in intradayHold" :key="item.symbol" class="border rounded-lg p-2 hover:shadow-sm transition-all relative overflow-hidden group bg-white">
+                  <div v-for="item in etfLifecycleHold" :key="item.symbol" class="border rounded-lg p-2 hover:shadow-sm transition-all relative overflow-hidden group bg-white">
                     <div class="absolute top-0 left-0 right-0 h-[3px] bg-red-500"></div>
                     <div class="flex items-center justify-between mt-1 mb-2">
                       <div class="flex items-center gap-2">
                         <div class="text-sm font-semibold text-q-text">{{ (item.ETF名称 || item.name || '').replace('ETF', '') }}</div>
                       </div>
                       <div class="flex items-center gap-2">
-                        <div class="text-xs font-bold px-1.5 py-0.5 rounded bg-gray-50 border border-gray-100 text-q-text">{{ item.操作建议 || '-' }}</div>
+                        <div class="text-xs font-bold px-1.5 py-0.5 rounded bg-gray-50 border border-gray-100" :class="getAdviceTextColor(activeLifecycleTab === 'intraday' ? getIntradayItem(item.symbol)?.操作建议 || item.操作建议 : item.操作建议)">
+                          {{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.操作建议 || item.操作建议 || '-') : (item.操作建议 || '-') }}
+                        </div>
                       </div>
                     </div>
                     
                     <div class="flex items-center justify-between bg-gray-50/80 rounded px-2 py-1.5 mb-2">
                       <div class="flex flex-col">
-                        <span class="text-[10px] text-gray-400">位置/涨幅</span>
-                        <span class="text-xs font-mono font-medium text-q-text">{{ item.位置名称 || '-' }}</span>
+                        <span class="text-[10px] text-gray-400">涨跌幅</span>
+                        <span class="text-xs font-mono font-medium text-q-text">
+                          <template v-if="activeLifecycleTab === 'intraday'">
+                            {{ getIntradayItem(item.symbol) ? (getIntradayItem(item.symbol).pct > 0 ? '+' : '') + (getIntradayItem(item.symbol).pct?.toFixed(2) || '0.00') + '%' : item.位置名称 || '-' }}
+                          </template>
+                          <template v-else>
+                            {{ item.位置名称 || '-' }}
+                          </template>
+                        </span>
                       </div>
                       <div class="flex flex-col text-right">
                         <span class="text-[10px] text-gray-400">动能空间</span>
-                        <span class="text-xs font-medium" :class="getAdviceTextColor(item.操作建议)">{{ item.动能 || '-' }}</span>
+                        <span class="text-xs font-medium text-gray-600">{{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.动能 || item.动能 || '-') : (item.动能 || '-') }}</span>
                       </div>
                     </div>
                     
                     <div class="flex items-center justify-between px-1 mb-2 text-xs">
                       <div class="flex items-center gap-1.5 text-gray-600">
                         <svg class="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                        <span>{{ item.资金行为 || '-' }}</span>
+                        <span :class="{'font-black text-black': (activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.资金行为 || item.资金行为 || '') : (item.资金行为 || '')).includes('放量')}">
+                          {{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.资金行为 || item.资金行为 || '-') : (item.资金行为 || '-') }}
+                        </span>
                       </div>
-                      <div class="text-gray-500 font-mono">{{ item.热度占比 || '-' }}</div>
+                      <div class="text-gray-500 font-mono">
+                        {{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.热度占比 || item.热度占比 || '-') : (item.热度占比 || (item.指标数据?.Amount_Share_Pct != null ? item.指标数据.Amount_Share_Pct + '%' : '-')) }}
+                      </div>
                     </div>
                     
-                    <div class="text-[11px] text-gray-500 leading-tight bg-gray-50 rounded p-1.5 border border-gray-100 line-clamp-2" :title="item.归因说明">
-                      {{ item.归因说明 || '-' }}
+                    <div class="text-[11px] text-gray-500 leading-tight bg-gray-50 rounded p-1.5 border border-gray-100 line-clamp-2" :title="activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.归因说明 || item.归因说明) : item.归因说明">
+                      {{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.归因说明 || item.归因说明 || '-') : (item.归因说明 || '-') }}
                     </div>
                   </div>
                 </div>
               </div>
               
               <!-- 区块 3：观望 / 回避 -->
-              <div v-if="intradayWait && intradayWait.length > 0">
+              <div v-if="etfLifecycleWait && etfLifecycleWait.length > 0">
                 <div class="flex items-center gap-2 mb-3">
                   <div class="w-1.5 h-4 bg-yellow-400 rounded-sm"></div>
                   <h3 class="text-xs font-bold text-yellow-700 uppercase tracking-widest">观望 / 回避 (Wait/Observe)</h3>
-                  <span class="text-[10px] bg-yellow-50 text-yellow-600 px-1.5 rounded-full font-mono">{{ intradayWait.length }}</span>
+                  <span class="text-[10px] bg-yellow-50 text-yellow-600 px-1.5 rounded-full font-mono">{{ etfLifecycleWait.length }}</span>
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                  <div v-for="item in intradayWait" :key="item.symbol" class="border rounded-lg p-2 hover:shadow-sm transition-all relative overflow-hidden group bg-white">
+                  <div v-for="item in etfLifecycleWait" :key="item.symbol" class="border rounded-lg p-2 hover:shadow-sm transition-all relative overflow-hidden group bg-white">
                     <div class="absolute top-0 left-0 right-0 h-[3px] bg-yellow-400"></div>
                     <div class="flex items-center justify-between mt-1 mb-2">
                       <div class="flex items-center gap-2">
                         <div class="text-sm font-semibold text-q-text">{{ (item.ETF名称 || item.name || '').replace('ETF', '') }}</div>
                       </div>
                       <div class="flex items-center gap-2">
-                        <div class="text-xs font-bold px-1.5 py-0.5 rounded bg-gray-50 border border-gray-100 text-q-text">{{ item.操作建议 || '-' }}</div>
+                        <div class="text-xs font-bold px-1.5 py-0.5 rounded bg-gray-50 border border-gray-100" :class="getAdviceTextColor(activeLifecycleTab === 'intraday' ? getIntradayItem(item.symbol)?.操作建议 || item.操作建议 : item.操作建议)">
+                          {{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.操作建议 || item.操作建议 || '-') : (item.操作建议 || '-') }}
+                        </div>
                       </div>
                     </div>
                     
                     <div class="flex items-center justify-between bg-gray-50/80 rounded px-2 py-1.5 mb-2">
                       <div class="flex flex-col">
-                        <span class="text-[10px] text-gray-400">位置/涨幅</span>
-                        <span class="text-xs font-mono font-medium text-q-text">{{ item.位置名称 || '-' }}</span>
+                        <span class="text-[10px] text-gray-400">涨跌幅</span>
+                        <span class="text-xs font-mono font-medium text-q-text">
+                          <template v-if="activeLifecycleTab === 'intraday'">
+                            {{ getIntradayItem(item.symbol) ? (getIntradayItem(item.symbol).pct > 0 ? '+' : '') + (getIntradayItem(item.symbol).pct?.toFixed(2) || '0.00') + '%' : item.位置名称 || '-' }}
+                          </template>
+                          <template v-else>
+                            {{ item.位置名称 || '-' }}
+                          </template>
+                        </span>
                       </div>
                       <div class="flex flex-col text-right">
                         <span class="text-[10px] text-gray-400">动能空间</span>
-                        <span class="text-xs font-medium" :class="getAdviceTextColor(item.操作建议)">{{ item.动能 || '-' }}</span>
+                        <span class="text-xs font-medium text-gray-600">{{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.动能 || item.动能 || '-') : (item.动能 || '-') }}</span>
                       </div>
                     </div>
                     
                     <div class="flex items-center justify-between px-1 mb-2 text-xs">
                       <div class="flex items-center gap-1.5 text-gray-600">
                         <svg class="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                        <span>{{ item.资金行为 || '-' }}</span>
+                        <span :class="{'font-black text-black': (activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.资金行为 || item.资金行为 || '') : (item.资金行为 || '')).includes('放量')}">
+                          {{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.资金行为 || item.资金行为 || '-') : (item.资金行为 || '-') }}
+                        </span>
                       </div>
-                      <div class="text-gray-500 font-mono">{{ item.热度占比 || '-' }}</div>
+                      <div class="text-gray-500 font-mono">
+                        {{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.热度占比 || item.热度占比 || '-') : (item.热度占比 || (item.指标数据?.Amount_Share_Pct != null ? item.指标数据.Amount_Share_Pct + '%' : '-')) }}
+                      </div>
                     </div>
                     
-                    <div class="text-[11px] text-gray-500 leading-tight bg-gray-50 rounded p-1.5 border border-gray-100 line-clamp-2" :title="item.归因说明">
-                      {{ item.归因说明 || '-' }}
+                    <div class="text-[11px] text-gray-500 leading-tight bg-gray-50 rounded p-1.5 border border-gray-100 line-clamp-2" :title="activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.归因说明 || item.归因说明) : item.归因说明">
+                      {{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.归因说明 || item.归因说明 || '-') : (item.归因说明 || '-') }}
                     </div>
-                  </div>
-                </div>
-              </div>
-
-            </div>
-            
-            <!-- 盘后数据展示 -->
-            <div v-if="activeLifecycleTab === 'after'" class="space-y-8">
-              
-              <!-- 区块 1：高位 / 离场池 -->
-              <div v-if="etfLifecycleSell && etfLifecycleSell.length > 0">
-                <div class="flex items-center gap-2 mb-3">
-                  <div class="w-1.5 h-4 bg-green-500 rounded-sm"></div>
-                  <h3 class="text-xs font-bold text-green-700 uppercase tracking-widest">高位 / 离场池 (Sell/Risk)</h3>
-                  <span class="text-[10px] bg-green-50 text-green-600 px-1.5 rounded-full font-mono">{{ etfLifecycleSell.length }}</span>
-                </div>
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                  <div v-for="item in etfLifecycleSell" :key="item.symbol" class="border rounded-lg p-2 hover:shadow-sm transition-all relative overflow-hidden group">
-                    <div class="absolute top-0 left-0 right-0 h-[3px] bg-green-500"></div>
-                    <div class="flex items-center justify-between mt-1">
-                      <div class="flex items-center gap-2">
-                        <div class="text-sm font-semibold text-q-text">{{ (item.ETF名称 || '').replace('ETF', '') }}</div>
-                        <!-- 预留 Top 排名标签位置 -->
-                        <span v-if="item.topRank" class="inline-flex items-center px-1.5 py-0.5 rounded text-[7px] leading-3 bg-indigo-600 text-white">Top{{ item.topRank }}</span>
-                      </div>
-                      <div class="flex items-center gap-2">
-                        <div class="text-xs font-semibold" :class="getAdviceTextColor(item.操作建议)">{{ item.操作建议 || '-' }}</div>
-                      </div>
-                    </div>
-                    <div class="text-xs text-gray-600 mt-2">
-                      <span>昨 {{ fmtPct(getItemStats(item).ydayPct) }}</span>
-                      <span class="mx-2">|</span>
-                      <span>今 {{ fmtPct(getItemStats(item).nowPct) }}</span>
-                      <span class="mx-2">|</span>
-                      <span>趋势 {{ getItemStats(item).tag }}</span>
-                    </div>
-                    <div class="text-xs text-gray-500 mt-1.5 mb-1">
-                      <span>{{ item.动能 || '-' }}</span>
-                      <span class="mx-2">|</span>
-                      <span>{{ item.资金行为 || '-' }}</span>
-                      <span class="mx-2">|</span>
-                      <span>热度占比 {{ item.指标数据?.Amount_Share_Pct != null ? item.指标数据.Amount_Share_Pct + '%' : '-' }}</span>
-                    </div>
-                    <div :id="'chart-minute-' + item.symbol" class="h-10 w-full mt-1.5 opacity-80"></div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- 区块 2：建仓 / 持有池 -->
-              <div v-if="etfLifecycleHold && etfLifecycleHold.length > 0">
-                <div class="flex items-center gap-2 mb-3">
-                  <div class="w-1.5 h-4 bg-red-500 rounded-sm"></div>
-                  <h3 class="text-xs font-bold text-red-700 uppercase tracking-widest">建仓 / 持有池 (Buy/Hold)</h3>
-                  <span class="text-[10px] bg-red-50 text-red-600 px-1.5 rounded-full font-mono">{{ etfLifecycleHold.length }}</span>
-                </div>
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                  <div v-for="item in etfLifecycleHold" :key="item.symbol" class="border rounded-lg p-2 hover:shadow-sm transition-all relative overflow-hidden group">
-                    <div class="absolute top-0 left-0 right-0 h-[3px] bg-red-500"></div>
-                    <div class="flex items-center justify-between mt-1">
-                      <div class="flex items-center gap-2">
-                        <div class="text-sm font-semibold text-q-text">{{ (item.ETF名称 || '').replace('ETF', '') }}</div>
-                        <!-- 预留 Top 排名标签位置 -->
-                        <span v-if="item.topRank" class="inline-flex items-center px-1.5 py-0.5 rounded text-[7px] leading-3 bg-indigo-600 text-white">Top{{ item.topRank }}</span>
-                      </div>
-                      <div class="flex items-center gap-2">
-                        <div class="text-xs font-semibold" :class="getAdviceTextColor(item.操作建议)">{{ item.操作建议 || '-' }}</div>
-                      </div>
-                    </div>
-                    <div class="text-xs text-gray-600 mt-2">
-                      <span>昨 {{ fmtPct(getItemStats(item).ydayPct) }}</span>
-                      <span class="mx-2">|</span>
-                      <span>今 {{ fmtPct(getItemStats(item).nowPct) }}</span>
-                      <span class="mx-2">|</span>
-                      <span>趋势 {{ getItemStats(item).tag }}</span>
-                    </div>
-                    <div class="text-xs text-gray-500 mt-1.5 mb-1">
-                      <span>{{ item.动能 || '-' }}</span>
-                      <span class="mx-2">|</span>
-                      <span>{{ item.资金行为 || '-' }}</span>
-                      <span class="mx-2">|</span>
-                      <span>热度占比 {{ item.指标数据?.Amount_Share_Pct != null ? item.指标数据.Amount_Share_Pct + '%' : '-' }}</span>
-                    </div>
-                    <div :id="'chart-minute-' + item.symbol" class="h-10 w-full mt-1.5 opacity-80"></div>
-                  </div>
-                </div>
-              </div>
-              
-              <!-- 区块 3：震荡 / 观望池 -->
-              <div v-if="etfLifecycleWait && etfLifecycleWait.length > 0">
-                <div class="flex items-center gap-2 mb-3">
-                  <div class="w-1.5 h-4 bg-yellow-400 rounded-sm"></div>
-                  <h3 class="text-xs font-bold text-yellow-700 uppercase tracking-widest">震荡 / 观望池 (Wait/Observe)</h3>
-                  <span class="text-[10px] bg-yellow-50 text-yellow-600 px-1.5 rounded-full font-mono">{{ etfLifecycleWait.length }}</span>
-                </div>
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                  <div v-for="item in etfLifecycleWait" :key="item.symbol" class="border rounded-lg p-2 hover:shadow-sm transition-all relative overflow-hidden group">
-                    <div class="absolute top-0 left-0 right-0 h-[3px] bg-yellow-400"></div>
-                    <div class="flex items-center justify-between mt-1">
-                      <div class="flex items-center gap-2">
-                        <div class="text-sm font-semibold text-q-text">{{ (item.ETF名称 || '').replace('ETF', '') }}</div>
-                        <!-- 预留 Top 排名标签位置 -->
-                        <span v-if="item.topRank" class="inline-flex items-center px-1.5 py-0.5 rounded text-[7px] leading-3 bg-indigo-600 text-white">Top{{ item.topRank }}</span>
-                      </div>
-                      <div class="flex items-center gap-2">
-                        <div class="text-xs font-semibold" :class="getAdviceTextColor(item.操作建议)">{{ item.操作建议 || '-' }}</div>
-                      </div>
-                    </div>
-                    <div class="text-xs text-gray-600 mt-2">
-                      <span>昨 {{ fmtPct(getItemStats(item).ydayPct) }}</span>
-                      <span class="mx-2">|</span>
-                      <span>今 {{ fmtPct(getItemStats(item).nowPct) }}</span>
-                      <span class="mx-2">|</span>
-                      <span>趋势 {{ getItemStats(item).tag }}</span>
-                    </div>
-                    <div class="text-xs text-gray-500 mt-1.5 mb-1">
-                      <span>{{ item.动能 || '-' }}</span>
-                      <span class="mx-2">|</span>
-                      <span>{{ item.资金行为 || '-' }}</span>
-                      <span class="mx-2">|</span>
-                      <span>热度占比 {{ item.指标数据?.Amount_Share_Pct != null ? item.指标数据.Amount_Share_Pct + '%' : '-' }}</span>
-                    </div>
-                    <div :id="'chart-minute-' + item.symbol" class="h-10 w-full mt-1.5 opacity-80"></div>
                   </div>
                 </div>
               </div>
