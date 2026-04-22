@@ -455,11 +455,144 @@
               </div>
             </div>
             
-            <!-- 盘中占位符 -->
-            <div v-if="activeLifecycleTab === 'intraday'" class="py-20 flex flex-col items-center justify-center text-gray-400 border-2 border-dashed border-gray-100 rounded-lg">
-              <svg class="w-10 h-10 mb-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-              <p class="text-sm font-medium text-gray-500">盘中实时动态生命周期逻辑开发中...</p>
-              <p class="text-xs mt-1">目前请切换至【盘后 (T-1)】查看每日静态复盘结果。</p>
+            <!-- 盘中数据展示 -->
+            <div v-if="activeLifecycleTab === 'intraday'" class="space-y-8">
+              
+              <!-- 区块 1：高位 / 高风险 -->
+              <div v-if="intradaySell && intradaySell.length > 0">
+                <div class="flex items-center gap-2 mb-3">
+                  <div class="w-1.5 h-4 bg-green-500 rounded-sm"></div>
+                  <h3 class="text-xs font-bold text-green-700 uppercase tracking-widest">高位 / 高风险 (Sell/Risk)</h3>
+                  <span class="text-[10px] bg-green-50 text-green-600 px-1.5 rounded-full font-mono">{{ intradaySell.length }}</span>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  <div v-for="item in intradaySell" :key="item.symbol" class="border rounded-lg p-2 hover:shadow-sm transition-all relative overflow-hidden group bg-white">
+                    <div class="absolute top-0 left-0 right-0 h-[3px] bg-green-500"></div>
+                    <div class="flex items-center justify-between mt-1 mb-2">
+                      <div class="flex items-center gap-2">
+                        <div class="text-sm font-semibold text-q-text">{{ (item.ETF名称 || item.name || '').replace('ETF', '') }}</div>
+                      </div>
+                      <div class="flex items-center gap-2">
+                        <div class="text-xs font-bold px-1.5 py-0.5 rounded bg-gray-50 border border-gray-100 text-q-text">{{ item.操作建议 || '-' }}</div>
+                      </div>
+                    </div>
+                    
+                    <div class="flex items-center justify-between bg-gray-50/80 rounded px-2 py-1.5 mb-2">
+                      <div class="flex flex-col">
+                        <span class="text-[10px] text-gray-400">位置/涨幅</span>
+                        <span class="text-xs font-mono font-medium text-q-text">{{ item.位置名称 || '-' }}</span>
+                      </div>
+                      <div class="flex flex-col text-right">
+                        <span class="text-[10px] text-gray-400">动能空间</span>
+                        <span class="text-xs font-medium" :class="getAdviceTextColor(item.操作建议)">{{ item.动能 || '-' }}</span>
+                      </div>
+                    </div>
+                    
+                    <div class="flex items-center justify-between px-1 mb-2 text-xs">
+                      <div class="flex items-center gap-1.5 text-gray-600">
+                        <svg class="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        <span>{{ item.资金行为 || '-' }}</span>
+                      </div>
+                      <div class="text-gray-500 font-mono">{{ item.热度占比 || '-' }}</div>
+                    </div>
+                    
+                    <div class="text-[11px] text-gray-500 leading-tight bg-gray-50 rounded p-1.5 border border-gray-100 line-clamp-2" :title="item.归因说明">
+                      {{ item.归因说明 || '-' }}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 区块 2：趋势向上 / 风险可控 -->
+              <div v-if="intradayHold && intradayHold.length > 0">
+                <div class="flex items-center gap-2 mb-3">
+                  <div class="w-1.5 h-4 bg-red-500 rounded-sm"></div>
+                  <h3 class="text-xs font-bold text-red-700 uppercase tracking-widest">趋势向上 / 风险可控 (Buy/Hold)</h3>
+                  <span class="text-[10px] bg-red-50 text-red-600 px-1.5 rounded-full font-mono">{{ intradayHold.length }}</span>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  <div v-for="item in intradayHold" :key="item.symbol" class="border rounded-lg p-2 hover:shadow-sm transition-all relative overflow-hidden group bg-white">
+                    <div class="absolute top-0 left-0 right-0 h-[3px] bg-red-500"></div>
+                    <div class="flex items-center justify-between mt-1 mb-2">
+                      <div class="flex items-center gap-2">
+                        <div class="text-sm font-semibold text-q-text">{{ (item.ETF名称 || item.name || '').replace('ETF', '') }}</div>
+                      </div>
+                      <div class="flex items-center gap-2">
+                        <div class="text-xs font-bold px-1.5 py-0.5 rounded bg-gray-50 border border-gray-100 text-q-text">{{ item.操作建议 || '-' }}</div>
+                      </div>
+                    </div>
+                    
+                    <div class="flex items-center justify-between bg-gray-50/80 rounded px-2 py-1.5 mb-2">
+                      <div class="flex flex-col">
+                        <span class="text-[10px] text-gray-400">位置/涨幅</span>
+                        <span class="text-xs font-mono font-medium text-q-text">{{ item.位置名称 || '-' }}</span>
+                      </div>
+                      <div class="flex flex-col text-right">
+                        <span class="text-[10px] text-gray-400">动能空间</span>
+                        <span class="text-xs font-medium" :class="getAdviceTextColor(item.操作建议)">{{ item.动能 || '-' }}</span>
+                      </div>
+                    </div>
+                    
+                    <div class="flex items-center justify-between px-1 mb-2 text-xs">
+                      <div class="flex items-center gap-1.5 text-gray-600">
+                        <svg class="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        <span>{{ item.资金行为 || '-' }}</span>
+                      </div>
+                      <div class="text-gray-500 font-mono">{{ item.热度占比 || '-' }}</div>
+                    </div>
+                    
+                    <div class="text-[11px] text-gray-500 leading-tight bg-gray-50 rounded p-1.5 border border-gray-100 line-clamp-2" :title="item.归因说明">
+                      {{ item.归因说明 || '-' }}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- 区块 3：观望 / 回避 -->
+              <div v-if="intradayWait && intradayWait.length > 0">
+                <div class="flex items-center gap-2 mb-3">
+                  <div class="w-1.5 h-4 bg-yellow-400 rounded-sm"></div>
+                  <h3 class="text-xs font-bold text-yellow-700 uppercase tracking-widest">观望 / 回避 (Wait/Observe)</h3>
+                  <span class="text-[10px] bg-yellow-50 text-yellow-600 px-1.5 rounded-full font-mono">{{ intradayWait.length }}</span>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  <div v-for="item in intradayWait" :key="item.symbol" class="border rounded-lg p-2 hover:shadow-sm transition-all relative overflow-hidden group bg-white">
+                    <div class="absolute top-0 left-0 right-0 h-[3px] bg-yellow-400"></div>
+                    <div class="flex items-center justify-between mt-1 mb-2">
+                      <div class="flex items-center gap-2">
+                        <div class="text-sm font-semibold text-q-text">{{ (item.ETF名称 || item.name || '').replace('ETF', '') }}</div>
+                      </div>
+                      <div class="flex items-center gap-2">
+                        <div class="text-xs font-bold px-1.5 py-0.5 rounded bg-gray-50 border border-gray-100 text-q-text">{{ item.操作建议 || '-' }}</div>
+                      </div>
+                    </div>
+                    
+                    <div class="flex items-center justify-between bg-gray-50/80 rounded px-2 py-1.5 mb-2">
+                      <div class="flex flex-col">
+                        <span class="text-[10px] text-gray-400">位置/涨幅</span>
+                        <span class="text-xs font-mono font-medium text-q-text">{{ item.位置名称 || '-' }}</span>
+                      </div>
+                      <div class="flex flex-col text-right">
+                        <span class="text-[10px] text-gray-400">动能空间</span>
+                        <span class="text-xs font-medium" :class="getAdviceTextColor(item.操作建议)">{{ item.动能 || '-' }}</span>
+                      </div>
+                    </div>
+                    
+                    <div class="flex items-center justify-between px-1 mb-2 text-xs">
+                      <div class="flex items-center gap-1.5 text-gray-600">
+                        <svg class="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        <span>{{ item.资金行为 || '-' }}</span>
+                      </div>
+                      <div class="text-gray-500 font-mono">{{ item.热度占比 || '-' }}</div>
+                    </div>
+                    
+                    <div class="text-[11px] text-gray-500 leading-tight bg-gray-50 rounded p-1.5 border border-gray-100 line-clamp-2" :title="item.归因说明">
+                      {{ item.归因说明 || '-' }}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
             </div>
             
             <!-- 盘后数据展示 -->

@@ -1,6 +1,0 @@
-akshare
-pandas
-numpy
-requests
-tqdm
-python-dotenv

@@ -10,6 +10,7 @@ const app = createApp({
     const lastUpdate = ref('---');
     const marketAmount = ref(null);
     const lifecycleItems = ref([]);
+    const intradaySnapshotItems = ref([]);
     const breadthData = ref({ up: 0, flat: 0, down: 0, total: 0 });
     const volumeHistory = ref([]);
     const intradayVolume = ref([]);
@@ -146,6 +147,26 @@ const app = createApp({
     };
 
     // Computed
+    const intradayItems = computed(() => {
+      const items = intradaySnapshotItems.value || [];
+      return items.filter(item => item.symbol && etfSymbols.includes(item.symbol));
+    });
+
+    const intradayHold = computed(() => {
+      const items = intradayItems.value || [];
+      return items.filter(item => item.category_pool === '趋势向上/风险可控' || item.category_pool === '持有池');
+    });
+
+    const intradayWait = computed(() => {
+      const items = intradayItems.value || [];
+      return items.filter(item => item.category_pool === '观望/回避' || item.category_pool === '观望池');
+    });
+
+    const intradaySell = computed(() => {
+      const items = intradayItems.value || [];
+      return items.filter(item => item.category_pool === '高位/高风险' || item.category_pool === '高位/风险池');
+    });
+    
     const etfLifecycleItems = computed(() => {
       const items = lifecycleItems.value || [];
       // 只保留 etfSymbols 里的 9 个核心 ETF
@@ -363,6 +384,11 @@ const app = createApp({
         if (data.ok) {
           if (data.market_amount) marketAmount.value = data.market_amount;
           if (data.lifecycle && data.lifecycle.data) lifecycleItems.value = data.lifecycle.data;
+          if (data.data && data.data.intraday_snapshot && data.data.intraday_snapshot.items) {
+            intradaySnapshotItems.value = data.data.intraday_snapshot.items;
+          } else if (data.intraday_snapshot && data.intraday_snapshot.items) {
+            intradaySnapshotItems.value = data.intraday_snapshot.items;
+          }
           if (data.warmup && data.warmup.history) warmupHistory.value = data.warmup.history;
           lastUpdate.value = new Date().toLocaleTimeString('zh-CN', { hour12: false });
           
@@ -845,6 +871,11 @@ const app = createApp({
       etfLifecycleWait,
       etfLifecycleSell,
       etfLifecycleOther,
+      intradaySnapshotItems,
+      intradayItems,
+      intradayHold,
+      intradayWait,
+      intradaySell,
       currentPrices,
       chartsLoaded,
       warmupHistory,
