@@ -3222,35 +3222,25 @@ const server = http.createServer(async (req, res) => {
     return;
   }
   if (url.pathname === '/api/ai/sector-analysis') {
-    const day = latestTradingDay();
-    const cacheFile = cacheJsonPath('sector-analysis-ai', day);
-    const cached = readJsonCache(cacheFile);
-    if (cached) {
-      res.setHeader('Content-Type', 'application/json; charset=utf-8');
-      res.end(cached);
-      return;
+    const aiReportPath = path.join(__dirname, 'data/market/ai/etf_report.jsonl');
+    let reportData = null;
+    
+    if (fs.existsSync(aiReportPath)) {
+      try {
+        const lines = fs.readFileSync(aiReportPath, 'utf8').trim().split('\n').filter(Boolean);
+        if (lines.length > 0) {
+          reportData = JSON.parse(lines[lines.length - 1]);
+        }
+      } catch (e) {
+        console.error('Failed to parse etf_report.jsonl', e);
+      }
     }
-    const execPy = (cmd) => new Promise((resolve, reject) => {
-      execFile('python3', [path.join(__dirname, 'scripts', 'legacy', 'fetch_sector_data.py'), cmd], (err, stdout) => {
-        if (err) return reject(err);
-        const out = (stdout || '').trim();
-        if (!out) return resolve({});
-        try { resolve(JSON.parse(out)); } catch (e) { resolve({}); }
-      });
-    });
-    try {
-      const [historyData, rankData] = await Promise.all([execPy('history'), execPy('rank')]);
-      const input = { history: historyData.history || {}, rank: rankData || {} };
-      const text = await callBailian(SECTOR_PROMPT, input);
-      const payload = JSON.stringify({ text });
-      if (text) writeJsonCache(cacheFile, payload);
-      res.setHeader('Content-Type', 'application/json; charset=utf-8');
-      res.end(payload);
-    } catch (e) {
-      const msg = String(e?.message || '');
-      const code = msg.includes('missing_key') ? 401 : 500;
-      res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({ error: code === 401 ? '缺少API Key' : '调用失败' }));
+    
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    if (reportData) {
+      res.end(JSON.stringify(reportData));
+    } else {
+      res.end(JSON.stringify({ text: "暂无今日 AI 板块轮动解析数据，等待自动化任务触发..." }));
     }
     return;
   }
@@ -3932,6 +3922,11 @@ const server = http.createServer(async (req, res) => {
           args = ['treasolo/m1_ai_aggregator.py'];
         } else if (data.script === 'm1_ai_reporter.py') {
           args = ['treasolo/m1_ai_reporter.py'];
+        } else if (data.script === 'm1_etf_intraday_features.py' || data.script === 'analysis/m1_etf_intraday_features.py') {
+          args = ['treasolo/analysis/m1_etf_intraday_features.py'];
+          if (data.args) args.push(...data.args);
+        } else if (data.script === 'm1_etf_ai_reporter.py') {
+          args = ['treasolo/m1_etf_ai_reporter.py'];
         } else {
           res.statusCode = 400;
           return res.end(JSON.stringify({ error: 'unknown script' }));

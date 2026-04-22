@@ -214,7 +214,7 @@ def main() -> int:
     if args.persist:
         out_dir = PROJECT_ROOT / "data/lifecycle/intraday"
         out_dir.mkdir(parents=True, exist_ok=True)
-        out_file = out_dir / f"etf_{day}.jsonl"
+        out_file = out_dir / f"etf_snapshot_{day}.jsonl"
         out_file.parent.mkdir(parents=True, exist_ok=True)
         with open(out_file, "a", encoding="utf-8") as f:
             f.write(json.dumps(snapshot, ensure_ascii=False) + "\n")

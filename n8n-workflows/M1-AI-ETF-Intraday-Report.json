@@ -1,0 +1,71 @@
+{
+  "name": "M1-AI-ETF-Intraday-Report",
+  "nodes": [
+    {
+      "id": "schedule",
+      "name": "盘中每15分钟触发",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [200, 150],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "*/15 9-14 * * 1-5"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "aggregator",
+      "name": "执行分时快照抓取",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [400, 150],
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8787/api/m1/run",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"script\": \"m1_etf_intraday_features.py\",\n  \"args\": [\"--persist\"]\n}",
+        "options": {}
+      }
+    },
+    {
+      "id": "reporter",
+      "name": "调用大模型推理",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [600, 150],
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8787/api/m1/run",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"script\": \"m1_etf_ai_reporter.py\"\n}",
+        "options": {}
+      }
+    },
+    {
+      "id": "parse",
+      "name": "输出执行结果",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [800, 150],
+      "parameters": {
+        "jsCode": "const out = $input.all()[0].json.stdout;\nlet summary = 'AI 播报失败';\nif (out && out.join(' ').includes('AI 解析生成成功')) {\n  summary = 'ETF 轮动解析生成成功 ✅';\n}\nreturn [{ json: { summary, raw: out } }];"
+      }
+    }
+  ],
+  "connections": {
+    "盘中每15分钟触发": { "main": [ [ { "node": "执行分时快照抓取", "type": "main", "index": 0 } ] ] },
+    "执行分时快照抓取": { "main": [ [ { "node": "调用大模型推理", "type": "main", "index": 0 } ] ] },
+    "调用大模型推理": { "main": [ [ { "node": "输出执行结果", "type": "main", "index": 0 } ] ] }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
