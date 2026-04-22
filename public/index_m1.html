@@ -190,10 +190,6 @@
                 </div>
                 <div class="flex items-center gap-3">
                   <span class="text-[11px] text-gray-400">更新时间：{{ aiUpdatedAt || '-' }}</span>
-                  <button @click="refreshAi(true)" class="text-xs text-q-primary hover:underline flex items-center gap-1" :disabled="aiLoading">
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v6h6M20 20v-6h-6M20 8a8 8 0 00-14.828-2M4 16a8 8 0 0014.828 2"></path></svg>
-                    刷新
-                  </button>
                 </div>
               </div>
               <div class="text-[13px] text-gray-700 leading-relaxed flex-1 flex items-center">
