@@ -3012,7 +3012,7 @@ async function buildSnapshotPayload() {
   };
   
   // Inject AI Analysis
-  payload.aiBrief = ai.analyze(payload);
+  // payload.aiBrief = ai.analyze(payload);
   archiveSnapshot(payload);
   if (isNum(payload.bonds?.t2603?.price) && isNum(payload.bonds?.tl2603?.price)) {
     lastGoodSnapshot.payload = payload;
