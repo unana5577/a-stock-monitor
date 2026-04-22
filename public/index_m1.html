@@ -165,9 +165,9 @@
           <!-- 1. AI 宏观解读与仓位建议 -->
           <div class="q-panel flex flex-col md:flex-row overflow-hidden min-h-[200px]">
             <!-- 仪表盘区域 (左侧) -->
-            <div class="w-full md:w-1/4 lg:w-1/5 border-b md:border-b-0 md:border-r border-q-border bg-gray-50/50 flex flex-col p-4 relative">
-              <div class="text-[11px] font-semibold text-q-subtext uppercase tracking-widest mb-12">大盘建议仓位</div>
-              <div class="w-full px-2 mt-auto">
+            <div class="w-full md:w-1/4 lg:w-1/5 border-b md:border-b-0 md:border-r border-q-border bg-gray-50/50 flex flex-col p-4 relative justify-center items-center">
+              <div class="text-[11px] font-semibold text-q-subtext uppercase tracking-widest mb-6 text-center">大盘建议仓位</div>
+              <div class="w-full px-2">
                 <div class="flex justify-between text-[10px] text-gray-400 mb-1.5 font-mono">
                   <span>0% 空仓</span>
                   <span>100% 满仓</span>
@@ -176,7 +176,7 @@
                   <div class="h-full bg-q-primary rounded-full transition-all duration-1000" :style="{ width: aiPositionPct + '%' }"></div>
                 </div>
                 <div class="text-center mt-4">
-                  <span class="text-3xl font-bold text-q-text font-mono">{{ aiPositionPct }}<span class="text-sm text-gray-500">%</span></span>
+                  <span class="text-4xl font-bold text-q-text font-mono">{{ aiPositionPct }}<span class="text-sm text-gray-500">%</span></span>
                 </div>
               </div>
             </div>
@@ -188,20 +188,20 @@
                   <span class="font-bold text-q-text text-sm">AI 盘面智能复盘</span>
                   <span class="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded border border-blue-100">DeepSeek-v3.2</span>
                 </div>
-                <button @click="refreshAi(true)" class="text-xs text-q-primary hover:underline flex items-center gap-1" :disabled="aiLoading">
-                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v6h6M20 20v-6h-6M20 8a8 8 0 00-14.828-2M4 16a8 8 0 0014.828 2"></path></svg>
-                  刷新
-                </button>
+                <div class="flex items-center gap-3">
+                  <span class="text-[11px] text-gray-400">更新时间：{{ aiUpdatedAt || '-' }}</span>
+                  <button @click="refreshAi(true)" class="text-xs text-q-primary hover:underline flex items-center gap-1" :disabled="aiLoading">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v6h6M20 20v-6h-6M20 8a8 8 0 00-14.828-2M4 16a8 8 0 0014.828 2"></path></svg>
+                    刷新
+                  </button>
+                </div>
               </div>
-              <div class="text-[13px] text-gray-700 leading-relaxed flex-1 flex flex-col justify-center">
-                <div class="space-y-1.5">
-                  <p v-for="(sec, i) in aiSections" :key="i" class="leading-relaxed">
-                    <strong v-if="sec.title" class="text-q-text font-bold text-[14px]">{{ sec.title }}：</strong>
+              <div class="text-[13px] text-gray-700 leading-relaxed flex-1 flex items-center">
+                <div class="w-full">
+                  <p v-for="(sec, i) in aiSections" :key="i" class="mb-1 leading-relaxed">
+                    <strong v-if="sec.title" class="text-q-text font-bold">{{ sec.title }}：</strong>
                     <span class="whitespace-pre-line">{{ sec.content }}</span>
                   </p>
-                </div>
-                <div class="text-[11px] text-gray-400 mt-4 pt-2 border-t border-gray-100 flex items-center justify-between">
-                  <span>更新时间：{{ aiUpdatedAt || '-' }}</span>
                 </div>
               </div>
             </div>

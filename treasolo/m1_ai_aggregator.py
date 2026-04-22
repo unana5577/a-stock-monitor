@@ -159,13 +159,45 @@ def run():
                 "近半小时变化_pct": round(half_hour_diff, 2)
             }
 
+    # 3.5. 抓取所有核心行业 ETF 的表现，并按照 tag 分类聚合
+    proxy_file = PROJECT_ROOT / "data/sector-proxy.json"
+    etf_sectors = {}
+    if proxy_file.exists():
+        with open(proxy_file, "r", encoding="utf-8") as f:
+            proxy_data = json.load(f)
+            etf_dict = proxy_data.get("variants", {}).get("etf", {})
+            etf_meta = proxy_data.get("etf_meta", {})
+            
+            for etf_name, etf_code in etf_dict.items():
+                meta = etf_meta.get(etf_name, {"category": "未分类", "sub_category": "未知"})
+                cat = meta["category"]
+                
+                filepath = PROJECT_ROOT / f"data/etf/minute/{etf_code}/{day}.jsonl"
+                series = load_jsonl_all(filepath)
+                curr_pt, past_pt = get_minute_points(series, asOf, 30)
+                
+                if curr_pt and past_pt:
+                    total_pct = curr_pt.get("pct", 0)
+                    half_hour_diff = (curr_pt.get("price", 0) - past_pt.get("price", 0)) / past_pt.get("price", 1) * 100 if past_pt.get("price") else 0
+                    
+                    if cat not in etf_sectors:
+                        etf_sectors[cat] = []
+                    
+                    etf_sectors[cat].append({
+                        "名称": etf_name,
+                        "细分": meta["sub_category"],
+                        "总涨跌_pct": round(total_pct, 2),
+                        "近半小时变化_pct": round(half_hour_diff, 2)
+                    })
+                    
     # 4. 组装 Payload
     payload = {
         "asOf": asOf,
         "date": day,
         "情绪_Breadth": breadth_data,
         "量能_Volume": amount_data,
-        "核心资产走势": market_data
+        "核心资产走势": market_data,
+        "主线板块阵营": etf_sectors
     }
     
     # 5. 落盘

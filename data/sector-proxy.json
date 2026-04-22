@@ -23,5 +23,16 @@
       "通讯设备": "sh000997"
     }
   },
-  "updated_at": "2026-03-09T14:20:41.271Z"
+  "updated_at": "2026-03-09T14:20:41.271Z",
+  "etf_meta": {
+    "半导体":   { "category": "科技", "sub_category": "硬件" },
+    "通讯设备": { "category": "科技", "sub_category": "硬件" },
+    "云计算":   { "category": "科技", "sub_category": "软件" },
+    "游戏":     { "category": "科技", "sub_category": "软件" },
+    "商业航天": { "category": "科技", "sub_category": "新质生产力" },
+    "机器人":   { "category": "科技", "sub_category": "新质生产力" },
+    "创新药":   { "category": "科技", "sub_category": "生物科技" },
+    "有色金属": { "category": "资源", "sub_category": "大宗周期" },
+    "新能源":   { "category": "资源", "sub_category": "泛能源" }
+  }
 }

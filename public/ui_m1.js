@@ -84,7 +84,7 @@ const app = createApp({
         // 允许标题中包含空格，并且处理可能的双角冒号
         const titleMatch = line.match(/^(?:\*\*)?\s*([^：:]+?)\s*(?:\*\*)?[：:](.*)/);
         
-        if (!isOldFormat && titleMatch && ['走势判断', '资金风格', '操作建议', '盘面核心特征', '异动与风向', '交易员应对策略'].includes(titleMatch[1].trim())) {
+        if (!isOldFormat && titleMatch && ['走势判断', '情绪定性', '阵营轮动', '资金风格', '操作建议', '盘面核心特征', '异动与风向', '交易员应对策略'].includes(titleMatch[1].trim())) {
           if (currentTitle) {
             sections.push({ title: currentTitle, content: currentContent.join('\n').trim() });
           }
@@ -697,13 +697,29 @@ const app = createApp({
       let latestPct = 0;
       
       if (dataPoints && dataPoints.length > 0) {
-        dataPoints.forEach((pt, idx) => {
-          if (idx < 240) {
+        // 创建一个映射表以便快速按时间填充数据
+        const pointMap = {};
+        dataPoints.forEach(pt => {
+          if (pt.price > 0 && pt.asOf >= "09:30") { // 严格过滤 0.0 数据和盘前数据
+            pointMap[pt.asOf] = pt;
+          }
+        });
+
+        // 严格按照 X 轴的时间槽位（times）来对齐填入数据
+        times.forEach((t) => {
+          const pt = pointMap[t];
+          if (pt) {
             prices.push(pt.price);
             const ptPct = pt.pct !== undefined ? pt.pct : (preClose ? ((pt.price - preClose) / preClose) * 100 : 0);
             pcts.push(ptPct);
             latestPct = ptPct;
             latestPrice = pt.price;
+          } else if (prices.length > 0 && t <= dataPoints[dataPoints.length - 1].asOf) {
+             // 交易时间内的缺失分钟，使用前一分钟的价格补齐以保持曲线连续性
+             const prevPrice = prices[prices.length - 1];
+             const prevPct = pcts[pcts.length - 1];
+             prices.push(prevPrice);
+             pcts.push(prevPct);
           }
         });
       }
