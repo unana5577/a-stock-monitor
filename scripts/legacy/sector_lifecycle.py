@@ -247,6 +247,7 @@ def determine_fund_behavior(
         if decline >= 0.20:
             return "资金撤退"
     if bias_20 > 8 and pct > 0:
+        # 这里仅作回退保护，外部会根据极值来覆盖判断是否为主线逼空
         return "加速赶顶"
     if bias_20 < -8 and pct < 0:
         return "超跌反弹"
@@ -291,6 +292,8 @@ def determine_advice(momentum: str, behavior: str) -> str:
             return "逐步减仓"
         if behavior == "加速赶顶":
             return "分批止盈"
+        if behavior == "主线逼空(连续新高)":
+            return "主线持有"
         return "持有"
     if momentum == "强势向上":
         if behavior == "放量启动":
@@ -644,6 +647,13 @@ def analyze_sector(
         pct=pct_val,
         amount_share_change_q80=amount_share_change_q80
     )
+    
+    # ==== 核心主线极值拦截逻辑 ====
+    # 如果已经处于加速赶顶，但它是连续的（比如当前 bias > 极值 或者连续两天大涨且极高），我们把它升级为"主线逼空(连续新高)"
+    # 这里我们用简单的判定：如果 bias_20 极高 (比如 > 8，因为之前阈值是8)，且 pct > -2，并且是"加速赶顶"，就视为逼空。
+    if behavior == "加速赶顶" and bias_20 > 8.0 and pct_val >= -2:
+        behavior = "主线逼空(连续新高)"
+        
     advice = determine_advice(momentum, behavior)
     momentum_reason = build_momentum_reason(momentum, alpha_5)
     behavior_reason = build_behavior_reason(
@@ -664,7 +674,8 @@ def analyze_sector(
     }
     behavior_map = {
         "放量启动": 3, "横盘整理": 1, "超跌反弹": 1,
-        "资金撤退": -1, "加速赶顶": -1, "恐慌出逃": -3
+        "资金撤退": -1, "加速赶顶": -1, "恐慌出逃": -3,
+        "主线逼空(连续新高)": 4
     }
     base_score = momentum_map.get(momentum, 0) + behavior_map.get(behavior, 0)
     score = base_score + (alpha_5 or 0) * 0.15 + (alpha_20 or 0) * 0.05 + (amount_share_change or 0) * 2.0

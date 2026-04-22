@@ -18,7 +18,10 @@ const app = createApp({
     const volumeStats = ref({ current: 0, ydayTotal: 0, ydaySameTime: 0, forecast: 0, deltaPct: 0 });
     const marketTotal = ref(0);
     const warmupHistory = ref({});
-    const corrDays = ref(60);
+    const corrDays = ref(parseInt(localStorage.getItem('corrDays')) || 1);
+    watch(corrDays, (newVal) => {
+      localStorage.setItem('corrDays', newVal);
+    });
     const aiText = ref('加载中...');
     const aiUpdatedAt = ref('');
     const aiLoading = ref(false);
