@@ -486,34 +486,15 @@ const app = createApp({
 
         let forecastTotal = finalCumulative;
         if (currentTradedMinutes > 0 && currentTradedMinutes < 240) {
-          const remainingMinutes = 240 - currentTradedMinutes;
-          
-          // Time Segment Locking Logic
-          const lastAsOf = intradayVolume.value[intradayVolume.value.length - 1].asOf;
-          let referenceMinuteVolume = todayData[currentTradedMinutes - 1]; // Default to current last minute
-          
-          if (lastAsOf >= "11:25" && lastAsOf <= "11:30") {
-             // Find the volume at 11:24
-             const targetIdx = xAxisData.indexOf("11:24");
-             if (targetIdx !== -1 && targetIdx < currentTradedMinutes && todayData[targetIdx] !== null) {
-                 referenceMinuteVolume = todayData[targetIdx];
-             }
-          } else if (lastAsOf >= "14:55" && lastAsOf <= "15:00") {
-             // Find the volume at 14:54
-             const targetIdx = xAxisData.indexOf("14:54");
-             if (targetIdx !== -1 && targetIdx < currentTradedMinutes && todayData[targetIdx] !== null) {
-                 referenceMinuteVolume = todayData[targetIdx];
-             }
+          if (ydaySameTimeCumulative > 0 && ydayTotalAmount > 0) {
+            // Use relative pace compared to yesterday to forecast, which naturally accounts for the U-shaped volume curve
+            forecastTotal = (finalCumulative / ydaySameTimeCumulative) * ydayTotalAmount;
+          } else {
+            // Fallback if yesterday's data is missing
+            const remainingMinutes = 240 - currentTradedMinutes;
+            const avgSoFar = finalCumulative / currentTradedMinutes;
+            forecastTotal = finalCumulative + avgSoFar * remainingMinutes;
           }
-          
-          // Use referenceMinuteVolume for forecast, cap it at a reasonable max to avoid spikes 
-          // (e.g. max 3x the average volume of today so far)
-          let v = Number.isFinite(referenceMinuteVolume) && referenceMinuteVolume > 0 ? referenceMinuteVolume : 0;
-          const avgSoFar = finalCumulative / currentTradedMinutes;
-          if (v > avgSoFar * 3) {
-             v = avgSoFar * 3;
-          }
-          forecastTotal = finalCumulative + v * remainingMinutes;
         }
 
         volumeStats.value = {
