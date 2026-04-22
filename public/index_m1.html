@@ -196,7 +196,7 @@
                 <div class="w-full">
                   <p v-for="(sec, i) in aiSections" :key="i" class="mb-1 leading-relaxed">
                     <strong v-if="sec.title" class="text-q-text font-bold">{{ sec.title }}：</strong>
-                    <span class="whitespace-pre-line">{{ sec.content }}</span>
+                    <span class="whitespace-pre-line" v-html="sec.content"></span>
                   </p>
                 </div>
               </div>
@@ -334,11 +334,15 @@
                 </button>
               </div>
               <div class="text-[13px] text-gray-700 leading-relaxed flex-1 flex items-center">
-                <!-- Mock AI Text -->
-                <div>
-                  <p class="mb-1"><strong class="text-q-text">主线追踪：</strong>当前市场主线聚焦在红利低波与上游资源品，科技成长板块（如半导体、通信）处于高位震荡回调期。</p>
-                  <p class="mb-1"><strong class="text-q-text">跷跷板效应：</strong>股债跷跷板显著，大盘走弱时资金明显向30年国债ETF避险；同时“中字头”与“微盘股”呈现强负相关。</p>
-                  <p><strong class="text-q-text">操作建议：</strong>对已进入“高位/离场”池的标的严格执行纪律，切勿补仓；建议在“震荡/观望”池中寻找超跌反弹的左侧布局机会。</p>
+                <!-- Real AI Text from m1_ai_reporter -->
+                <div v-if="aiSections && aiSections.length > 0" class="w-full">
+                  <p v-for="(sec, i) in aiSections" :key="i" class="mb-1 leading-relaxed">
+                    <strong v-if="sec.title" class="text-q-text font-bold">{{ sec.title }}：</strong>
+                    <span class="whitespace-pre-line" v-html="sec.content"></span>
+                  </p>
+                </div>
+                <div v-else>
+                  <p class="text-gray-400 italic">AI 板块解析加载中...</p>
                 </div>
               </div>
             </div>

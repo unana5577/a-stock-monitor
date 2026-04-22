@@ -88,29 +88,35 @@ const app = createApp({
         // 允许标题中包含空格，并且处理可能的双角冒号
         const titleMatch = line.match(/^(?:\*\*)?\s*([^：:]+?)\s*(?:\*\*)?[：:](.*)/);
         
-        if (!isOldFormat && titleMatch && ['走势判断', '情绪定性', '阵营轮动', '资金风格', '操作建议', '盘面核心特征', '异动与风向', '交易员应对策略'].includes(titleMatch[1].trim())) {
+        if (!isOldFormat && titleMatch && ['走势判断', '情绪定性', '阵营轮动', '资金风格', '操作建议', '盘面核心特征', '异动与风向', '交易员应对策略', '主线追踪', '资金偏好', '主线与异动', '阵营跷跷板', '跷跷板效应'].includes(titleMatch[1].trim())) {
           if (currentTitle) {
-            sections.push({ title: currentTitle, content: currentContent.join('\n').trim() });
+            sections.push({ title: currentTitle, content: currentContent.join('\n').trim().replace(/\*\*([^*]+)\*\*/g, '<strong class="text-q-primary">$1</strong>') });
           }
           currentTitle = titleMatch[1].trim();
           currentContent = [];
           
-          // 把冒号后面的内容放进 content，并清理可能残留的 markdown 粗体标记
+          // 把冒号后面的内容放进 content，保留 markdown 加粗标记交由前端解析
           const rest = titleMatch[2].trim();
-          if (rest) currentContent.push(rest.replace(/\*\*/g, ''));
+          if (rest) currentContent.push(rest);
         } else {
           if (currentTitle) {
-            // 清理内容里的 markdown 粗体标记
-            currentContent.push(line.replace(/\*\*/g, '').trim());
+            // 保留内容里的 markdown 加粗标记
+            currentContent.push(line.trim());
           }
         }
       }
       
       if (currentTitle) {
-        sections.push({ title: currentTitle, content: currentContent.join('\n').trim() });
+        sections.push({ title: currentTitle, content: currentContent.join('\n').trim().replace(/\*\*([^*]+)\*\*/g, '<strong class="text-q-primary">$1</strong>') });
       }
       
-      return sections.length > 0 ? sections : [{ title: '原文', content: txt }];
+      return sections.length > 0 ? sections.map(s => {
+        // 如果是最后补上去的段落，且内部含有 markdown bold，顺手替换掉
+        if (s.content && s.content.includes('**')) {
+           s.content = s.content.replace(/\*\*([^*]+)\*\*/g, '<strong class="text-q-primary">$1</strong>');
+        }
+        return s;
+      }) : [{ title: '原文', content: txt }];
     });
 
     // 解析仓位进度条 (例如提取 "2-4成" -> 30, "6-8成" -> 70, "5成" -> 50)
