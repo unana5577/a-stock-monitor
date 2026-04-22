@@ -21,7 +21,7 @@ if (fs.existsSync(envPath)) {
   });
 }
 
-const ai = require('./ai');
+// const ai = require('./ai');
 
 const PORT = process.env.PORT || 8787;
 const CACHE_TTL_MS = 30_000;  // 修改为30秒，确保每分钟都能获取最新数据
@@ -3838,6 +3838,20 @@ const server = http.createServer(async (req, res) => {
         } catch (e) {
           console.error(`Failed to read daily.jsonl for ${symbol} pre_close:`, e.message);
         }
+      }
+
+      // 如果 daily 不存在或未能成功提取昨收，尝试从分时数据的第一条回退提取
+      if (pre_close === null && data.length > 0) {
+        // Find the first valid data point with a pre_close
+        const validPt = data.find(pt => pt && pt.pre_close !== undefined);
+        if (validPt) {
+          pre_close = validPt.pre_close;
+        }
+      }
+      
+      // 临时清洗已经落盘的脏数据 (清理 09:30 前或者 price 为 0.0 的集合竞价数据)
+      if (data.length > 0) {
+          data = data.filter(pt => pt && pt.price > 0 && pt.asOf >= '09:30');
       }
 
       // ETF 分时数据自带 pre_close 和 pct，大盘指数的分时数据可能没有，统一在这里补充基准
