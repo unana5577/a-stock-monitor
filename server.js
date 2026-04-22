@@ -3231,7 +3231,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     const execPy = (cmd) => new Promise((resolve, reject) => {
-      execFile('python3', ['fetch_sector_data.py', cmd], (err, stdout) => {
+      execFile('python3', [path.join(__dirname, 'scripts', 'legacy', 'fetch_sector_data.py'), cmd], (err, stdout) => {
         if (err) return reject(err);
         const out = (stdout || '').trim();
         if (!out) return resolve({});

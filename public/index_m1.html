@@ -173,10 +173,10 @@
                   <span>100% 满仓</span>
                 </div>
                 <div class="h-2 w-full bg-gray-200 rounded-full overflow-hidden">
-                  <div class="h-full bg-q-primary rounded-full transition-all duration-1000" :style="{ width: aiPositionPct + '%' }"></div>
+                  <div class="h-full bg-q-primary rounded-full transition-all duration-1000" :style="{ width: overviewAiPositionPct + '%' }"></div>
                 </div>
                 <div class="text-center mt-4">
-                  <span class="text-4xl font-bold text-q-text font-mono">{{ aiPositionPct }}<span class="text-sm text-gray-500">%</span></span>
+                  <span class="text-4xl font-bold text-q-text font-mono">{{ overviewAiPositionPct }}<span class="text-sm text-gray-500">%</span></span>
                 </div>
               </div>
             </div>
@@ -189,12 +189,12 @@
                   <span class="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded border border-blue-100">DeepSeek-v3.2</span>
                 </div>
                 <div class="flex items-center gap-3">
-                  <span class="text-[11px] text-gray-400">更新时间：{{ aiUpdatedAt || '-' }}</span>
+                  <span class="text-[11px] text-gray-400">更新时间：{{ overviewAiUpdatedAt || '-' }}</span>
                 </div>
               </div>
               <div class="text-[13px] text-gray-700 leading-relaxed flex-1 flex items-center">
                 <div class="w-full">
-                  <p v-for="(sec, i) in aiSections" :key="i" class="mb-1 leading-relaxed">
+                  <p v-for="(sec, i) in overviewAiSections" :key="i" class="mb-1 leading-relaxed">
                     <strong v-if="sec.title" class="text-q-text font-bold">{{ sec.title }}：</strong>
                     <span class="whitespace-pre-line" v-html="sec.content"></span>
                   </p>
@@ -335,8 +335,8 @@
               </div>
               <div class="text-[13px] text-gray-700 leading-relaxed flex-1 flex items-center">
                 <!-- Real AI Text from m1_ai_reporter -->
-                <div v-if="aiSections && aiSections.length > 0" class="w-full">
-                  <p v-for="(sec, i) in aiSections" :key="i" class="mb-1 leading-relaxed">
+                <div v-if="etfAiSections && etfAiSections.length > 0" class="w-full">
+                  <p v-for="(sec, i) in etfAiSections" :key="i" class="mb-1 leading-relaxed">
                     <strong v-if="sec.title" class="text-q-text font-bold">{{ sec.title }}：</strong>
                     <span class="whitespace-pre-line" v-html="sec.content"></span>
                   </p>

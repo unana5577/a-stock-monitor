@@ -22,9 +22,13 @@ const app = createApp({
     watch(corrDays, (newVal) => {
       localStorage.setItem('corrDays', newVal);
     });
-    const aiText = ref('加载中...');
-    const aiUpdatedAt = ref('');
-    const aiLoading = ref(false);
+    const overviewAiText = ref('加载中...');
+    const overviewAiUpdatedAt = ref('');
+    const overviewAiLoading = ref(false);
+
+    const etfAiText = ref('加载中...');
+    const etfAiUpdatedAt = ref('');
+    const etfAiLoading = ref(false);
     
     // Indices config
     const indexSymbols = ['sh000001', 'sz399001', 'sz399006', 'sh000688', 'sh000300', 'sh000852', 'sh511130', 'sh511260', 'bank', 'broker', 'insure'];
@@ -59,9 +63,9 @@ const app = createApp({
     const chartInstances = {};
 
     // 解析AI返回的 Markdown 文本
-    const aiSections = computed(() => {
-      const txt = aiText.value || '';
-      if (txt === '加载中...' || txt === '等待接入...' || txt === '暂无今日 AI 解读数据') return [{ title: '', content: txt }];
+    const parseAiSections = (txt) => {
+      if (!txt) return [];
+      if (txt === '加载中...' || txt === '等待接入...' || txt === '暂无今日 AI 解读数据' || txt === 'AI 板块解析加载中...') return [{ title: '', content: txt }];
       
       const lines = txt.split('\n');
       const sections = [];
@@ -73,7 +77,7 @@ const app = createApp({
         
         // 尝试匹配老版本的格式，如 **【走势判断】**
         let isOldFormat = false;
-        const oldTitleMatch = line.match(/^(?:\*\*)?【([^】]+)】(?:\*\*)?/);
+        const oldTitleMatch = line.match(/^(?:\*\*)?【([^】]+)】(?:\*\*)?\s*(.*)/);
         if (oldTitleMatch) {
             isOldFormat = true;
             if (currentTitle) {
@@ -81,14 +85,19 @@ const app = createApp({
             }
             currentTitle = oldTitleMatch[1].trim();
             currentContent = [];
-            continue; // 老格式标题行通常没有正文
+            // 如果标题后面紧跟了正文，保留正文内容
+            const rest = oldTitleMatch[2].trim();
+            if (rest) {
+              currentContent.push(rest);
+            }
+            continue;
         }
         
         // 匹配带有 ** 的标题，例如 **走势判断**： 或者直接 走势判断：
         // 允许标题中包含空格，并且处理可能的双角冒号
         const titleMatch = line.match(/^(?:\*\*)?\s*([^：:]+?)\s*(?:\*\*)?[：:](.*)/);
         
-        if (!isOldFormat && titleMatch && ['走势判断', '情绪定性', '阵营轮动', '资金风格', '操作建议', '盘面核心特征', '异动与风向', '交易员应对策略', '主线追踪', '资金偏好', '主线与异动', '阵营跷跷板', '跷跷板效应'].includes(titleMatch[1].trim())) {
+        if (!isOldFormat && titleMatch && ['走势判断', '情绪定性', '阵营轮动', '资金风格', '操作建议', '盘面核心特征', '异动与风向', '交易员应对策略', '主线追踪', '资金偏好', '主线与异动', '阵营跷跷板', '跷跷板效应', '异动解读', '轮动建议', '重点异动', '轮动分析', '行情研判', '赚钱效应', '跷跷板分析', '共振分析', '轮动规律', '主线趋势'].includes(titleMatch[1].trim())) {
           if (currentTitle) {
             sections.push({ title: currentTitle, content: currentContent.join('\n').trim().replace(/\*\*([^*]+)\*\*/g, '<strong class="text-q-primary">$1</strong>') });
           }
@@ -102,12 +111,17 @@ const app = createApp({
           if (currentTitle) {
             // 保留内容里的 markdown 加粗标记
             currentContent.push(line.trim());
+          } else {
+            // 如果一开始就没有匹配到任何标题，就把所有内容放在一个默认区域里
+            currentContent.push(line.trim());
           }
         }
       }
       
       if (currentTitle) {
         sections.push({ title: currentTitle, content: currentContent.join('\n').trim().replace(/\*\*([^*]+)\*\*/g, '<strong class="text-q-primary">$1</strong>') });
+      } else if (currentContent.length > 0) {
+        sections.push({ title: '', content: currentContent.join('\n').trim().replace(/\*\*([^*]+)\*\*/g, '<strong class="text-q-primary">$1</strong>') });
       }
       
       return sections.length > 0 ? sections.map(s => {
@@ -117,11 +131,14 @@ const app = createApp({
         }
         return s;
       }) : [{ title: '原文', content: txt }];
-    });
+    };
+
+    const overviewAiSections = computed(() => parseAiSections(overviewAiText.value));
+    const etfAiSections = computed(() => parseAiSections(etfAiText.value));
 
     // 解析仓位进度条 (例如提取 "2-4成" -> 30, "6-8成" -> 70, "5成" -> 50)
-    const aiPositionPct = computed(() => {
-      const txt = aiText.value || '';
+    const overviewAiPositionPct = computed(() => {
+      const txt = overviewAiText.value || '';
       const match = txt.match(/(\d)(?:-(\d))?成仓位/);
       if (match) {
         if (match[2]) {
@@ -135,23 +152,41 @@ const app = createApp({
       return 50; // 默认50
     });
 
-    const refreshAi = async (force = false) => {
-      if (aiLoading.value) return;
-      aiLoading.value = true;
+    const refreshOverviewAi = async (force = false) => {
+      if (overviewAiLoading.value) return;
+      overviewAiLoading.value = true;
       try {
         const res = await fetch(`${API_BASE}/api/ai/report${force ? '?force=true' : ''}`);
         const d = await res.json();
         if (d.ok && d.data) {
-          aiText.value = d.data.content || '';
-          aiUpdatedAt.value = d.data.asOf || '';
+          overviewAiText.value = d.data.content || '';
+          overviewAiUpdatedAt.value = d.data.asOf || '';
         } else {
-          aiText.value = '暂无今日 AI 解读数据';
-          aiUpdatedAt.value = '';
+          overviewAiText.value = '暂无今日 AI 解读数据';
+          overviewAiUpdatedAt.value = '';
         }
       } catch (e) {
-        aiText.value = 'AI 解读加载失败';
+        overviewAiText.value = 'AI 解读加载失败';
       } finally {
-        aiLoading.value = false;
+        overviewAiLoading.value = false;
+      }
+    };
+
+    const refreshEtfAi = async () => {
+      if (etfAiLoading.value) return;
+      etfAiLoading.value = true;
+      try {
+        const res = await fetch(`${API_BASE}/api/ai/sector-analysis`);
+        const d = await res.json();
+        if (d.text) {
+          etfAiText.value = d.text;
+        } else {
+          etfAiText.value = '暂无今日 AI 板块解析数据';
+        }
+      } catch (e) {
+        etfAiText.value = 'AI 板块解析加载失败';
+      } finally {
+        etfAiLoading.value = false;
       }
     };
 
@@ -836,7 +871,8 @@ const app = createApp({
 
     // --- Lifecycle Hooks ---
     onMounted(() => {
-      refreshAi();
+      refreshOverviewAi();
+      refreshEtfAi();
       fetchOverview();
       fetchMinuteData();
       fetchBreadth();
@@ -881,12 +917,17 @@ const app = createApp({
     });
 
     return {
-      aiText,
-      aiUpdatedAt,
-      aiLoading,
-      aiSections,
-      aiPositionPct,
-      refreshAi,
+      overviewAiText,
+      overviewAiUpdatedAt,
+      overviewAiLoading,
+      overviewAiSections,
+      overviewAiPositionPct,
+      etfAiText,
+      etfAiUpdatedAt,
+      etfAiLoading,
+      etfAiSections,
+      refreshOverviewAi,
+      refreshEtfAi,
       activeTab,
       activeLifecycleTab,
       lastUpdate,
