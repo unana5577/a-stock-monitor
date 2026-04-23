@@ -55,6 +55,18 @@ const app = createApp({
       'sh562500': '机器人ETF',
       'sh563530': '商业航天ETF'
     };
+
+    const etfCategoryMap = {
+      'sh512480': '科技',
+      'sh515880': '科技',
+      'sh516510': '科技',
+      'sh516010': '科技',
+      'sh563530': '科技',
+      'sh562500': '科技',
+      'sh515120': '科技',
+      'sh512400': '资源',
+      'sh516160': '资源'
+    };
     
     // Charting state
     const currentPrices = ref({});
@@ -440,6 +452,18 @@ const app = createApp({
       }
       return headers;
     };
+
+    const sortedEtfCycleSymbols = computed(() => {
+      const histMap = warmupHistory.value || {};
+      const rows = etfSymbols.map((sym, idx) => {
+        const hist = histMap[sym] || [];
+        const last20 = hist.slice(-20);
+        const upDays = last20.reduce((acc, it) => acc + (it && it.pct > 0 ? 1 : 0), 0);
+        return { sym, upDays, idx };
+      });
+      rows.sort((a, b) => (b.upDays - a.upDays) || (a.idx - b.idx));
+      return rows.map(r => r.sym);
+    });
 
     // --- Data Fetching ---
     
@@ -942,6 +966,8 @@ const app = createApp({
       indexSymbols,
       etfSymbols,
       symbolNames,
+      etfCategoryMap,
+      sortedEtfCycleSymbols,
       etfLifecycleItems,
       etfLifecycleHold,
       etfLifecycleWait,

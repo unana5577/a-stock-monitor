@@ -387,7 +387,6 @@
                 <!-- 表头 -->
                 <div class="flex text-xs text-gray-500 mb-2 border-b border-gray-100 pb-2">
                   <div class="w-12 shrink-0">分类</div>
-                  <div class="w-12 shrink-0">属性</div>
                   <div class="w-24 shrink-0">板块</div>
                   <div class="flex-1 flex relative items-end h-6 ml-4">
                     <div v-for="(date, i) in getGridHeaders()" :key="i" class="flex-1 relative">
@@ -399,10 +398,9 @@
                 </div>
                 
                 <!-- 表格行 (循环 ETF) -->
-                <div v-for="sym in etfSymbols" :key="sym" class="flex items-center py-[2px] border-b border-gray-50 group hover:bg-gray-50/50">
-                  <div class="w-12 shrink-0 text-xs text-gray-400">未分类</div>
-                  <div class="w-12 shrink-0 text-xs text-gray-500">题材</div>
-                  <div class="w-24 shrink-0 text-sm font-medium text-q-text truncate pr-2" :title="symbolNames[sym] || sym">
+                <div v-for="sym in sortedEtfCycleSymbols" :key="sym" class="flex items-center py-[2px] border-b border-gray-50 group hover:bg-gray-50/50">
+                  <div class="w-12 shrink-0 text-[11px] text-gray-400">{{ etfCategoryMap[sym] || '未分类' }}</div>
+                  <div class="w-24 shrink-0 text-xs font-medium text-q-text truncate pr-2" :title="symbolNames[sym] || sym">
                     {{ (symbolNames[sym] || sym).replace('ETF', '') }}
                   </div>
                   
@@ -427,10 +425,6 @@
                 </div>
                 
               </div>
-            </div>
-            
-            <div class="mt-4 pt-3 border-t border-gray-100 text-xs text-gray-500 leading-relaxed">
-              属性口径：近20交易日上涨天数≥12且累计涨幅≥6%且最大连涨≥4天 → <span class="text-q-text font-medium">主线</span>（最多3个，超出按累计涨幅取前3），其余为<span class="text-q-text font-medium">题材</span>。
             </div>
           </div>
 
