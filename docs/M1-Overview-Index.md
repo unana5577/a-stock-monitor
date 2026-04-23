@@ -108,65 +108,53 @@ data/
 
 ### 8. ETF：收盘抢发日线
 
-- **用途**：每天 15:01，用 ETF 的最后一次分时数据，生成当天的收盘日线。
+- **用途**：每天 15:01，用 ETF 的最后一次分时数据，生成当天的收盘日线。**注：本脚本包含严格的分时完整性校验。如果盘中分时断流或缺失 15:00 数据，将自动触发官方接口回补，补齐 240 分钟后再精确推导 OHLC 与成交量，确保日线无误。**
 - **导入 n8n 用的文件**：[n8n-workflows/M1-D-ETF-Minute2Daily.json](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/n8n-workflows/M1-D-ETF-Minute2Daily.json)
 - **底层 Python 脚本**：[treasolo/m1_minute_to_daily_etf.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/treasolo/m1_minute_to_daily_etf.py)
 - **抓下来的数据存在哪**：`data/etf/daily/<代码>/daily.jsonl`
 
 ***
 
-## 运维与清理
+## 预热与生命周期分析
 
-### 9. 分时数据过期清理 (保留 T-3)
+### 9. 核心缓存预热与业务指标 (Warmup & Lifecycle)
 
-- **用途**：每天 09:15 自动扫描 `index/minute/` 和 `etf/minute/` 目录，按文件倒序严格保留每个标的最新的 3 个文件（即最近 3 个交易日），删除更早的分时数据，防止磁盘爆满。同时会清空 `market/minute/breadth-cache.jsonl` 情绪分时，为当天开盘归零。
-- **导入 n8n 用的文件**：[n8n-workflows/M1-F-Cleanup-Minute.json](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/n8n-workflows/M1-F-Cleanup-Minute.json)
-- **底层 Python 脚本**：[treasolo/cleanup_minute_files.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/treasolo/cleanup_minute_files.py)
+- **用途**：盘后（或日线回填后）触发。从历史文件中提取并聚合最近 60 天的数据，计算 MA5/10/20 均线以及所处生命周期阶段（吸筹、主升、主跌等），为前端极速渲染提供统一缓存。
+- **导入 n8n 用的文件**：[n8n-workflows/M1-G-Warmup-Lifecycle.json](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/n8n-workflows/M1-G-Warmup-Lifecycle.json)
+- **底层 Python 脚本**：相关聚合逻辑内置于各管理脚本中，输出为静态 JSON。
+- **抓下来的数据存在哪**：`data/warmup/warmup-60.json` 和 `data/lifecycle/lifecycle.json`
 
 ***
 
-## 附录：当前监控的核心标的对照表
+## AI 盘面解析工作流
 
-### 1. 6 大核心宽基指数
+### 10. 大盘综合智能复盘 (DeepSeek)
 
-| 指数代码       | 指数名称   | 说明   |
-| :--------- | :----- | :--- |
-| `sh000001` | 上证指数   | 核心大盘 |
-| `sz399001` | 深证成指   | 核心大盘 |
-| `sz399006` | 创业板指   | 核心大盘 |
-| `sh000688` | 科创50   | 核心大盘 |
-| `sh000300` | 沪深300  | 核心大盘 |
-| `sh000852` | 中证1000 | 核心大盘 |
-
-### 2. 金融三板块 (新浪源行业指数)
-
-| 指数代码 | 指数名称 | 说明 |
-| :--- | :--- | :--- |
-| `sz399986` | 中证银行 | 完美替代 BK0475 |
-| `sz399975` | 证券公司 | 完美替代 BK0473 |
-| `sz399809` | 保险主题 | 完美替代 BK0474 |
-
-### 3. 11 大行业/主题 ETF
-
-| ETF 代码          | ETF 名称   | 说明    |
-| :-------------- | :------- | :---- |
-| `sh511130`      | 30年国债ETF | 债市基准  |
-| `sh511260`      | 10年国债ETF | 债市基准  |
-| `sh512400`      | 有色金属ETF  | 周期资源  |
-| `sh512480`      | 半导体ETF   | 科技    |
-| `sh515120`      | 创新药ETF   | 医药    |
-| `sh515880`      | 通信ETF    | 科技    |
-| `sh516010`      | 游戏ETF    | 科技/传媒 |
-| `sh516160`      | 新能源ETF   | 新能源   |
-| `sh516510`      | 云计算ETF   | 科技    |
-| `sh562500`      | 机器人ETF   | 高端制造  |
-| `sh563530`      | 商业航天ETF | 科技/航天 |
-
-### 11. AI 盘中智能复盘
-
-- **用途**：交易日内每半小时（10:00, 10:30, 11:00, 13:30, 14:00, 14:30）自动执行。首先提取当前的大盘、国债、情绪、量能特征，随后将精简后的特征喂给大模型（DeepSeek-v3），输出三段式的交易员实战点评。
+- **用途**：交易日内每半小时（10:00, 10:30, 11:00, 13:30, 14:00, 14:30）自动执行。提取当前的大盘、国债、情绪、量能特征，喂给大模型输出三段式实战点评。
 - **导入 n8n 用的文件**：[n8n-workflows/M1-AI-Intraday-Report.json](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/n8n-workflows/M1-AI-Intraday-Report.json)
 - **底层 Python 脚本**：[treasolo/m1_ai_aggregator.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/treasolo/m1_ai_aggregator.py) & [treasolo/m1_ai_reporter.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/treasolo/m1_ai_reporter.py)
 - **使用的 Prompt**：[prompts/stock-daily-v2.txt](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/prompts/stock-daily-v2.txt)
 - **抓下来的数据存在哪**：`data/market/ai/snapshot.jsonl`（特征底表）和 `data/market/ai/report.jsonl`（大模型推理结果）
+
+### 11. ETF 板块轮动 AI 解析
+
+- **用途**：交易日内配合大盘解析执行，基于 11 大行业 ETF 的资金偏好、涨跌异动与量价背离，生成“科技/资源阵营跷跷板”等资金流向推演。
+- **导入 n8n 用的文件**：[n8n-workflows/M1-AI-ETF-Intraday-Report.json](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/n8n-workflows/M1-AI-ETF-Intraday-Report.json)
+- **底层 Python 脚本**：[treasolo/m1_etf_ai_reporter.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/treasolo/m1_etf_ai_reporter.py)
+- **抓下来的数据存在哪**：`data/market/ai/etf_report.jsonl`
+
+***
+
+## 运维、清理与可观测性
+
+### 12. 分时数据过期清理 (保留 T-3)
+
+- **用途**：每天 09:15 自动扫描 `index/minute/`、`etf/minute/` 和 `sector/minute/` 等目录，按文件倒序严格保留每个标的最近 3 个交易日的分时数据，删除冗余文件。同时清空 `breadth-cache.jsonl` 情绪缓存，并在原位按行截断保留 AI 日志文件的最近 3 天记录，防止单文件无限膨胀。
+- **导入 n8n 用的文件**：[n8n-workflows/M1-F-Cleanup-Minute.json](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/n8n-workflows/M1-F-Cleanup-Minute.json)
+- **底层 Python 脚本**：[treasolo/cleanup_minute_files.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/treasolo/cleanup_minute_files.py)
+
+### 13. N8N 工作流可观测性监控 (Observability)
+
+- **用途**：探针级工作流，负责监控系统内其他业务工作流的运行状态（如执行耗时、成功率、节点报错抛出），为后续运维排障提供日志支撑。
+- **导入 n8n 用的文件**：`runner-observability.json` / `runner-observability-intraday.json` / `runner-observability-manual.json`
 

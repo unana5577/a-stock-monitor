@@ -78,12 +78,14 @@ def main() -> int:
             search_sym = sym
             row = df[df["代码"] == search_sym]
             if row.empty:
+                print(f"DEBUG: empty row for {search_sym}")
                 skipped.append(sym)
                 continue
                 
             row = row.iloc[0]
             price = float(row["最新价"])
-        except Exception:
+        except Exception as e:
+            print(f"DEBUG: exception for {search_sym}: {e}")
             skipped.append(sym)
             continue
         out = PROJECT_ROOT / f"data/index/minute/{sym}/{day}.jsonl"

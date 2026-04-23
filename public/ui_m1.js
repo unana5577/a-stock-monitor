@@ -791,6 +791,9 @@ const app = createApp({
              const prevPct = pcts[pcts.length - 1];
              prices.push(prevPrice);
              pcts.push(prevPct);
+          } else {
+             prices.push(null);
+             pcts.push(null);
           }
         });
       }

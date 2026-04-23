@@ -71,6 +71,55 @@ def reset_breadth_cache(apply: bool) -> bool:
         
     return True
 
+def truncate_ai_logs(keep_days: int, apply: bool) -> int:
+    """按行截断 AI 相关的追加型日志，只保留最近 N 天的数据"""
+    import json
+    from datetime import datetime, timedelta
+    
+    # 计算 N 天前的日期阈值（比如今天减去 keep_days）
+    cutoff_date = (datetime.now() - timedelta(days=keep_days)).strftime("%Y-%m-%d")
+    
+    ai_dir = PROJECT_ROOT / "data" / "market" / "ai"
+    if not ai_dir.exists():
+        return 0
+        
+    target_files = ["report.jsonl", "etf_report.jsonl", "snapshot.jsonl"]
+    truncated_count = 0
+    
+    for filename in target_files:
+        file_path = ai_dir / filename
+        if not file_path.exists():
+            continue
+            
+        try:
+            lines = file_path.read_text(encoding="utf-8").splitlines()
+            if not lines:
+                continue
+                
+            kept_lines = []
+            for line in lines:
+                try:
+                    data = json.loads(line)
+                    # 只要该行的 date 大于或等于 cutoff_date，就保留
+                    if data.get("date", "") >= cutoff_date:
+                        kept_lines.append(line)
+                except:
+                    # 解析失败的行安全起见保留
+                    kept_lines.append(line)
+                    
+            if len(kept_lines) < len(lines):
+                if apply:
+                    file_path.write_text("\n".join(kept_lines) + "\n", encoding="utf-8")
+                print(f"  [{'TRUNCATED' if apply else 'DRY-RUN'}] {file_path.relative_to(PROJECT_ROOT)} (Kept {len(kept_lines)}/{len(lines)} lines)")
+                truncated_count += 1
+            else:
+                print(f"  [SKIPPED] {file_path.relative_to(PROJECT_ROOT)} (All {len(lines)} lines are within {keep_days} days)")
+                
+        except Exception as e:
+            print(f"  [ERROR] 处理 {filename} 时出错: {e}")
+            
+    return truncated_count
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="清理 M1 阶段过期的分钟级分时数据")
@@ -129,7 +178,12 @@ def main() -> int:
     if reset_breadth_cache(args.apply):
         total_deleted += 1
 
-    print(f"\n🎉 任务结束。共处理 (删除/清空) {total_deleted} 个目标。")
+    # 6. 截断 AI 日志 (按行)
+    print(f"\n> 截断 AI 日志文件 (保留 {args.keep_days} 天)...")
+    truncated_ai = truncate_ai_logs(args.keep_days, args.apply)
+    total_deleted += truncated_ai
+
+    print(f"\n🎉 任务结束。共处理 (删除/清空/截断) {total_deleted} 个目标。")
     return 0
 
 
