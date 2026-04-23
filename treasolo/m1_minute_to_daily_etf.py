@@ -70,7 +70,7 @@ def run_minute_to_daily_etf(symbol: str, day: str):
                     "low": float(row[4]),
                     "price": float(row[2]),
                     "vol": float(row[5]),
-                    "amount": float(row[7]) * 10000 if len(row) > 7 else 0.0, # 腾讯返回的是万元，转成元
+                    "amount": float(row[5]) * 100 * float(row[2]),
                     "pct": 0.0
                 }
                 minute_lines.append(json.dumps(record, ensure_ascii=False))
