@@ -3786,7 +3786,9 @@ const server = http.createServer(async (req, res) => {
       const date = String(d.getDate()).padStart(2, '0');
       return `${year}-${month}-${date}`;
     };
-    const day = url.searchParams.get('day') || getBeijingDate();
+    
+    // 如果没有传 day，默认取今天
+    let day = url.searchParams.get('day') || getBeijingDate();
     
     if (!symbol) {
       res.statusCode = 400;
@@ -3862,6 +3864,15 @@ const server = http.createServer(async (req, res) => {
       // 临时清洗已经落盘的脏数据 (清理 09:30 前或者 price 为 0.0 的集合竞价数据)
       if (data.length > 0) {
           data = data.filter(pt => pt && pt.price > 0 && pt.asOf >= '09:30');
+      }
+
+      // 如果数据存在，确保 pct 字段有值，如果没有，通过 pre_close 临时计算
+      if (data.length > 0 && pre_close !== null) {
+          data.forEach(pt => {
+              if (pt.pct === undefined || pt.pct === 0) {
+                  pt.pct = Number(((pt.price - pre_close) / pre_close * 100).toFixed(4));
+              }
+          });
       }
 
       // ETF 分时数据自带 pre_close 和 pct，大盘指数的分时数据可能没有，统一在这里补充基准
