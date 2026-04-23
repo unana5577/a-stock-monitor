@@ -837,7 +837,7 @@ function readMarketAmountDailyMap() {
 async function backfillMarketAmountDaily(startDay) {
   const start = String(startDay || '').trim();
   if (!start) return { ok: false, error: 'missing startDay' };
-  const obj = await execPythonJson(['scripts/backfill_market_amount_daily.py', start], 180000);
+  const obj = await execPythonJson(['treasolo/backfill_market_amount_daily.py', start], 180000);
   if (!obj || obj.ok !== true) return obj || { ok: false, error: 'backfill failed' };
   const map = readMarketAmountDailyMap();
   return { ok: true, startDay: start, rows: obj.rows ?? map.size, totalDays: map.size, path: obj.path || marketAmountDailyPath() };
@@ -931,7 +931,7 @@ function appendEtfAmountTotalRow(day, total, count) {
 
 async function refreshEtfAmountTotalViaPython(dayOverride) {
   const day = String(dayOverride || latestTradingDay());
-  const obj = await execPythonJson(['scripts/etf_amount_total_sina.py', day], 60000);
+  const obj = await execPythonJson(['treasolo/etf_amount_total_sina.py', day], 60000);
   if (!obj || obj.ok !== true) return null;
   const d = String(obj.date || day);
   const total = Number(obj.total_amount);
@@ -4160,7 +4160,7 @@ const server = http.createServer(async (req, res) => {
   }
   if (url.pathname === '/api/data/health') {
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
-    const health = await execPythonJson(['scripts/get_data_health.py'], 30000);
+    const health = await execPythonJson(['treasolo/get_data_health.py'], 30000);
     if (!health) {
       res.writeHead(503, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ error: 'Failed to get data health status' }));
@@ -4171,7 +4171,7 @@ const server = http.createServer(async (req, res) => {
   }
   if (url.pathname === '/api/data/monitoring') {
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
-    const monitoring = await execPythonJson(['scripts/get_data_monitoring.py'], 30000);
+    const monitoring = await execPythonJson(['treasolo/get_data_monitoring.py'], 30000);
     if (!monitoring) {
       res.writeHead(503, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ error: 'Failed to get data monitoring status' }));
@@ -5873,7 +5873,7 @@ setInterval(() => {
     });
 
   // 2. 涨跌家持久化
-  execFile('python3', ['scripts/save_breadth_history.py'],
+  execFile('python3', ['treasolo/save_breadth_history.py'],
     { cwd: __dirname, timeout: 60000 },
     (err, stdout, stderr) => {
       if (err) {
