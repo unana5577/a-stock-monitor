@@ -18,7 +18,7 @@
     },
     {
       "id": "set-symbols",
-      "name": "生成四大指数",
+      "name": "生成六大指数",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [200, 100],
@@ -53,9 +53,9 @@
     }
   ],
   "connections": {
-    "定时触发": { "main": [ [ { "node": "生成四大指数", "type": "main", "index": 0 } ] ] },
-    "手动触发": { "main": [ [ { "node": "生成四大指数", "type": "main", "index": 0 } ] ] },
-    "生成四大指数": { "main": [ [ { "node": "调用本地 M1-B", "type": "main", "index": 0 } ] ] },
+    "定时触发": { "main": [ [ { "node": "生成六大指数", "type": "main", "index": 0 } ] ] },
+    "手动触发": { "main": [ [ { "node": "生成六大指数", "type": "main", "index": 0 } ] ] },
+    "生成六大指数": { "main": [ [ { "node": "调用本地 M1-B", "type": "main", "index": 0 } ] ] },
     "调用本地 M1-B": { "main": [ [ { "node": "输出执行结果", "type": "main", "index": 0 } ] ] }
   },
   "settings": {
