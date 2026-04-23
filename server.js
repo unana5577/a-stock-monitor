@@ -5639,11 +5639,46 @@ except Exception as e:
   // Static File Serving
   const pathname = url.pathname || '/';
   const mappedPath =
-    pathname === '/' ? 'index.html'
-      : (pathname === '/m1' || pathname === '/m1/') ? 'index_m1.html'
+    pathname === '/' ? '/index.html'
+      : (pathname === '/m1' || pathname === '/m1/') ? '/index_m1.html'
       : pathname;
   let filePath = path.join(__dirname, 'public', mappedPath);
   const ext = path.extname(filePath);
+  
+  // 简单密码拦截逻辑 (保护 /m1 和 /)
+  if (mappedPath === '/index_m1.html' || mappedPath === '/index.html') {
+    const authCookie = req.headers.cookie || '';
+    if (!authCookie.includes('auth=una5577')) {
+      // 检查 url 中是否带有正确的 pwd
+      const pwd = url.searchParams.get('pwd');
+      if (pwd === 'una5577') {
+        res.setHeader('Set-Cookie', 'auth=una5577; Max-Age=2592000; Path=/');
+        // 重定向去掉明文密码
+        res.writeHead(302, { 'Location': pathname });
+        res.end();
+        return;
+      } else {
+        // 如果密码不对或没带，返回简单的登录页
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(`
+          <!DOCTYPE html>
+          <html><head><meta charset="utf-8"><title>访问受限</title>
+          <style>body{font-family:sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;background:#f5f5f5;margin:0;}</style>
+          </head><body>
+          <div style="background:#fff;padding:30px;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.1);text-align:center;">
+            <h2 style="margin-top:0;color:#333;">请输入访问密码</h2>
+            <form method="GET" action="">
+              <input type="password" name="pwd" placeholder="Password" style="padding:8px;border:1px solid #ddd;border-radius:4px;outline:none;" autofocus>
+              <button type="submit" style="padding:8px 16px;background:#8b5cf6;color:white;border:none;border-radius:4px;cursor:pointer;margin-left:8px;">进入</button>
+            </form>
+          </div>
+          </body></html>
+        `);
+        return;
+      }
+    }
+  }
+
   const mimeTypes = {
     '.html': 'text/html',
     '.js': 'text/javascript',
@@ -5790,19 +5825,9 @@ async function updateWarmupIfNeeded() {
 // 重新生成warmup（从本地ETF数据）
 async function regenerateWarmup(days) {
   return new Promise((resolve) => {
-    const cfg = readSectorProxyConfig();
-    const proxyMap = cfg.variants?.etf || {};
-    const sectors = Object.keys(proxyMap).join(',');
+    console.log(`[Warmup] 开始生成... days=${days}`);
 
-    if (!sectors) {
-      console.log('[Warmup] ⚠️ 没有配置ETF，跳过');
-      resolve(false);
-      return;
-    }
-
-    console.log(`[Warmup] 开始生成... sectors=${sectors}, days=${days}`);
-
-    execFile('python3', ['fetch_sector_data.py', 'warmup', sectors, String(days)],
+    execFile('python3', ['treasolo/m1_warmup.py'],
       getExecOptions(),
       (err, stdout, stderr) => {
         if (err) {
