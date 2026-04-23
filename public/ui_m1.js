@@ -180,11 +180,14 @@ const app = createApp({
         const d = await res.json();
         if (d.text) {
           etfAiText.value = d.text;
+          etfAiUpdatedAt.value = d.asOf || '';
         } else {
           etfAiText.value = '暂无今日 AI 板块解析数据';
+          etfAiUpdatedAt.value = '';
         }
       } catch (e) {
         etfAiText.value = 'AI 板块解析加载失败';
+        etfAiUpdatedAt.value = '';
       } finally {
         etfAiLoading.value = false;
       }
