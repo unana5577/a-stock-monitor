@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
  
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
  
  
 def load_jsonl_all(p: Path) -> list[dict[str, Any]]:
@@ -156,23 +156,30 @@ def main() -> int:
  
     base_t = parse_hhmm(day, asof)
     if not base_t:
+        print(f"DEBUG: base_t parsing failed for {day} {asof}")
         return 1
     prev_t = base_t - timedelta(minutes=interval)
     prev_hhmm = prev_t.strftime("%H:%M")
- 
+
     rows: list[dict[str, Any]] = []
     series_cache: dict[str, list[dict[str, Any]]] = {}
- 
+    print(f"DEBUG: day={day}, asof={asof}, prev_hhmm={prev_hhmm}, etf_dict_len={len(etf_dict)}")
+
     for name, symbol in etf_dict.items():
         symbol = str(symbol)
         meta = etf_meta.get(name) or {}
         sub = meta.get("sub_category") or ""
-        series = load_jsonl_all(PROJECT_ROOT / f"data/etf/minute/{symbol}/{day}.jsonl")
+        series_file = PROJECT_ROOT / f"data/etf/minute/{symbol}/{day}.jsonl"
+        series = load_jsonl_all(series_file)
         series_cache[symbol] = series
- 
+        if symbol == "sh512480":
+            print(f"DEBUG: {symbol} series len = {len(series)}, path={series_file}")
+
         cur = pick_point_at_or_before(series, day, asof)
         prev = pick_point_at_or_before(series, day, prev_hhmm)
         if not cur:
+            if symbol == "sh512480":
+                print(f"DEBUG: cur is None for {symbol}")
             continue
  
         pct = safe_num(cur.get("pct"))
