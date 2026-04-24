@@ -561,10 +561,18 @@ const app = createApp({
       let currentTradedMinutes = 0;
       let finalCumulative = 0;
       
-      // Extract yesterday's cumulative volume mapping
+      // Extract yesterday's cumulative volume mapping with forward-fill to handle data gaps
       const ydayCumulativeMap = new Map();
-      intradayYdayVolume.value.forEach(pt => {
-        ydayCumulativeMap.set(pt.asOf, pt.market_amount / 100000000);
+      let lastYdayVol = 0;
+      let ydayIdx = 0;
+      xAxisData.forEach(timeStr => {
+        while (ydayIdx < intradayYdayVolume.value.length && intradayYdayVolume.value[ydayIdx].asOf <= timeStr) {
+          lastYdayVol = intradayYdayVolume.value[ydayIdx].market_amount / 100000000;
+          ydayIdx++;
+        }
+        if (lastYdayVol > 0) {
+          ydayCumulativeMap.set(timeStr, lastYdayVol);
+        }
       });
 
       if (intradayVolume.value.length > 0) {
@@ -603,15 +611,18 @@ const app = createApp({
 
         let forecastTotal = finalCumulative;
         if (currentTradedMinutes > 0 && currentTradedMinutes < 240) {
-          if (ydaySameTimeCumulative > 0 && ydayTotalAmount > 0) {
-            // Use relative pace compared to yesterday to forecast, which naturally accounts for the U-shaped volume curve
-            forecastTotal = (finalCumulative / ydaySameTimeCumulative) * ydayTotalAmount;
-          } else {
-            // Fallback if yesterday's data is missing
-            const remainingMinutes = 240 - currentTradedMinutes;
-            const avgSoFar = finalCumulative / currentTradedMinutes;
-            forecastTotal = finalCumulative + avgSoFar * remainingMinutes;
+          const remainingMinutes = 240 - currentTradedMinutes;
+          let lastMinuteVol = 0;
+          
+          if (intradayVolume.value.length > 1) {
+            const currentVol = intradayVolume.value[intradayVolume.value.length - 1].v;
+            const prevVol = intradayVolume.value[intradayVolume.value.length - 2].v;
+            lastMinuteVol = currentVol - prevVol;
+          } else if (intradayVolume.value.length === 1) {
+            lastMinuteVol = intradayVolume.value[0].v;
           }
+          
+          forecastTotal = finalCumulative + (lastMinuteVol * remainingMinutes);
         }
 
         volumeStats.value = {
