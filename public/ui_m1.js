@@ -231,44 +231,111 @@ const app = createApp({
       // 只保留 etfSymbols 里的 9 个核心 ETF
       return items.filter(item => item.symbol && etfSymbols.includes(item.symbol));
     });
-    
-    // 核心重构：三维判定（动能 + 乖离风险）
-    // 1. 强势 / 高风险（红色池）：动能向上，但乖离率极大，面临派发，或者主线逼空
+
+    const getClose = (rec) => {
+      if (!rec) return null;
+      const v = rec.close ?? rec.Close ?? rec.price ?? rec.last ?? null;
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
+    };
+
+    const calcBias20FromWarmup = (sym) => {
+      const hist = warmupHistory.value?.[sym] || [];
+      if (!Array.isArray(hist) || hist.length < 25) return { bias20: null, max: null, series: [] };
+      const closes = hist.map(getClose);
+      const series = [];
+      for (let i = 0; i < closes.length; i++) {
+        if (i < 19) {
+          series.push(null);
+          continue;
+        }
+        let sum = 0;
+        let cnt = 0;
+        for (let j = i - 19; j <= i; j++) {
+          const c = closes[j];
+          if (c == null) continue;
+          sum += c;
+          cnt++;
+        }
+        if (cnt < 15) {
+          series.push(null);
+          continue;
+        }
+        const ma20 = sum / cnt;
+        if (!ma20) {
+          series.push(null);
+          continue;
+        }
+        const c0 = closes[i];
+        if (c0 == null) {
+          series.push(null);
+          continue;
+        }
+        series.push(((c0 - ma20) / ma20) * 100);
+      }
+      const finite = series.filter(v => Number.isFinite(v));
+      if (!finite.length) return { bias20: null, max: null, series };
+      return { bias20: finite[finite.length - 1], max: Math.max(...finite), series };
+    };
+
+    const getBiasMetrics = (item) => {
+      const ind = item?.指标数据 || {};
+      const bias20 = Number(ind.Bias_20 ?? ind.bias_20 ?? null);
+      const max = Number(ind.Bias_20_History_Max ?? ind.bias_20_history_max ?? null);
+      if (Number.isFinite(bias20) && Number.isFinite(max) && max !== 0) return { bias20, max, series: [] };
+      return calcBias20FromWarmup(item?.symbol);
+    };
+
+    const isUpTrend = (item) => {
+      const m = item?.动能 || '';
+      return m.includes('强势向上') || m.includes('偏强向上');
+    };
+
+    const isNearExtreme = (item) => {
+      const { bias20, max } = getBiasMetrics(item);
+      if (!Number.isFinite(bias20) || !Number.isFinite(max) || max === 0) return false;
+      return bias20 >= 0.9 * max || bias20 > max;
+    };
+
+    const isHighRisk = (item) => {
+      const stage = item?.阶段信号 || '';
+      if (stage.includes('加速期') || stage.includes('背离') || stage.includes('衰退期')) return true;
+      return isNearExtreme(item);
+    };
+
+    const isMainline = (item) => {
+      const behavior = item?.资金行为 || '';
+      if (behavior.includes('主线逼空')) return true;
+      const { series, max } = getBiasMetrics(item);
+      if (!series?.length || !Number.isFinite(max) || max === 0) return false;
+      const last3 = series.slice(-3);
+      if (last3.length < 3) return false;
+      return last3.every(v => Number.isFinite(v) && (v >= 0.9 * max || v > max));
+    };
+
     const etfLifecycleSell = computed(() => {
       const items = etfLifecycleItems.value || [];
       return items.filter(item => {
-        const momentum = item.动能 || '';
-        const signal = item.阶段信号 || '';
-        const advice = item.操作建议 || '';
-        
-        const isUp = momentum.includes('向上') || momentum.includes('主升');
-        const isExtreme = signal.includes('赶顶') || signal.includes('极值') || advice.includes('止盈') || advice.includes('离场') || advice.includes('减仓') || advice.includes('主线');
-        const isBreakdown = momentum.includes('向下破位') || signal.includes('杀跌') || signal.includes('衰退');
-        
-        return (isUp && isExtreme) || isBreakdown;
+        if (!isUpTrend(item)) return false;
+        return isMainline(item) || isHighRisk(item);
       });
     });
 
-    // 2. 趋势向上 / 风险可控（绿色池）：动能向上，且乖离率在安全范围内
     const etfLifecycleHold = computed(() => {
       const items = etfLifecycleItems.value || [];
       const sellIds = new Set(etfLifecycleSell.value.map(i => i.symbol));
       return items.filter(item => {
         if (sellIds.has(item.symbol)) return false; // 排除已经进入高风险极值池的
-        
-        const momentum = item.动能 || '';
-        return momentum.includes('向上') || momentum.includes('主升');
+        return isUpTrend(item);
       });
     });
 
-    // 3. 观望 / 回避（黄色池）：其他所有震荡、弱势、没方向的
     const etfLifecycleWait = computed(() => {
       const items = etfLifecycleItems.value || [];
       const sellIds = new Set(etfLifecycleSell.value.map(i => i.symbol));
       const holdIds = new Set(etfLifecycleHold.value.map(i => i.symbol));
       return items.filter(item => {
         if (sellIds.has(item.symbol) || holdIds.has(item.symbol)) return false;
-        // 其余统统归入震荡观望池（如：震荡、弱势修复、弱势向下等）
         return true;
       });
     });
@@ -615,13 +682,14 @@ const app = createApp({
           let lastMinuteVol = 0;
           
           if (intradayVolume.value.length > 1) {
-            const currentVol = intradayVolume.value[intradayVolume.value.length - 1].v;
-            const prevVol = intradayVolume.value[intradayVolume.value.length - 2].v;
+            const currentVol = intradayVolume.value[intradayVolume.value.length - 1].market_amount / 100000000;
+            const prevVol = intradayVolume.value[intradayVolume.value.length - 2].market_amount / 100000000;
             lastMinuteVol = currentVol - prevVol;
           } else if (intradayVolume.value.length === 1) {
-            lastMinuteVol = intradayVolume.value[0].v;
+            lastMinuteVol = intradayVolume.value[0].market_amount / 100000000;
           }
           
+          if (!Number.isFinite(lastMinuteVol) || lastMinuteVol < 0) lastMinuteVol = 0;
           forecastTotal = finalCumulative + (lastMinuteVol * remainingMinutes);
         }
 
