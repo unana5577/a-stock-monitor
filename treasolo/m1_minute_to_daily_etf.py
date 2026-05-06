@@ -1,17 +1,24 @@
 import json
 import argparse
 import sys
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-def run_minute_to_daily_etf(symbol: str, day: str):
+def run_minute_to_daily_etf(symbol: str, day: str, force: bool = False):
     print(f"\n[{datetime.now().strftime('%H:%M:%S')}] 正在执行 M1-D: ETF分时转日线 ({symbol})")
     
     m1_etf_dir = PROJECT_ROOT / "data" / "etf" / "daily" / symbol
     daily_file = m1_etf_dir / "daily.jsonl"
     minute_file = PROJECT_ROOT / f"data/etf/minute/{symbol}/{day}.jsonl"
+
+    bj_now = datetime.now(timezone.utc).astimezone(timezone(timedelta(hours=8)))
+    bj_day = bj_now.strftime("%Y-%m-%d")
+    bj_hm = bj_now.strftime("%H:%M")
+    if not force and day == bj_day and bj_hm < "15:00":
+        print(f"  ⏭️ 未到收盘时间({bj_hm})，跳过写入当日日线")
+        return 0
     
     if not minute_file.exists():
         print(f"  ❌ 找不到当天的 ETF 分时文件: {minute_file.relative_to(PROJECT_ROOT)}")
@@ -71,6 +78,8 @@ def run_minute_to_daily_etf(symbol: str, day: str):
                     "price": float(row[2]),
                     "vol": float(row[5]),
                     "amount": float(row[5]) * 100 * float(row[2]),
+                    "source": "tencent_backfill",
+                    "amountMode": "incremental",
                     "pct": 0.0
                 }
                 minute_lines.append(json.dumps(record, ensure_ascii=False))
@@ -88,6 +97,10 @@ def run_minute_to_daily_etf(symbol: str, day: str):
     # 读取最终的分时数据，合成日线
     # ==========================================
     try:
+        if not minute_lines:
+            print("  ❌ 分时数据为空，无法合成日线")
+            return 1
+
         last_minute = json.loads(minute_lines[-1])
         current_close = float(last_minute.get("price", 0) or last_minute.get("close", 0))
         
@@ -120,18 +133,29 @@ def run_minute_to_daily_etf(symbol: str, day: str):
         current_open = first_open if first_open is not None else current_close
         current_high = max(highs) if highs else current_close
         current_low = min(lows) if lows else current_close
-        
-        # 核心逻辑：判断数据口径
-        if is_complete:
-            # 分支 A: 本地抓取完整，amount 是累计总额，直接取最后一条
-            current_amount = float(last_minute.get("amount", 0))
-            current_vol = float(last_minute.get("vol", 0))
-            print(f"  ✅ [数据口径] 本地完整，直接取最后一条累计值 (Amount: {current_amount:,.2f})")
-        else:
-            # 分支 B: 走过官方回补，amount 是单根 K 线增量，必须 sum 加总
+
+        non_decreasing_ratio = 0.0
+        if len(amounts) > 1:
+            non_decreasing = 0
+            for i in range(1, len(amounts)):
+                if amounts[i] >= amounts[i - 1]:
+                    non_decreasing += 1
+            non_decreasing_ratio = non_decreasing / (len(amounts) - 1)
+
+        is_incremental = (
+            last_minute.get("source") == "tencent_backfill"
+            or last_minute.get("amountMode") == "incremental"
+            or non_decreasing_ratio < 0.9
+        )
+
+        if is_incremental:
             current_amount = sum(amounts) if amounts else 0.0
             current_vol = sum(vols) if vols else 0.0
-            print(f"  ✅ [数据口径] 官方回补，使用 sum() 加总全天增量 (Amount: {current_amount:,.2f})")
+            print(f"  ✅ [成交额口径] 增量口径，sum() 加总全天 (Amount: {current_amount:,.2f})")
+        else:
+            current_amount = float(last_minute.get("amount", 0))
+            current_vol = float(last_minute.get("vol", 0))
+            print(f"  ✅ [成交额口径] 累计口径，取最后一分钟累计值 (Amount: {current_amount:,.2f})")
             
         # 计算准确的全天 pct
         if prev_close and prev_close > 0:
@@ -204,7 +228,8 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("--symbol", required=True)
     p.add_argument("--day", default="")
+    p.add_argument("--force", action="store_true")
     args = p.parse_args()
     
     day = args.day or datetime.now().strftime("%Y-%m-%d")
-    sys.exit(run_minute_to_daily_etf(args.symbol, day))
+    sys.exit(run_minute_to_daily_etf(args.symbol, day, force=args.force))
