@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  app:
+    build: 
+      context: ../
+      dockerfile: deploy_configs/Dockerfile
+    container_name: a-stock-app
+    restart: unless-stopped
+    ports:
+      - "8787:8787"
+    env_file:
+      - ../.env
+    environment:
+      - TZ=Asia/Shanghai
+      - NODE_ENV=production
+    volumes:
+      - ../data:/app/data
+      - ../scripts/legacy:/app/scripts/legacy
+# n8n 任务调度服务
+  n8n:
+    image: docker.m.daocloud.io/n8nio/n8n:latest
+    container_name: a-stock-n8n
+    restart: unless-stopped
+    ports:
+      # 为了避免和本地其他 n8n 测试冲突，改为 15679
+      - "15679:5678"
+    environment:
+      - N8N_HOST=0.0.0.0
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - NODE_ENV=production
+      - GENERIC_TIMEZONE=Asia/Shanghai
+      - TZ=Asia/Shanghai
+      - EXECUTIONS_DATA_SAVE_ON_ERROR=all
+      - EXECUTIONS_DATA_SAVE_ON_SUCCESS=all
+      - EXECUTIONS_DATA_SAVE_ON_PROGRESS=true
+      - EXECUTIONS_DATA_PRUNE=true
+      - EXECUTIONS_DATA_MAX_AGE=168
+      - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
+      # 允许通过 HTTP (非 HTTPS) 和 IP 直接访问控制台
+      - N8N_SECURE_COOKIE=false
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ../data:/app/data
+
+volumes:
+  n8n_data:
+    name: a_stock_n8n_data

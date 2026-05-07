@@ -19,6 +19,5 @@ openclaw_workspace/
 # 注意：这很重要，否则 60 天的数据会导致 git 仓库极其臃肿
 data/
 online_debug_data/
-deploy_configs/
 data_maintenance.py
 待清理垃圾文件/
