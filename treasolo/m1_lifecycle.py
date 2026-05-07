@@ -31,6 +31,31 @@ SYMBOL_TO_NAME = {
     "sh563530": "商业航天ETF"   # 修正：之前写成了数字经济，实际为商业航天
 }
 
+def load_daily_amount_volume(symbol: str) -> dict:
+    candidates = [
+        PROJECT_ROOT / "data/etf/daily" / symbol / "daily.jsonl",
+        PROJECT_ROOT / "data/index/daily" / symbol / "daily.jsonl",
+    ]
+    p = next((x for x in candidates if x.exists()), None)
+    if p is None:
+        return {}
+    m = {}
+    with open(p, "r", encoding="utf-8") as f:
+        for line in f:
+            if not line.strip():
+                continue
+            try:
+                obj = json.loads(line)
+                d = obj.get("date")
+                if not d:
+                    continue
+                amt = obj.get("amount", 0) or 0
+                vol = obj.get("vol", obj.get("volume", 0)) or 0
+                m[d] = (amt, vol)
+            except Exception:
+                continue
+    return m
+
 def build_lifecycle():
     print(f"\n[{datetime.now().strftime('%H:%M:%S')}] 正在执行 M1-Lifecycle: 基于 Warmup 数据进行业务分析")
     
@@ -50,16 +75,22 @@ def build_lifecycle():
     df_map = {}
     for symbol, records in history.items():
         if not records: continue
+        av_map = load_daily_amount_volume(symbol)
         # 补齐缺失的列
         for r in records:
-            if "amount" not in r: r["amount"] = 0
-            if "volume" not in r: r["volume"] = 0
+            if "date" in r and r["date"] in av_map:
+                amt, vol = av_map[r["date"]]
+                r["amount"] = amt
+                r["volume"] = vol
+            else:
+                if "amount" not in r: r["amount"] = 0
+                if "volume" not in r: r["volume"] = 0
             if "close" not in r: r["close"] = r.get("price", 0)
         df = pd.DataFrame(records)
         df_map[symbol] = df
         
-    # 2. 准备 benchmark_map (6大宽基指数)
-    benchmark_symbols = ["sh000001", "sz399001", "sz399006", "sh000688", "sh000300", "sh000852"]
+    # 2. 准备 benchmark_map (4大宽基指数)
+    benchmark_symbols = ["sh000001", "sz399001", "sz399006", "sh000688"]
     benchmark_map = {}
     for sym in benchmark_symbols:
         if sym in df_map:

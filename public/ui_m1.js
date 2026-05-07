@@ -297,27 +297,12 @@ const app = createApp({
       return bias20 >= 0.9 * max || bias20 > max;
     };
 
-    const isHighRisk = (item) => {
-      const stage = item?.阶段信号 || '';
-      if (stage.includes('加速期') || stage.includes('背离') || stage.includes('衰退期')) return true;
-      return isNearExtreme(item);
-    };
-
-    const isMainline = (item) => {
-      const behavior = item?.资金行为 || '';
-      if (behavior.includes('主线逼空')) return true;
-      const { series, max } = getBiasMetrics(item);
-      if (!series?.length || !Number.isFinite(max) || max === 0) return false;
-      const last3 = series.slice(-3);
-      if (last3.length < 3) return false;
-      return last3.every(v => Number.isFinite(v) && (v >= 0.9 * max || v > max));
-    };
-
     const etfLifecycleSell = computed(() => {
       const items = etfLifecycleItems.value || [];
       return items.filter(item => {
-        if (!isUpTrend(item)) return false;
-        return isMainline(item) || isHighRisk(item);
+        const m = item?.动能 || '';
+        if (!m.includes('强势向上')) return false;
+        return isNearExtreme(item);
       });
     });
 

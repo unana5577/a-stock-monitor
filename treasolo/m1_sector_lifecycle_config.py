@@ -154,6 +154,20 @@ QUANTILE_CONFIG = {
     "update_frequency": "monthly"  # 更新频率：monthly=每月重算
 }
 
+MA5_SLOPE_STRONG_MIN = 0.002
+
+PCT_P80_PER_ETF = {
+    "有色金属ETF": 1.36,
+    "半导体ETF": 1.51,
+    "创新药ETF": 1.17,
+    "通信ETF": 1.89,
+    "游戏ETF": 1.82,
+    "新能源ETF": 1.32,
+    "云计算ETF": 1.69,
+    "机器人ETF": 1.42,
+    "商业航天ETF": 2.63
+}
+
 # ETF专属分位数阈值（优化后的配置）
 # 此配置由 threshold_optimizer.py 自动生成
 QUANTILE_THRESHOLDS_PER_ETF = {}

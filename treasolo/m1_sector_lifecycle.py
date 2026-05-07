@@ -4,8 +4,11 @@ from treasolo.m1_sector_lifecycle_config import (
     DEFAULT_COMBO,
     DEFAULT_THRESHOLDS,
     SECTOR_THRESHOLDS,
+    MA5_SLOPE_STRONG_MIN,
+    PCT_P80_PER_ETF,
 )
 import pandas as pd
+import numpy as np
 
 
 METRIC_SCHEMA = [
@@ -163,48 +166,29 @@ def determine_position_area(alpha_20: Optional[float], amount_share_ma5: float) 
     return "冰点区"
 
 
-def determine_momentum(alpha_5: Optional[float], ma5_slope: float, close: float, ma5: float, alpha_5_q: Optional[float] = None) -> str:
-    """
-    动能判断（使用分位数阈值）
-
-    参数:
-    - alpha_5: 5日超额收益率（百分比，如 0.03 表示 3%）
-    - ma5_slope: 5日均线斜率
-    - close: 当前收盘价
-    - ma5: 5日均线
-    - alpha_5_q: Alpha_5 在历史数据中的分位数位置（0~1），None 时使用绝对值判断
-    """
+def determine_momentum(ma5_slope: float, close: float, ma5: float, pct: float, heat_up: bool, pct_p80: float) -> str:
     above = close > ma5 if ma5 else False
 
-    if alpha_5_q is not None:
-        # 分位数方案（当前实现：70% 分位数）
-        if alpha_5_q > 0.7 and ma5_slope > 0 and above:
+    up_day = pct >= 0
+    is_strong_day = pct >= pct_p80
+
+    if above and ma5_slope >= MA5_SLOPE_STRONG_MIN:
+        if is_strong_day and heat_up:
             return "强势向上"
-        if alpha_5_q > 0.5 and ma5_slope > 0:
+        if up_day:
             return "偏强向上"
-        if alpha_5_q < 0.3 and ma5_slope < 0 and not above:
-            return "弱势向下"
-        if alpha_5_q < 0.3:
-            return "弱势反弹"
         return "中性震荡"
-    else:
-        # 文档原方案（绝对值判断，保留兼容）
-        a = (alpha_5 or 0) * 100
-        if a > 3 and ma5_slope > 0 and above:
-            return "强势向上"
-        if a > 3 and ma5_slope < 0 and not above:
-            return "强势向下"
-        if 1 <= a <= 3 and ma5_slope > 0 and above:
-            return "偏强向上"
-        if 1 <= a <= 3 and ma5_slope < 0 and not above:
-            return "偏强向下"
-        if -1 <= a <= 1:
-            return "中性震荡"
-        if a < -1 and ma5_slope < 0 and not above:
-            return "弱势向下"
-        if a < -1 and ma5_slope > 0 and above:
+
+    if (not above) and ma5_slope < 0:
+        if up_day:
             return "弱势反弹"
-        return "中性震荡" if above else "弱势向下"
+        return "弱势向下"
+
+    if up_day:
+        if is_strong_day:
+            return "偏强向上"
+        return "弱势反弹"
+    return "弱势向下"
 
 
 def determine_fund_behavior(
@@ -314,19 +298,20 @@ def determine_advice(momentum: str, behavior: str) -> str:
     return "观望"
 
 
-def build_momentum_reason(momentum: str, alpha_5: Optional[float]) -> str:
-    a = (alpha_5 or 0) * 100
-    if momentum in ["强势向上", "偏强向上"]:
-        return f"5日超额收益{a:+.1f}%（短期偏强）"
-    if momentum == "强势向下":
-        return f"5日超额收益{a:+.1f}%（短期转弱）"
-    if momentum == "偏强向下":
-        return f"5日超额收益{a:+.1f}%（上涨回调）"
-    if momentum == "弱势向下":
-        return f"5日超额收益{a:+.1f}%（趋势走弱）"
+def build_momentum_reason(momentum: str, amount_up: bool, heat_up: bool, pct: float, pct_p80: float) -> str:
+    vol_state = "放量" if amount_up else "缩量"
+    heat_state = "升温" if heat_up else "降温"
+    strength_state = "强势日" if pct >= pct_p80 else "非强势日"
+
+    if momentum == "强势向上":
+        return f"5日趋势向上，当日涨跌{pct:+.2f}% >= P80({pct_p80:.2f}%)，资金热度较昨日{heat_state}（短期强势）"
+    if momentum == "偏强向上":
+        return f"5日趋势向上，当日涨跌{pct:+.2f}%（{strength_state}），资金热度较昨日{heat_state}（趋势向上）"
     if momentum == "弱势反弹":
-        return f"5日超额收益{a:+.1f}%（弱势反弹）"
-    return f"5日超额收益{a:+.1f}%（震荡）"
+        return f"5日趋势不强但出现反弹，当日涨跌{pct:+.2f}%（{strength_state}），资金热度较昨日{heat_state}"
+    if momentum == "弱势向下":
+        return f"5日趋势走弱，当日涨跌{pct:+.2f}%（{strength_state}），资金热度较昨日{heat_state}"
+    return f"5日趋势不明，当日涨跌{pct:+.2f}%（{strength_state}），资金热度较昨日{heat_state}（震荡）"
 
 
 def build_behavior_reason(
@@ -637,7 +622,28 @@ def analyze_sector(
     except Exception:
         yesterday_pct = 0
 
-    momentum = determine_momentum(alpha_5, ma5_slope, close, ma5, alpha_5_q)
+    amount_series = sector_df["amount"] if "amount" in sector_df.columns and len(sector_df) else pd.Series()
+    amount_today = float(amount_series.iloc[-1]) if len(amount_series) else 0
+    amount_yesterday = float(amount_series.iloc[-2]) if len(amount_series) >= 2 else 0
+    amount_up = amount_today >= amount_yesterday if amount_yesterday else True
+
+    amount_share_up = True
+    try:
+        if amount_share_series and len(amount_share_series) >= 2:
+            amount_share_up = float(amount_share_series[-1]) >= float(amount_share_series[-2])
+    except Exception:
+        amount_share_up = True
+
+    pct_p80 = float(PCT_P80_PER_ETF.get(sector_name or "", 0) or 0)
+    if pct_p80 <= 0:
+        try:
+            pct_hist = (sector_df["close"].pct_change() * 100).dropna()
+            pct_hist = pct_hist[pct_hist.abs() <= 30]
+            pct_p80 = float(np.percentile(pct_hist.values, 80)) if len(pct_hist) >= 60 else 2.0
+        except Exception:
+            pct_p80 = 2.0
+
+    momentum = determine_momentum(ma5_slope, close, ma5, pct_val, amount_share_up, pct_p80)
     behavior = determine_fund_behavior(
         amount_share_pct=amount_share_pct,
         amount_share_change=amount_share_change,
@@ -655,7 +661,7 @@ def analyze_sector(
         behavior = "主线逼空(连续新高)"
         
     advice = determine_advice(momentum, behavior)
-    momentum_reason = build_momentum_reason(momentum, alpha_5)
+    momentum_reason = build_momentum_reason(momentum, amount_up, amount_share_up, pct_val, pct_p80)
     behavior_reason = build_behavior_reason(
         behavior,
         amount_share_change,
@@ -722,12 +728,14 @@ def analyze_sector(
             "MA20": round(ma20, 2) if ma20 else 0,
             "MA60": round(ma60, 2) if ma60 else 0,
             "MA5_Slope": round(ma5_slope, 4) if ma5_slope else 0,
+            "MA20_Slope": round(ma20_slope, 4) if ma20_slope else 0,
             "MA60_Slope": round(ma60_slope, 4) if ma60_slope else 0,
             "Bias_20": round(bias_20, 2),
             "Bias_20_Pct": round(bias_20, 2),
             "Bias_20_History_Max": round(bias_20_history_max, 2) if bias_20_history_max is not None else None,
             "Bias_20_History_Min": round(bias_20_history_min, 2) if bias_20_history_min is not None else None,
             "Pct": round(pct_val, 2),
+            "Pct_P80": round(pct_p80, 2),
             "Pct_Pct": round(pct_val, 2),
             "alpha_5": round(alpha_5 * 100, 2) if alpha_5 is not None else None,
             "alpha_20": round(alpha_20 * 100, 2) if alpha_20 is not None else None,
