@@ -299,19 +299,16 @@ def determine_advice(momentum: str, behavior: str) -> str:
 
 
 def build_momentum_reason(momentum: str, amount_up: bool, heat_up: bool, pct: float, pct_p80: float) -> str:
-    vol_state = "放量" if amount_up else "缩量"
     heat_state = "升温" if heat_up else "降温"
-    strength_state = "强势日" if pct >= pct_p80 else "非强势日"
-
     if momentum == "强势向上":
-        return f"5日趋势向上，当日涨跌{pct:+.2f}% >= P80({pct_p80:.2f}%)，资金热度较昨日{heat_state}（短期强势）"
+        return f"5日趋势向上，资金热度较昨日{heat_state}"
     if momentum == "偏强向上":
-        return f"5日趋势向上，当日涨跌{pct:+.2f}%（{strength_state}），资金热度较昨日{heat_state}（趋势向上）"
+        return f"5日趋势向上，资金热度较昨日{heat_state}"
     if momentum == "弱势反弹":
-        return f"5日趋势不强但出现反弹，当日涨跌{pct:+.2f}%（{strength_state}），资金热度较昨日{heat_state}"
+        return f"5日趋势不明，资金热度较昨日{heat_state}"
     if momentum == "弱势向下":
-        return f"5日趋势走弱，当日涨跌{pct:+.2f}%（{strength_state}），资金热度较昨日{heat_state}"
-    return f"5日趋势不明，当日涨跌{pct:+.2f}%（{strength_state}），资金热度较昨日{heat_state}（震荡）"
+        return f"5日趋势走弱，资金热度较昨日{heat_state}"
+    return f"5日趋势不明，资金热度较昨日{heat_state}"
 
 
 def build_behavior_reason(
@@ -324,22 +321,22 @@ def build_behavior_reason(
 ) -> str:
     if behavior == "放量启动":
         if amount_share_change is not None:
-            return f"资金热度相对5日均值增长{amount_share_change * 100:.0f}%（放量进场）"
-        return "资金热度显著提升（放量进场）"
+            return f"资金热度相对5日均值增长{amount_share_change * 100:.0f}%，放量进场"
+        return "资金热度显著提升，放量进场"
     if behavior == "资金撤退":
         if amount_share_high_20 is not None and amount_share_high_20 > 0:
             decline = (amount_share_high_20 - amount_share_pct) / amount_share_high_20
-            return f"资金热度较20日高点回落{decline * 100:.0f}%（资金撤退）"
-        return "资金热度回落（资金撤退）"
+            return f"资金热度较20日高点回落{decline * 100:.0f}%，资金撤退"
+        return "资金热度回落，资金撤退"
     if behavior == "恐慌出逃":
-        return f"当日涨跌{pct:+.1f}%，资金关注高位（恐慌出逃）"
+        return "抛压集中释放，恐慌出逃"
     if behavior == "加速赶顶":
-        return f"偏离均线{bias_20:.1f}%（加速赶顶）"
+        return f"偏离均线{bias_20:.1f}%，加速赶顶"
     if behavior == "主线逼空(连续新高)":
-        return f"偏离均线{bias_20:.1f}%（主线逼空）"
+        return f"偏离均线{bias_20:.1f}%，主线逼空"
     if behavior == "超跌反弹":
-        return f"偏离均线{bias_20:.1f}%（超跌反弹）"
-    return "资金热度平稳（横盘整理）"
+        return f"偏离均线{bias_20:.1f}%，超跌反弹"
+    return "资金热度平稳，横盘整理"
 
 
 def build_bias_compare(
@@ -661,11 +658,17 @@ def analyze_sector(
         behavior = "主线逼空(连续新高)"
         
     advice = determine_advice(momentum, behavior)
-    trend5 = "5日趋势向上" if (close > ma5 and ma5_slope >= MA5_SLOPE_STRONG_MIN) else "5日趋势不明"
-    strong_day = "强势日" if pct_val >= pct_p80 else ""
-    heat_state = "升温" if amount_share_up else "降温"
+    momentum_reason = build_momentum_reason(momentum, amount_up, amount_share_up, pct_val, pct_p80)
+    behavior_reason = build_behavior_reason(
+        behavior=behavior,
+        amount_share_change=amount_share_change,
+        amount_share_high_20=amount_share_high_20,
+        amount_share_pct=amount_share_pct,
+        bias_20=bias_20,
+        pct=pct_val,
+    )
     prefix = f"以{benchmark_name}为基准，" if benchmark_name else ""
-    attribution = f"{prefix}{trend5}，当日涨跌{pct_val:+.2f}%{strong_day}，资金热度较昨日{heat_state}，{behavior}。"
+    attribution = f"{prefix}{momentum_reason}，{behavior_reason}。"
     bias_compare = build_bias_compare(bias_20, bias_20_history_max, bias_20_history_min)
 
     # 计算评分（用于排序）

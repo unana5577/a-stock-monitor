@@ -508,7 +508,7 @@
                         </span>
                       </div>
                       <div class="text-gray-500 font-mono">
-                        {{ '资金热度 ' }}{{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.热度占比 || '-') : (item.热度占比 || (item.指标数据?.Amount_Share_Pct != null ? item.指标数据.Amount_Share_Pct + '%' : '-')) }}
+                        {{ activeLifecycleTab === 'intraday' ? '' : ('资金热度 ' + (item.热度占比 || (item.指标数据?.Amount_Share_Pct != null ? item.指标数据.Amount_Share_Pct + '%' : '-'))) }}
                       </div>
                     </div>
                     
@@ -572,7 +572,7 @@
                         </span>
                       </div>
                       <div class="text-gray-500 font-mono">
-                        {{ '资金热度 ' }}{{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.热度占比 || '-') : (item.热度占比 || (item.指标数据?.Amount_Share_Pct != null ? item.指标数据.Amount_Share_Pct + '%' : '-')) }}
+                        {{ activeLifecycleTab === 'intraday' ? '' : ('资金热度 ' + (item.热度占比 || (item.指标数据?.Amount_Share_Pct != null ? item.指标数据.Amount_Share_Pct + '%' : '-'))) }}
                       </div>
                     </div>
                     
@@ -636,7 +636,7 @@
                         </span>
                       </div>
                       <div class="text-gray-500 font-mono">
-                        {{ '资金热度 ' }}{{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.热度占比 || '-') : (item.热度占比 || (item.指标数据?.Amount_Share_Pct != null ? item.指标数据.Amount_Share_Pct + '%' : '-')) }}
+                        {{ activeLifecycleTab === 'intraday' ? '' : ('资金热度 ' + (item.热度占比 || (item.指标数据?.Amount_Share_Pct != null ? item.指标数据.Amount_Share_Pct + '%' : '-'))) }}
                       </div>
                     </div>
                     

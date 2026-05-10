@@ -390,37 +390,37 @@ def intraday_judgement(zone: str, is_persistent: bool, heat: str) -> tuple[str, 
 def intraday_reason_text(zone: str, is_persistent: bool, heat: str) -> str:
     if zone == "正常下跌":
         if is_persistent and heat in ("放量", "平量"):
-            return "跌超1%但没破底线，且1小时以上跌不下去了，资金在持续接盘。"
+            return "跌超1%但未破底线，资金在持续接盘。"
         if is_persistent and heat == "缩量":
-            return "跌超1%后横住超1小时，没人卖了，流动性干涸。"
-        return "刚跌下来，还没稳住，承接不明。"
+            return "跌超1%后横盘运行，成交显著萎缩，流动性下降。"
+        return "趋势未明，承接不明。"
     if zone == "极端下跌":
         if heat == "放量":
-            return "跌破底线且伴随巨大成交量，恐慌踩踏。"
-        return "跌破底线但无量，流动性枯竭导致的阴跌。"
+            return "跌破底线且放量，抛压集中释放，风险偏高。"
+        return "跌破底线但成交清淡，流动性不足导致阴跌。"
     if zone == "横盘":
         if is_persistent and heat == "放量":
-            return "水面附近长时间僵持且巨量换手，多空激战。"
+            return "水面附近长时间拉锯且放量换手，多空分歧加剧。"
         if is_persistent and heat == "缩量":
-            return "水面附近长时间僵持，没人交易，方向未明。"
-        return "水面附近常规窄幅震荡。"
+            return "水面附近长时间窄幅震荡，成交清淡，方向未明。"
+        return "水面附近窄幅震荡。"
     if zone == "正常上涨":
         if is_persistent:
-            return "温和推升且时间够长，趋势健康。"
-        return "刚拉起来，还没站稳。"
+            return "温和推升且持续，趋势相对健康。"
+        return "上行刚形成，仍需确认。"
     if zone == "强势上涨":
         if is_persistent and heat == "放量":
-            return "涨到极值后长时间横住，且巨量换手，主力在派发。"
+            return "高位放量但价格滞涨，兑现压力增大。"
         if is_persistent and heat in ("缩量", "平量"):
-            return "涨到极值后长时间坚挺，抛压极小，主力锁仓。"
+            return "高位缩量且价格坚挺，抛压有限。"
         if (not is_persistent) and heat == "放量":
-            return "瞬间拉到极值且爆量，容易冲高回落。"
-        return "涨到极值附近但尚未站稳。"
-    return "盘中走势未形成有效定性。"
+            return "快速冲高并放量，短线回落风险增加。"
+        return "高位附近波动，尚未走稳。"
+    return "盘中走势尚未形成有效定性。"
  
  
 def build_table(rows: list[dict[str, Any]]) -> str:
-    headers = ["ETF", "池", "pct", "价格空间", "盘中状态", "承接/派发", "预估量比"]
+    headers = ["ETF", "池", "pct", "价格空间", "盘中状态", "承接/派发", "资金判断"]
     md = ["| " + " | ".join(headers) + " |", "| " + " | ".join(["---"] * len(headers)) + " |"]
     for r in rows:
         md.append(
@@ -548,8 +548,6 @@ def main() -> int:
                 est_ratio = est_amt / float(prev_amt)
         heat = fund_heat_label(est_ratio)
         intraday_status, fund_judge = intraday_judgement(zone, is_persistent, heat)
-        if fund_judge == "待确认":
-            fund_judge = ""
 
         lci = lifecycle_map.get(symbol) or {}
         pool = "黄"
@@ -578,7 +576,7 @@ def main() -> int:
                 "操作建议": intraday_status,
                 "动能": zone,
                 "资金行为": f"{time_state}·{heat}",
-                "热度占比": heat,
+                "热度占比": fund_judge,
                 "归因说明": evidence,
             }
         )

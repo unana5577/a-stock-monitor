@@ -3724,20 +3724,48 @@ const server = http.createServer(async (req, res) => {
 
   if (url.pathname === '/api/m1/data/overview' && req.method === 'GET') {
     try {
-      const getBeijingDate = () => {
-        const d = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Shanghai' }));
+      const getBeijingNow = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Shanghai' }));
+      const formatDay = (d) => {
         const year = d.getFullYear();
         const month = String(d.getMonth() + 1).padStart(2, '0');
         const date = String(d.getDate()).padStart(2, '0');
         return `${year}-${month}-${date}`;
+      };
+      const parseDayFromIntradayFile = (filename) => {
+        const m = filename.match(/^etf_snapshot_(\d{4}-\d{2}-\d{2})\.jsonl$/);
+        return m ? m[1] : null;
+      };
+      const readSnapshotFromFile = (filePath, cutoffAsOf) => {
+        try {
+          const lines = fs.readFileSync(filePath, 'utf8').trim().split('\n').filter(Boolean);
+          if (lines.length === 0) return null;
+          if (!cutoffAsOf) {
+            return JSON.parse(lines[lines.length - 1]);
+          }
+          let best = null;
+          for (let i = 0; i < lines.length; i++) {
+            let obj = null;
+            try { obj = JSON.parse(lines[i]); } catch (e) { obj = null; }
+            if (!obj) continue;
+            const asOf = obj.asOf;
+            if (!asOf) continue;
+            if (asOf <= cutoffAsOf) best = obj;
+          }
+          if (best) return best;
+          return JSON.parse(lines[lines.length - 1]);
+        } catch (e) {
+          return null;
+        }
       };
       
       const warmupPath = path.join(__dirname, 'data/warmup/warmup-60.json');
       const lifecyclePath = path.join(__dirname, 'data/lifecycle/lifecycle.json');
       const dailyAmountPath = path.join(__dirname, 'data/market/daily/amount/daily.jsonl');
       
-      const todayStr = getBeijingDate();
-      const intradayPath = path.join(__dirname, 'data', 'lifecycle', 'intraday', `etf_snapshot_${todayStr}.jsonl`);
+      const nowBj = getBeijingNow();
+      const todayStr = formatDay(nowBj);
+      const intradayDir = path.join(__dirname, 'data', 'lifecycle', 'intraday');
+      const intradayPathToday = path.join(intradayDir, `etf_snapshot_${todayStr}.jsonl`);
 
       let warmup = null;
       let lifecycle = null;
@@ -3759,13 +3787,21 @@ const server = http.createServer(async (req, res) => {
           } catch (e) {}
         }
       }
-      if (fs.existsSync(intradayPath)) {
-        const lines = fs.readFileSync(intradayPath, 'utf8').trim().split('\n').filter(Boolean);
-        if (lines.length > 0) {
-          try {
-            intraday_snapshot = JSON.parse(lines[lines.length - 1]);
-          } catch (e) {}
-        }
+      const hhmm = nowBj.toTimeString().slice(0, 5);
+      const cutoffAsOf = hhmm >= '15:00' ? '15:00' : null;
+      if (fs.existsSync(intradayPathToday)) {
+        intraday_snapshot = readSnapshotFromFile(intradayPathToday, cutoffAsOf);
+      }
+      if (!intraday_snapshot && fs.existsSync(intradayDir)) {
+        try {
+          const files = fs.readdirSync(intradayDir).filter(f => parseDayFromIntradayFile(f));
+          const days = files.map(f => parseDayFromIntradayFile(f)).filter(Boolean).sort();
+          const lastDay = days.length ? days[days.length - 1] : null;
+          if (lastDay) {
+            const p = path.join(intradayDir, `etf_snapshot_${lastDay}.jsonl`);
+            if (fs.existsSync(p)) intraday_snapshot = readSnapshotFromFile(p, '15:00');
+          }
+        } catch (e) {}
       }
 
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
