@@ -1,5 +1,5 @@
 {
-  "name": "M1-F-Cleanup-Minute (09:15)",
+  "name": "M1-F-Cleanup-Minute (09:15 + 15:20)",
   "nodes": [
     {
       "id": "trigger",
@@ -8,7 +8,12 @@
       "typeVersion": 1.1,
       "position": [0, 0],
       "parameters": {
-        "rule": { "interval": [ { "field": "cronExpression", "expression": "15 9 * * 1-5" } ] }
+        "rule": {
+          "interval": [
+            { "field": "cronExpression", "expression": "15 9 * * 1-5" },
+            { "field": "cronExpression", "expression": "20 15 * * 1-5" }
+          ]
+        }
       }
     },
     {
@@ -26,7 +31,7 @@
       "position": [200, 80],
       "parameters": {
         "method": "POST",
-        "url": "http://host.docker.internal:8787/api/m1/run",
+        "url": "http://app:8787/api/m1/run",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={\n  \"script\": \"cleanup_minute_files.py\",\n  \"keepDays\": 3,\n  \"apply\": true\n}",

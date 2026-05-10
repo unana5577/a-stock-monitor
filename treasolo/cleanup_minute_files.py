@@ -56,6 +56,71 @@ def cleanup_directory(base_dir: Path, keep_days: int, apply: bool) -> tuple[int,
     return deleted_files, kept_files, oldest_kept_date
 
 
+def cleanup_dated_files(files: list[Path], keep_days: int, apply: bool) -> tuple[int, int, str]:
+    files = [f for f in files if f.exists()]
+    files.sort(key=lambda f: f.name, reverse=True)
+    files_to_keep = files[:keep_days]
+    files_to_delete = files[keep_days:]
+    for f in files_to_delete:
+        if apply:
+            f.unlink()
+        print(f"  [{'DELETED' if apply else 'DRY-RUN'}] {f.relative_to(PROJECT_ROOT)}")
+    oldest = files_to_keep[-1].name[:10] if files_to_keep else "N/A"
+    return len(files_to_delete), len(files_to_keep), oldest
+
+
+def cleanup_intraday_snapshots(keep_days: int, apply: bool) -> int:
+    base = PROJECT_ROOT / "data" / "lifecycle" / "intraday"
+    print(f"\n> 扫描 Intraday 快照目录: {base.relative_to(PROJECT_ROOT)}")
+    if not base.exists():
+        return 0
+    files = list(base.glob("etf_snapshot_*.jsonl")) + list(base.glob("etf_*.jsonl"))
+    deleted, kept, oldest = cleanup_dated_files(files, keep_days, apply)
+    print(f"  => 完毕。保留了 {kept} 个文件，清理了 {deleted} 个文件。最远保留至: {oldest}")
+    return deleted
+
+
+def cleanup_warmup_history(keep_days: int, apply: bool) -> int:
+    base = PROJECT_ROOT / "data" / "warmup"
+    print(f"\n> 扫描 Warmup 历史目录: {base.relative_to(PROJECT_ROOT)}")
+    if not base.exists():
+        return 0
+    files = list(base.glob("warmup-????-??-??-60.json"))
+    deleted, kept, oldest = cleanup_dated_files(files, keep_days, apply)
+    print(f"  => 完毕。保留了 {kept} 个文件，清理了 {deleted} 个文件。最远保留至: {oldest}")
+    return deleted
+
+
+def cleanup_lifecycle_history(keep_days: int, apply: bool) -> int:
+    base = PROJECT_ROOT / "data" / "lifecycle"
+    print(f"\n> 扫描 Lifecycle 历史目录: {base.relative_to(PROJECT_ROOT)}")
+    if not base.exists():
+        return 0
+    files = list(base.glob("lifecycle-????-??-??.json"))
+    deleted, kept, oldest = cleanup_dated_files(files, keep_days, apply)
+    print(f"  => 完毕。保留了 {kept} 个文件，清理了 {deleted} 个文件。最远保留至: {oldest}")
+    return deleted
+
+
+def cleanup_archive_history(keep_days: int, apply: bool) -> int:
+    base = PROJECT_ROOT / "data"
+    print(f"\n> 扫描 Archive 历史目录: {base.relative_to(PROJECT_ROOT)}")
+    if not base.exists():
+        return 0
+    files = list(base.glob("archive-*.jsonl"))
+    files = [f for f in files if len(f.stem) >= len("archive-20260508") and f.stem.startswith("archive-") and f.stem[8:16].isdigit()]
+    files.sort(key=lambda f: f.name, reverse=True)
+    files_to_keep = files[:keep_days]
+    files_to_delete = files[keep_days:]
+    for f in files_to_delete:
+        if apply:
+            f.unlink()
+        print(f"  [{'DELETED' if apply else 'DRY-RUN'}] {f.relative_to(PROJECT_ROOT)}")
+    oldest = files_to_keep[-1].stem[8:16] if files_to_keep else "N/A"
+    print(f"  => 完毕。保留了 {len(files_to_keep)} 个文件，清理了 {len(files_to_delete)} 个文件。最远保留至: {oldest}")
+    return len(files_to_delete)
+
+
 def reset_breadth_cache(apply: bool) -> bool:
     """重置涨跌家数分钟级缓存文件（每天开盘前或盘后应清空，重新记录）"""
     cache_file = PROJECT_ROOT / "data" / "market" / "minute" / "breadth-cache.jsonl"
@@ -182,6 +247,12 @@ def main() -> int:
     print(f"\n> 截断 AI 日志文件 (保留 {args.keep_days} 天)...")
     truncated_ai = truncate_ai_logs(args.keep_days, args.apply)
     total_deleted += truncated_ai
+
+    # 7. 清理 Intraday 快照、Warmup、Lifecycle、Archive 历史文件
+    total_deleted += cleanup_intraday_snapshots(args.keep_days, args.apply)
+    total_deleted += cleanup_warmup_history(args.keep_days, args.apply)
+    total_deleted += cleanup_lifecycle_history(args.keep_days, args.apply)
+    total_deleted += cleanup_archive_history(args.keep_days, args.apply)
 
     print(f"\n🎉 任务结束。共处理 (删除/清空/截断) {total_deleted} 个目标。")
     return 0
