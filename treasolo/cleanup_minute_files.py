@@ -57,13 +57,24 @@ def cleanup_directory(base_dir: Path, keep_days: int, apply: bool) -> tuple[int,
 
 
 def cleanup_dated_files(files: list[Path], keep_days: int, apply: bool) -> tuple[int, int, str]:
-    files = [f for f in files if f.exists()]
+    uniq: dict[str, Path] = {}
+    for f in files:
+        try:
+            key = str(f.resolve())
+        except Exception:
+            key = str(f)
+        if key not in uniq:
+            uniq[key] = f
+    files = [f for f in uniq.values() if f.exists()]
     files.sort(key=lambda f: f.name, reverse=True)
     files_to_keep = files[:keep_days]
     files_to_delete = files[keep_days:]
     for f in files_to_delete:
         if apply:
-            f.unlink()
+            try:
+                f.unlink()
+            except FileNotFoundError:
+                continue
         print(f"  [{'DELETED' if apply else 'DRY-RUN'}] {f.relative_to(PROJECT_ROOT)}")
     oldest = files_to_keep[-1].name[:10] if files_to_keep else "N/A"
     return len(files_to_delete), len(files_to_keep), oldest
@@ -74,7 +85,7 @@ def cleanup_intraday_snapshots(keep_days: int, apply: bool) -> int:
     print(f"\n> 扫描 Intraday 快照目录: {base.relative_to(PROJECT_ROOT)}")
     if not base.exists():
         return 0
-    files = list(base.glob("etf_snapshot_*.jsonl")) + list(base.glob("etf_*.jsonl"))
+    files = list(base.glob("etf_snapshot_*.jsonl")) + list(base.glob("etf_????-??-??.jsonl"))
     deleted, kept, oldest = cleanup_dated_files(files, keep_days, apply)
     print(f"  => 完毕。保留了 {kept} 个文件，清理了 {deleted} 个文件。最远保留至: {oldest}")
     return deleted
