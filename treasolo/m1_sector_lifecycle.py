@@ -173,7 +173,7 @@ def determine_momentum(ma5_slope: float, close: float, ma5: float, pct: float, h
     is_strong_day = pct >= pct_p80
 
     if above and ma5_slope >= MA5_SLOPE_STRONG_MIN:
-        if is_strong_day and heat_up:
+        if is_strong_day:
             return "强势向上"
         if up_day:
             return "偏强向上"
@@ -661,16 +661,11 @@ def analyze_sector(
         behavior = "主线逼空(连续新高)"
         
     advice = determine_advice(momentum, behavior)
-    momentum_reason = build_momentum_reason(momentum, amount_up, amount_share_up, pct_val, pct_p80)
-    behavior_reason = build_behavior_reason(
-        behavior,
-        amount_share_change,
-        amount_share_high_20,
-        amount_share_pct,
-        bias_20,
-        pct_val
-    )
-    attribution = f"以{benchmark_name}为基准，{momentum_reason}，{behavior_reason}。" if benchmark_name else f"{momentum_reason}，{behavior_reason}。"
+    trend5 = "5日趋势向上" if (close > ma5 and ma5_slope >= MA5_SLOPE_STRONG_MIN) else "5日趋势不明"
+    strong_day = "强势日" if pct_val >= pct_p80 else ""
+    heat_state = "升温" if amount_share_up else "降温"
+    prefix = f"以{benchmark_name}为基准，" if benchmark_name else ""
+    attribution = f"{prefix}{trend5}，当日涨跌{pct_val:+.2f}%{strong_day}，资金热度较昨日{heat_state}，{behavior}。"
     bias_compare = build_bias_compare(bias_20, bias_20_history_max, bias_20_history_min)
 
     # 计算评分（用于排序）

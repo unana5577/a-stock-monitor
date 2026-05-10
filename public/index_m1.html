@@ -470,8 +470,8 @@
                         <div class="text-sm font-semibold text-q-text">{{ (item.ETF名称 || item.name || '').replace('ETF', '') }}</div>
                       </div>
                       <div class="flex items-center gap-2">
-                        <div class="text-xs font-bold px-1.5 py-0.5 rounded bg-gray-50 border border-gray-100" :class="activeLifecycleTab === 'intraday' ? getAdviceTextColor(getIntradayItem(item.symbol)?.操作建议 || item.操作建议) : getAdviceTextColor(item.操作建议)">
-                          {{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.操作建议 || item.操作建议 || '-') : (item.操作建议 || '-') }}
+                        <div v-if="activeLifecycleTab !== 'intraday' || getIntradayItem(item.symbol)?.操作建议" class="text-xs font-bold px-1.5 py-0.5 rounded bg-gray-50 border border-gray-100" :class="activeLifecycleTab === 'intraday' ? getAdviceTextColor(getIntradayItem(item.symbol)?.操作建议) : getAdviceTextColor(item.操作建议)">
+                          {{ activeLifecycleTab === 'intraday' ? getIntradayItem(item.symbol)?.操作建议 : (item.操作建议 || '-') }}
                         </div>
                       </div>
                     </div>
@@ -496,7 +496,7 @@
                       </div>
                       <div class="flex flex-col text-right shrink-0 min-w-[4.5rem]">
                         <span class="text-[10px] text-gray-400">动能</span>
-                        <span class="text-xs font-medium text-gray-700">{{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.动能 || item.动能 || '-') : (item.动能 || '-') }}</span>
+                        <span class="text-xs font-medium text-gray-700">{{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.动能 || '-') : (item.动能 || '-') }}</span>
                       </div>
                     </div>
                     
@@ -504,16 +504,16 @@
                       <div class="flex items-center gap-1.5 text-gray-600">
                         <svg class="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                         <span :class="{'font-bold text-black': (activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.资金行为 || item.资金行为 || '') : (item.资金行为 || '')).includes('放量')}">
-                          {{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.资金行为 || item.资金行为 || '-') : (item.资金行为 || '-') }}
+                          {{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.资金行为 || '-') : (item.资金行为 || '-') }}
                         </span>
                       </div>
                       <div class="text-gray-500 font-mono">
-                        {{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.热度占比 || item.热度占比 || '-') : (item.热度占比 || (item.指标数据?.Amount_Share_Pct != null ? item.指标数据.Amount_Share_Pct + '%' : '-')) }}
+                        {{ '资金热度 ' }}{{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.热度占比 || '-') : (item.热度占比 || (item.指标数据?.Amount_Share_Pct != null ? item.指标数据.Amount_Share_Pct + '%' : '-')) }}
                       </div>
                     </div>
                     
-                    <div class="text-[11px] text-gray-500 leading-tight bg-gray-50 rounded p-1.5 border border-gray-100 line-clamp-2" :title="activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.归因说明 || item.归因说明) : item.归因说明">
-                      {{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.归因说明 || item.归因说明 || '-') : (item.归因说明 || '-') }}
+                    <div class="text-[11px] text-gray-500 leading-tight bg-gray-50 rounded p-1.5 border border-gray-100 line-clamp-2" :title="activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.归因说明 || '-') : item.归因说明">
+                      {{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.归因说明 || '-') : (item.归因说明 || '-') }}
                     </div>
                   </div>
                 </div>
@@ -534,8 +534,8 @@
                         <div class="text-sm font-semibold text-q-text">{{ (item.ETF名称 || item.name || '').replace('ETF', '') }}</div>
                       </div>
                       <div class="flex items-center gap-2">
-                        <div class="text-xs font-bold px-1.5 py-0.5 rounded bg-gray-50 border border-gray-100" :class="activeLifecycleTab === 'intraday' ? getAdviceTextColor(getIntradayItem(item.symbol)?.操作建议 || item.操作建议) : getAdviceTextColor(item.操作建议)">
-                          {{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.操作建议 || item.操作建议 || '-') : (item.操作建议 || '-') }}
+                        <div v-if="activeLifecycleTab !== 'intraday' || getIntradayItem(item.symbol)?.操作建议" class="text-xs font-bold px-1.5 py-0.5 rounded bg-gray-50 border border-gray-100" :class="activeLifecycleTab === 'intraday' ? getAdviceTextColor(getIntradayItem(item.symbol)?.操作建议) : getAdviceTextColor(item.操作建议)">
+                          {{ activeLifecycleTab === 'intraday' ? getIntradayItem(item.symbol)?.操作建议 : (item.操作建议 || '-') }}
                         </div>
                       </div>
                     </div>
@@ -560,7 +560,7 @@
                       </div>
                       <div class="flex flex-col text-right shrink-0 min-w-[4.5rem]">
                         <span class="text-[10px] text-gray-400">动能</span>
-                        <span class="text-xs font-medium text-gray-700">{{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.动能 || item.动能 || '-') : (item.动能 || '-') }}</span>
+                        <span class="text-xs font-medium text-gray-700">{{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.动能 || '-') : (item.动能 || '-') }}</span>
                       </div>
                     </div>
                     
@@ -568,16 +568,16 @@
                       <div class="flex items-center gap-1.5 text-gray-600">
                         <svg class="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                         <span :class="{'font-bold text-black': (activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.资金行为 || item.资金行为 || '') : (item.资金行为 || '')).includes('放量')}">
-                          {{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.资金行为 || item.资金行为 || '-') : (item.资金行为 || '-') }}
+                          {{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.资金行为 || '-') : (item.资金行为 || '-') }}
                         </span>
                       </div>
                       <div class="text-gray-500 font-mono">
-                        {{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.热度占比 || item.热度占比 || '-') : (item.热度占比 || (item.指标数据?.Amount_Share_Pct != null ? item.指标数据.Amount_Share_Pct + '%' : '-')) }}
+                        {{ '资金热度 ' }}{{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.热度占比 || '-') : (item.热度占比 || (item.指标数据?.Amount_Share_Pct != null ? item.指标数据.Amount_Share_Pct + '%' : '-')) }}
                       </div>
                     </div>
                     
-                    <div class="text-[11px] text-gray-500 leading-tight bg-gray-50 rounded p-1.5 border border-gray-100 line-clamp-2" :title="activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.归因说明 || item.归因说明) : item.归因说明">
-                      {{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.归因说明 || item.归因说明 || '-') : (item.归因说明 || '-') }}
+                    <div class="text-[11px] text-gray-500 leading-tight bg-gray-50 rounded p-1.5 border border-gray-100 line-clamp-2" :title="activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.归因说明 || '-') : item.归因说明">
+                      {{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.归因说明 || '-') : (item.归因说明 || '-') }}
                     </div>
                   </div>
                 </div>
@@ -598,8 +598,8 @@
                         <div class="text-sm font-semibold text-q-text">{{ (item.ETF名称 || item.name || '').replace('ETF', '') }}</div>
                       </div>
                       <div class="flex items-center gap-2">
-                        <div class="text-xs font-bold px-1.5 py-0.5 rounded bg-gray-50 border border-gray-100" :class="activeLifecycleTab === 'intraday' ? getAdviceTextColor(getIntradayItem(item.symbol)?.操作建议 || item.操作建议) : getAdviceTextColor(item.操作建议)">
-                          {{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.操作建议 || item.操作建议 || '-') : (item.操作建议 || '-') }}
+                        <div v-if="activeLifecycleTab !== 'intraday' || getIntradayItem(item.symbol)?.操作建议" class="text-xs font-bold px-1.5 py-0.5 rounded bg-gray-50 border border-gray-100" :class="activeLifecycleTab === 'intraday' ? getAdviceTextColor(getIntradayItem(item.symbol)?.操作建议) : getAdviceTextColor(item.操作建议)">
+                          {{ activeLifecycleTab === 'intraday' ? getIntradayItem(item.symbol)?.操作建议 : (item.操作建议 || '-') }}
                         </div>
                       </div>
                     </div>
@@ -624,7 +624,7 @@
                       </div>
                       <div class="flex flex-col text-right shrink-0 min-w-[4.5rem]">
                         <span class="text-[10px] text-gray-400">动能</span>
-                        <span class="text-xs font-medium text-gray-700">{{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.动能 || item.动能 || '-') : (item.动能 || '-') }}</span>
+                        <span class="text-xs font-medium text-gray-700">{{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.动能 || '-') : (item.动能 || '-') }}</span>
                       </div>
                     </div>
                     
@@ -632,16 +632,16 @@
                       <div class="flex items-center gap-1.5 text-gray-600">
                         <svg class="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                         <span :class="{'font-bold text-black': (activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.资金行为 || item.资金行为 || '') : (item.资金行为 || '')).includes('放量')}">
-                          {{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.资金行为 || item.资金行为 || '-') : (item.资金行为 || '-') }}
+                          {{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.资金行为 || '-') : (item.资金行为 || '-') }}
                         </span>
                       </div>
                       <div class="text-gray-500 font-mono">
-                        {{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.热度占比 || item.热度占比 || '-') : (item.热度占比 || (item.指标数据?.Amount_Share_Pct != null ? item.指标数据.Amount_Share_Pct + '%' : '-')) }}
+                        {{ '资金热度 ' }}{{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.热度占比 || '-') : (item.热度占比 || (item.指标数据?.Amount_Share_Pct != null ? item.指标数据.Amount_Share_Pct + '%' : '-')) }}
                       </div>
                     </div>
                     
-                    <div class="text-[11px] text-gray-500 leading-tight bg-gray-50 rounded p-1.5 border border-gray-100 line-clamp-2" :title="activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.归因说明 || item.归因说明) : item.归因说明">
-                      {{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.归因说明 || item.归因说明 || '-') : (item.归因说明 || '-') }}
+                    <div class="text-[11px] text-gray-500 leading-tight bg-gray-50 rounded p-1.5 border border-gray-100 line-clamp-2" :title="activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.归因说明 || '-') : item.归因说明">
+                      {{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.归因说明 || '-') : (item.归因说明 || '-') }}
                     </div>
                   </div>
                 </div>
