@@ -107,6 +107,24 @@
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg>
           <span class="hidden md:block ml-3 text-sm font-medium">ETF行情</span>
         </button>
+
+        <button 
+          @click="activeTab = 'trade'" 
+          class="flex items-center justify-center md:justify-start px-0 md:px-3 py-2.5 rounded-md transition-colors group"
+          :class="activeTab === 'trade' ? 'bg-q-primary/20 text-q-primary' : 'text-q-side-text hover:bg-q-side-hover hover:text-q-side-active'"
+        >
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7h18M3 12h18M3 17h18"></path></svg>
+          <span class="hidden md:block ml-3 text-sm font-medium">交易助手</span>
+        </button>
+
+        <button 
+          @click="activeTab = 'astro'" 
+          class="flex items-center justify-center md:justify-start px-0 md:px-3 py-2.5 rounded-md transition-colors group"
+          :class="activeTab === 'astro' ? 'bg-q-primary/20 text-q-primary' : 'text-q-side-text hover:bg-q-side-hover hover:text-q-side-active'"
+        >
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v2m0 14v2m9-9h-2M5 12H3m15.364-6.364l-1.414 1.414M7.05 16.95l-1.414 1.414m0-11.314L7.05 7.05m9.9 9.9l1.414 1.414M12 8a4 4 0 100 8 4 4 0 000-8z"></path></svg>
+          <span class="hidden md:block ml-3 text-sm font-medium">天时实验</span>
+        </button>
         
         <!-- Placeholder Tabs -->
         <div class="mt-4 mb-2 px-3 text-[10px] uppercase tracking-wider text-q-subtext hidden md:block">探索</div>
@@ -134,7 +152,7 @@
       <!-- Top Global Bar (Sticky) -->
       <header class="h-14 bg-white border-b border-q-border px-6 flex justify-between items-center shrink-0 z-10">
         <div class="text-sm font-bold text-q-text">
-          {{ activeTab === 'overview' ? '盘中概览 Overview' : 'ETF行情 Market' }}
+          {{ activeTab === 'overview' ? '盘中概览 Overview' : (activeTab === 'market' ? 'ETF行情 Market' : (activeTab === 'trade' ? '交易助手 Trade' : '天时实验 Astro')) }}
         </div>
         
         <!-- Global Market Data Snippet -->
@@ -495,7 +513,7 @@
                         </span>
                       </div>
                       <div class="flex flex-col text-right shrink-0 min-w-[4.5rem]">
-                        <span class="text-[10px] text-gray-400">动能</span>
+                        <span class="text-[10px] text-gray-400">{{ activeLifecycleTab === 'intraday' ? '结构' : '动能' }}</span>
                         <span class="text-xs font-medium text-gray-700">{{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.动能 || '-') : (item.动能 || '-') }}</span>
                       </div>
                     </div>
@@ -508,7 +526,9 @@
                         </span>
                       </div>
                       <div class="text-gray-500 font-mono">
-                        {{ activeLifecycleTab === 'intraday' ? '' : ('资金热度 ' + (item.热度占比 || (item.指标数据?.Amount_Share_Pct != null ? item.指标数据.Amount_Share_Pct + '%' : '-'))) }}
+                        {{ activeLifecycleTab === 'intraday'
+                          ? (getIntradayItem(item.symbol)?.热度占比 || '-')
+                          : ('资金热度 ' + (item.热度占比 || (item.指标数据?.Amount_Share_Pct != null ? item.指标数据.Amount_Share_Pct + '%' : '-'))) }}
                       </div>
                     </div>
                     
@@ -559,7 +579,7 @@
                         </span>
                       </div>
                       <div class="flex flex-col text-right shrink-0 min-w-[4.5rem]">
-                        <span class="text-[10px] text-gray-400">动能</span>
+                        <span class="text-[10px] text-gray-400">{{ activeLifecycleTab === 'intraday' ? '结构' : '动能' }}</span>
                         <span class="text-xs font-medium text-gray-700">{{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.动能 || '-') : (item.动能 || '-') }}</span>
                       </div>
                     </div>
@@ -572,7 +592,9 @@
                         </span>
                       </div>
                       <div class="text-gray-500 font-mono">
-                        {{ activeLifecycleTab === 'intraday' ? '' : ('资金热度 ' + (item.热度占比 || (item.指标数据?.Amount_Share_Pct != null ? item.指标数据.Amount_Share_Pct + '%' : '-'))) }}
+                        {{ activeLifecycleTab === 'intraday'
+                          ? (getIntradayItem(item.symbol)?.热度占比 || '-')
+                          : ('资金热度 ' + (item.热度占比 || (item.指标数据?.Amount_Share_Pct != null ? item.指标数据.Amount_Share_Pct + '%' : '-'))) }}
                       </div>
                     </div>
                     
@@ -623,7 +645,7 @@
                         </span>
                       </div>
                       <div class="flex flex-col text-right shrink-0 min-w-[4.5rem]">
-                        <span class="text-[10px] text-gray-400">动能</span>
+                        <span class="text-[10px] text-gray-400">{{ activeLifecycleTab === 'intraday' ? '结构' : '动能' }}</span>
                         <span class="text-xs font-medium text-gray-700">{{ activeLifecycleTab === 'intraday' ? (getIntradayItem(item.symbol)?.动能 || '-') : (item.动能 || '-') }}</span>
                       </div>
                     </div>
@@ -636,7 +658,9 @@
                         </span>
                       </div>
                       <div class="text-gray-500 font-mono">
-                        {{ activeLifecycleTab === 'intraday' ? '' : ('资金热度 ' + (item.热度占比 || (item.指标数据?.Amount_Share_Pct != null ? item.指标数据.Amount_Share_Pct + '%' : '-'))) }}
+                        {{ activeLifecycleTab === 'intraday'
+                          ? (getIntradayItem(item.symbol)?.热度占比 || '-')
+                          : ('资金热度 ' + (item.热度占比 || (item.指标数据?.Amount_Share_Pct != null ? item.指标数据.Amount_Share_Pct + '%' : '-'))) }}
                       </div>
                     </div>
                     
@@ -652,11 +676,685 @@
 
         </div>
 
+        <div v-show="activeTab === 'trade'" class="space-y-6">
+          <div class="q-panel p-5">
+            <div class="flex items-start justify-between gap-4">
+              <div>
+                <div class="text-[11px] font-semibold text-q-subtext uppercase tracking-widest">总览</div>
+                <div class="mt-1 text-sm font-semibold text-q-text">总资金 · 剩余现金 · 整体仓位</div>
+              </div>
+              <div class="text-xs text-gray-400 font-mono">local</div>
+            </div>
+            <div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div class="rounded-lg border border-gray-100 bg-gray-50/60 p-4">
+                <div class="text-[11px] text-gray-500">总资金</div>
+                <div class="mt-1 stat-value text-2xl font-bold text-q-text">{{ fmtCny(simMetrics.equity) }}</div>
+                <div class="mt-1 text-[11px] text-gray-500">浮动收益：<span class="font-mono" :class="simMetrics.pnl >= 0 ? 'text-q-up' : 'text-q-down'">{{ fmtCny(simMetrics.pnl) }}</span></div>
+              </div>
+              <div class="rounded-lg border border-gray-100 bg-gray-50/60 p-4">
+                <div class="text-[11px] text-gray-500">剩余现金</div>
+                <div class="mt-1 stat-value text-2xl font-bold text-q-text">{{ fmtCny(simState.cash) }}</div>
+                <div class="mt-1 text-[11px] text-gray-500">持仓市值：<span class="font-mono">{{ fmtCny(simMetrics.positionsValue) }}</span></div>
+              </div>
+              <div class="rounded-lg border border-gray-100 bg-gray-50/60 p-4">
+                <div class="text-[11px] text-gray-500">整体仓位</div>
+                <div class="mt-1 stat-value text-2xl font-bold text-q-text">{{ (simMetrics.positionPct * 100).toFixed(1) }}%</div>
+                <div class="mt-1 text-[11px] text-gray-500">现金占比：<span class="font-mono">{{ ((1 - simMetrics.positionPct) * 100).toFixed(1) }}%</span></div>
+              </div>
+            </div>
+
+            <div class="mt-5 grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <div class="rounded-lg border border-gray-100 bg-white p-4">
+                <div class="text-[11px] font-semibold text-q-subtext uppercase tracking-widest">持仓分布</div>
+                <div class="mt-2 flex items-center justify-between text-xs text-gray-600">
+                  <div class="flex items-center gap-2">
+                    <span class="inline-block w-2 h-2 rounded-sm bg-blue-500"></span>
+                    科技 <span class="font-mono text-gray-800">{{ (simMajorExposure.tech * 100).toFixed(1) }}%</span>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <span class="inline-block w-2 h-2 rounded-sm bg-emerald-500"></span>
+                    资源 <span class="font-mono text-gray-800">{{ (simMajorExposure.resource * 100).toFixed(1) }}%</span>
+                  </div>
+                </div>
+                <div class="mt-3 h-2.5 w-full bg-gray-100 rounded-full overflow-hidden flex">
+                  <div class="h-full bg-blue-500" :style="{ width: (simMajorExposure.tech * 100) + '%' }"></div>
+                  <div class="h-full bg-emerald-500" :style="{ width: (simMajorExposure.resource * 100) + '%' }"></div>
+                </div>
+                <div class="mt-2 text-[11px] text-gray-400">分类仅用于风控与展示，不做因果结论</div>
+              </div>
+
+              <div class="rounded-lg border border-gray-100 bg-white p-4 lg:col-span-2">
+                <div class="flex items-start justify-between gap-3">
+                  <div>
+                    <div class="text-[11px] font-semibold text-q-subtext uppercase tracking-widest">模拟账户设置</div>
+                    <div class="mt-1 text-xs text-gray-500">调仓执行前会弹出确认框，可改份额与成交价</div>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <label class="px-2.5 py-1 rounded border border-gray-200 text-gray-700 hover:bg-gray-50 text-xs cursor-pointer">
+                      上传持仓截图
+                      <input type="file" accept="image/*" class="hidden" @change="onHoldingsScreenshot">
+                    </label>
+                    <button @click="resetSimAccount()" class="px-2.5 py-1 rounded border border-gray-200 text-gray-700 hover:bg-gray-50 text-xs">重置</button>
+                  </div>
+                </div>
+
+                <div v-if="holdingsScreenshot" class="mt-2 text-[11px] text-gray-500">
+                  已上传截图（待接入识别导入）
+                </div>
+
+                <div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div>
+                    <div class="flex items-center justify-between mb-1">
+                      <div class="text-[11px] text-gray-500">初始资金</div>
+                      <span v-if="simInitialMissing" class="text-[10px] font-semibold text-red-600">请填写</span>
+                    </div>
+                    <input v-model.number="simConfig.initialCash" type="number" min="0" class="w-full border border-gray-200 rounded px-2 py-1 text-sm font-mono focus:outline-none focus:border-q-primary" placeholder="100000">
+                  </div>
+                  <div>
+                    <div class="flex items-center justify-between mb-1">
+                      <div class="text-[11px] text-gray-500" title="当目标仓位变化小于该比例时不交易，避免频繁换手">调仓阈值(%)</div>
+                      <span class="text-[10px] text-gray-400" title="当目标仓位变化小于该比例时不交易，避免频繁换手">?</span>
+                    </div>
+                    <input v-model.number="simConfig.rebalanceBandPct" type="number" min="0" class="w-full border border-gray-200 rounded px-2 py-1 text-sm font-mono focus:outline-none focus:border-q-primary" placeholder="5">
+                  </div>
+                  <div>
+                    <div class="flex items-center justify-between mb-1">
+                      <div class="text-[11px] text-gray-500" title="单板块仓位超过该比例会提示风险（只提示，不会自动卖出）">板块上限(%)</div>
+                      <span class="text-[10px] text-gray-400" title="单板块仓位超过该比例会提示风险（只提示，不会自动卖出）">?</span>
+                    </div>
+                    <input v-model.number="simConfig.maxCategoryPct" type="number" min="0" max="100" class="w-full border border-gray-200 rounded px-2 py-1 text-sm font-mono focus:outline-none focus:border-q-primary" placeholder="30">
+                  </div>
+                </div>
+
+                <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <div class="text-[11px] font-semibold text-q-subtext uppercase tracking-widest mb-2">风控预警</div>
+                    <div v-if="simRiskAlerts.length === 0" class="text-xs text-gray-400 italic">暂无预警</div>
+                    <div v-else class="space-y-2">
+                      <div v-for="r in simRiskAlerts" :key="r.key" class="flex items-center justify-between rounded border px-3 py-2 text-xs" :class="r.level === 'high' ? 'border-red-200 bg-red-50' : 'border-yellow-200 bg-yellow-50'">
+                        <div class="font-medium" :class="r.level === 'high' ? 'text-red-700' : 'text-yellow-800'">{{ r.title }}</div>
+                        <div class="font-mono text-gray-600">{{ r.value }}</div>
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <div class="text-[11px] font-semibold text-q-subtext uppercase tracking-widest mb-2">板块仓位</div>
+                    <div v-if="simCategoryExposureList.length === 0" class="text-xs text-gray-400 italic">暂无持仓</div>
+                    <div v-else class="space-y-2">
+                      <div v-for="c in simCategoryExposureList" :key="c.category" class="flex items-center justify-between rounded border px-3 py-2 text-xs" :class="(c.pct * 100) > simConfig.maxCategoryPct ? 'border-red-200 bg-red-50' : 'border-gray-100 bg-gray-50/40'">
+                        <div class="font-medium text-gray-700">{{ c.category }}</div>
+                        <div class="font-mono text-gray-600">{{ (c.pct * 100).toFixed(1) }}%</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="q-panel p-5">
+            <div class="flex items-center justify-between mb-4">
+              <div>
+                <div class="text-[11px] font-semibold text-q-subtext uppercase tracking-widest">关注ETF全列表</div>
+                <div class="mt-1 text-xs text-gray-500">勾选后批量执行；单行执行会先弹出确认框</div>
+              </div>
+              <div class="text-xs text-gray-400 font-mono">建议数：{{ tradeSuggestions.length }} · 已勾选：{{ tradeSelectedCount }}</div>
+            </div>
+
+            <div class="flex items-center justify-between mb-3">
+              <label class="flex items-center gap-2 text-xs text-gray-600 select-none">
+                <input type="checkbox" class="accent-blue-600" :checked="tradeAllSelected" @change="toggleTradeSelectAll()">
+                全选（仅建议行）
+              </label>
+              <button @click="executeSelectedSuggestions()" class="px-3 py-2 rounded bg-q-primary text-white text-xs font-semibold hover:bg-blue-600 disabled:opacity-50" :disabled="tradeSelectedCount === 0">批量执行</button>
+            </div>
+
+            <div class="overflow-x-auto">
+              <table class="min-w-full text-xs">
+                <thead>
+                  <tr class="text-gray-500 border-b border-gray-100">
+                    <th class="text-left py-2 pr-3 font-medium w-10">选</th>
+                    <th class="text-left py-2 pr-3 font-medium">ETF</th>
+                    <th class="text-left py-2 pr-3 font-medium">板块</th>
+                    <th class="text-left py-2 pr-3 font-medium">池子</th>
+                    <th class="text-right py-2 pr-3 font-medium">现仓</th>
+                    <th class="text-right py-2 pr-3 font-medium">目标</th>
+                    <th class="text-left py-2 pr-3 font-medium">建议</th>
+                    <th class="text-right py-2 pr-3 font-medium w-40">金额(元)</th>
+                    <th class="text-right py-2 pr-0 font-medium w-20">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="r in tradeTableRows" :key="r.symbol" class="border-b border-gray-50 hover:bg-gray-50/40">
+                    <td class="py-2 pr-3">
+                      <input type="checkbox" class="accent-blue-600" v-model="selectedSuggestions[r.symbol]" :disabled="!r.selectable">
+                    </td>
+                    <td class="py-2 pr-3">
+                      <div class="text-gray-800 font-semibold">{{ r.name }}</div>
+                      <div class="text-[11px] text-gray-500 line-clamp-1" :title="r.reason">{{ r.reason }}</div>
+                    </td>
+                    <td class="py-2 pr-3 text-gray-700">{{ r.category }}</td>
+                    <td class="py-2 pr-3">
+                      <span class="px-2 py-0.5 rounded-full border text-[10px] font-semibold"
+                            :class="r.pool === '趋势向上' ? 'border-green-200 bg-green-50 text-green-700' : (r.pool === '高风险' ? 'border-red-200 bg-red-50 text-red-700' : 'border-yellow-200 bg-yellow-50 text-yellow-800')">
+                        {{ r.pool }}
+                      </span>
+                    </td>
+                    <td class="py-2 pr-3 text-right font-mono text-gray-700">{{ (r.currentWeight * 100).toFixed(1) }}%</td>
+                    <td class="py-2 pr-3 text-right font-mono text-gray-700">{{ (r.targetWeight * 100).toFixed(1) }}%</td>
+                    <td class="py-2 pr-3">
+                      <span v-if="r.action !== '不动'" class="px-2 py-0.5 rounded-full border text-[10px] font-semibold"
+                            :class="r.action === '买入' ? 'border-green-200 bg-green-50 text-green-700' : 'border-red-200 bg-red-50 text-red-700'">
+                        {{ r.action }}
+                      </span>
+                      <span v-else class="px-2 py-0.5 rounded-full border border-gray-200 bg-gray-50 text-[10px] font-semibold text-gray-500">不动</span>
+                    </td>
+                    <td class="py-2 pr-3 text-right">
+                      <input v-if="r.selectable" v-model.number="suggestionOverrides[r.symbol]" type="number" min="0"
+                             class="w-36 border rounded px-2 py-1 text-sm font-mono focus:outline-none focus:border-q-primary"
+                             :class="(suggestionOverrides[r.symbol] == null || suggestionOverrides[r.symbol] <= 0) ? 'border-red-300 bg-red-50' : 'border-gray-200'"
+                             placeholder="请填写" />
+                      <span v-else class="text-gray-400">—</span>
+                    </td>
+                    <td class="py-2 pr-0 text-right">
+                      <button @click="executeSuggestion(r.symbol)" class="px-3 py-1.5 rounded bg-q-primary text-white text-xs font-semibold hover:bg-blue-600 disabled:opacity-50" :disabled="!r.selectable">执行</button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="q-panel p-5">
+            <div class="flex items-center justify-between gap-4 mb-4">
+              <div>
+                <div class="text-[11px] font-semibold text-q-subtext uppercase tracking-widest">账户明细</div>
+                <div class="mt-1 text-xs text-gray-500">持仓与交易记录联动更新，可随时回溯</div>
+              </div>
+              <div class="flex items-center gap-1 bg-gray-100 p-0.5 rounded-md">
+                <button @click="tradeBottomTab = 'positions'" class="px-3 py-1 text-xs rounded-sm transition-all" :class="tradeBottomTab === 'positions' ? 'bg-white text-q-text shadow-sm font-medium' : 'text-gray-500 hover:text-gray-700'">持仓</button>
+                <button @click="tradeBottomTab = 'trades'" class="px-3 py-1 text-xs rounded-sm transition-all" :class="tradeBottomTab === 'trades' ? 'bg-white text-q-text shadow-sm font-medium' : 'text-gray-500 hover:text-gray-700'">交易记录</button>
+              </div>
+            </div>
+
+            <div v-show="tradeBottomTab === 'positions'">
+              <div class="flex items-center justify-between mb-3">
+                <div class="text-xs text-gray-500">持仓数：<span class="font-mono text-gray-700">{{ simPositionsList.length }}</span></div>
+              </div>
+              <div v-if="simPositionsList.length === 0" class="text-xs text-gray-400 italic">暂无持仓</div>
+              <div v-else class="overflow-x-auto">
+                <table class="min-w-full text-xs">
+                  <thead>
+                    <tr class="text-gray-500 border-b border-gray-100">
+                      <th class="text-left py-2 pr-3 font-medium">标的</th>
+                      <th class="text-right py-2 pr-3 font-medium">份额</th>
+                      <th class="text-right py-2 pr-3 font-medium">均价</th>
+                      <th class="text-right py-2 pr-3 font-medium">现价</th>
+                      <th class="text-right py-2 pr-3 font-medium">市值</th>
+                      <th class="text-right py-2 pr-3 font-medium">收益</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="p in simPositionsList" :key="p.symbol" class="border-b border-gray-50">
+                      <td class="py-2 pr-3 text-gray-800 font-medium">{{ symbolNames[p.symbol] || p.symbol }}</td>
+                      <td class="py-2 pr-3 text-right font-mono">{{ p.shares }}</td>
+                      <td class="py-2 pr-3 text-right font-mono">{{ p.avgPrice.toFixed(3) }}</td>
+                      <td class="py-2 pr-3 text-right font-mono">{{ p.lastPrice ? p.lastPrice.toFixed(3) : '-' }}</td>
+                      <td class="py-2 pr-3 text-right font-mono">{{ fmtCny(p.value) }}</td>
+                      <td class="py-2 pr-3 text-right font-mono" :class="p.pnl >= 0 ? 'text-q-up' : 'text-q-down'">{{ fmtCny(p.pnl) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div v-show="tradeBottomTab === 'trades'">
+              <div class="flex items-center justify-between mb-3">
+                <div class="text-xs text-gray-500">记录数：<span class="font-mono text-gray-700">{{ simState.trades.length }}</span></div>
+              </div>
+              <div v-if="simState.trades.length === 0" class="text-xs text-gray-400 italic">暂无交易</div>
+              <div v-else class="overflow-x-auto">
+                <table class="min-w-full text-xs">
+                  <thead>
+                    <tr class="text-gray-500 border-b border-gray-100">
+                      <th class="text-left py-2 pr-3 font-medium">时间</th>
+                      <th class="text-left py-2 pr-3 font-medium">标的</th>
+                      <th class="text-left py-2 pr-3 font-medium">方向</th>
+                      <th class="text-right py-2 pr-3 font-medium">份额</th>
+                      <th class="text-right py-2 pr-3 font-medium">价格</th>
+                      <th class="text-right py-2 pr-3 font-medium">金额</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="t in simTradesLatest" :key="t.id" class="border-b border-gray-50">
+                      <td class="py-2 pr-3 font-mono text-gray-600">{{ t.ts }}</td>
+                      <td class="py-2 pr-3 text-gray-800 font-medium">{{ symbolNames[t.symbol] || t.symbol }}</td>
+                      <td class="py-2 pr-3 font-mono" :class="t.side === 'BUY' ? 'text-q-up' : 'text-q-down'">{{ t.side }}</td>
+                      <td class="py-2 pr-3 text-right font-mono">{{ t.shares }}</td>
+                      <td class="py-2 pr-3 text-right font-mono">{{ t.price.toFixed(3) }}</td>
+                      <td class="py-2 pr-3 text-right font-mono">{{ fmtCny(t.notional) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="tradeConfirmOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <div class="w-full max-w-3xl bg-white rounded-xl border border-gray-200 shadow-xl overflow-hidden">
+              <div class="px-5 py-4 border-b border-gray-100 flex items-start justify-between gap-3">
+                <div>
+                  <div class="text-sm font-bold text-q-text">确认执行</div>
+                  <div class="mt-1 text-xs text-gray-500">可修改份额(100的整数倍)与成交价，确认后写入模拟账户</div>
+                </div>
+                <button @click="closeTradeConfirm()" class="px-2.5 py-1 rounded border border-gray-200 text-gray-700 hover:bg-gray-50 text-xs">关闭</button>
+              </div>
+
+              <div class="p-5">
+                <div class="overflow-x-auto">
+                  <table class="min-w-full text-xs">
+                    <thead>
+                      <tr class="text-gray-500 border-b border-gray-100">
+                        <th class="text-left py-2 pr-3 font-medium">标的</th>
+                        <th class="text-left py-2 pr-3 font-medium">方向</th>
+                        <th class="text-right py-2 pr-3 font-medium">份额</th>
+                        <th class="text-right py-2 pr-3 font-medium">成交价</th>
+                        <th class="text-right py-2 pr-0 font-medium">金额</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="it in tradeConfirmItems" :key="it.symbol" class="border-b border-gray-50">
+                        <td class="py-2 pr-3 text-gray-800 font-medium">
+                          <div>{{ it.name }}</div>
+                          <div class="text-[11px] text-gray-500 line-clamp-1" :title="it.reason">{{ it.reason }}</div>
+                        </td>
+                        <td class="py-2 pr-3 font-mono" :class="it.side === 'BUY' ? 'text-q-up' : 'text-q-down'">{{ it.side }}</td>
+                        <td class="py-2 pr-3 text-right">
+                          <input v-model.number="it.shares" type="number" min="0" step="100" class="w-28 border border-gray-200 rounded px-2 py-1 text-sm font-mono focus:outline-none focus:border-q-primary">
+                        </td>
+                        <td class="py-2 pr-3 text-right">
+                          <input v-model.number="it.price" type="number" min="0" step="0.001" class="w-28 border border-gray-200 rounded px-2 py-1 text-sm font-mono focus:outline-none focus:border-q-primary">
+                        </td>
+                        <td class="py-2 pr-0 text-right font-mono text-gray-700">{{ fmtCny((Number(it.shares || 0) * Number(it.price || 0)) || 0) }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <div v-if="tradeConfirmError" class="mt-3 text-sm text-red-600 font-semibold">{{ tradeConfirmError }}</div>
+
+                <div class="mt-4 flex items-center justify-end gap-2">
+                  <button @click="closeTradeConfirm()" class="px-3 py-2 rounded border border-gray-200 text-gray-700 hover:bg-gray-50 text-xs font-semibold">取消</button>
+                  <button @click="confirmTradeConfirm()" class="px-4 py-2 rounded bg-q-primary text-white text-xs font-semibold hover:bg-blue-600">确认执行</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div v-show="activeTab === 'astro'" class="space-y-6">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="q-panel p-5 overflow-hidden">
+              <div class="flex items-center justify-between gap-4">
+                <div>
+                  <div class="text-[11px] font-semibold text-q-subtext uppercase tracking-widest">命主模块</div>
+                  <div class="mt-1 text-xs text-gray-500 leading-relaxed max-w-[70ch]">填写信息后点击提交：按真太阳时校正后推算八字，并生成两段建议。</div>
+                </div>
+                <div class="text-[10px] text-gray-400 font-mono">local</div>
+              </div>
+
+              <div class="mt-4 group relative">
+                <div class="text-xs text-gray-500">基本信息</div>
+                <div class="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div>
+                    <div class="text-[11px] text-gray-500 mb-1">性别</div>
+                    <select v-model="userGender" class="w-full border border-gray-200 rounded px-2 py-2 text-sm focus:outline-none focus:border-q-primary">
+                      <option value="">请选择</option>
+                      <option value="男">男</option>
+                      <option value="女">女</option>
+                    </select>
+                  </div>
+                  <div>
+                    <div class="text-[11px] text-gray-500 mb-1">出生年月日</div>
+                    <input v-model="userBirth" type="datetime-local" class="w-full border border-gray-200 rounded px-2 py-2 text-sm font-mono focus:outline-none focus:border-q-primary">
+                  </div>
+                  <div>
+                    <div class="flex items-center justify-between">
+                      <div class="text-[11px] text-gray-500 mb-1">出生地</div>
+                      <div v-if="placeLoading" class="text-[11px] text-gray-400 mb-1">加载中...</div>
+                    </div>
+                    <select v-model="userPlace" class="w-full border border-gray-200 rounded px-2 py-2 text-sm focus:outline-none focus:border-q-primary">
+                      <option value="">请选择</option>
+                      <optgroup v-for="g in placeGroups" :key="g.label" :label="g.label">
+                        <option v-for="o in g.options" :key="o.value" :value="o.value">{{ g.label }}-{{ o.label }}</option>
+                      </optgroup>
+                      <option value="其他">其他</option>
+                    </select>
+                  </div>
+                </div>
+                <input v-if="userPlace === '其他'" v-model="userPlaceCustom" class="mt-3 w-full border border-gray-200 rounded px-2 py-2 text-sm focus:outline-none focus:border-q-primary" placeholder="请输入出生地（省-市）">
+                <div class="mt-3">
+                  <div class="text-[11px] text-gray-500 mb-1">区县</div>
+                  <select v-model="userArea" class="w-full border border-gray-200 rounded px-2 py-2 text-sm focus:outline-none focus:border-q-primary" :disabled="!userPlace || userPlace === '其他'">
+                    <option value="">请选择</option>
+                    <option v-for="a in placeAreas" :key="a" :value="a">{{ a }}</option>
+                  </select>
+                </div>
+                <div class="mt-3 flex items-center justify-end">
+                  <button @click="submitBazi()" class="px-3 py-2 rounded bg-q-primary text-white text-xs font-semibold hover:bg-blue-600 disabled:opacity-60" :disabled="baziLoading">
+                    {{ baziLoading ? '计算中...' : '提交并生成' }}
+                  </button>
+                </div>
+
+                <div class="mt-4 flex items-center justify-between">
+                  <div class="text-[11px] text-gray-500">系统推算八字</div>
+                  <div v-if="baziLoading" class="text-[11px] text-gray-400">计算中...</div>
+                  <div v-else-if="baziError" class="text-[11px] text-q-down">{{ baziError }}</div>
+                </div>
+                <div class="mt-2 min-h-[2.25rem] flex items-center text-sm font-mono text-gray-800">
+                  {{ baziProfile?.bazi?.text || (baziSubmitted ? '—' : '点击提交生成') }}
+                </div>
+                <div v-if="baziProfile?.trueSolar?.enabled && baziProfile?.trueSolar?.applied && baziProfile?.trueSolar?.birthTrueSolar" class="mt-1 text-[11px] text-gray-500 font-mono">
+                  真太阳时：{{ baziProfile.trueSolar.birthTrueSolar }}（偏移 {{ (baziProfile.trueSolar.offsetMinutes || 0).toFixed(1) }} 分）
+                </div>
+                <div v-else-if="baziProfile?.trueSolar?.enabled && !baziProfile?.trueSolar?.applied" class="mt-1 text-[11px] text-gray-500">
+                  未能自动定位经度，已按北京时间计算；如需真太阳时请补充区县
+                </div>
+              </div>
+
+              <div class="mt-4 pt-4 border-t border-gray-100 group relative">
+                <div class="flex items-start justify-between gap-4">
+                  <div>
+                    <div class="text-xs text-gray-500">八字财务分析</div>
+                    <div class="mt-1 text-xs text-gray-500 leading-relaxed max-w-[70ch]">用于交易资金管理与风格约束的自我说明。</div>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <button @click="ensureFinanceAuto(true)" class="px-2.5 py-1 rounded border border-gray-200 text-gray-700 hover:bg-gray-50 text-xs disabled:opacity-60" :disabled="financeLoading || !baziProfile?.ok">
+                      {{ financeLoading ? '生成中' : '重新生成' }}
+                    </button>
+                  </div>
+                </div>
+                <div class="mt-3 text-sm text-gray-800 leading-relaxed whitespace-pre-wrap min-h-[4rem]">
+                  {{ financeAuto || (baziReady ? '—' : '填写信息后自动生成') }}
+                </div>
+              </div>
+
+              <div class="mt-4 pt-4 border-t border-gray-100 group relative">
+                <div class="flex items-start justify-between gap-4">
+                  <div>
+                    <div class="text-xs text-gray-500">当日操作风险提示</div>
+                    <div class="mt-1 text-xs text-gray-500 leading-relaxed max-w-[70ch]">绑定当前选中日期，用于提醒今日是否适合进攻/防守/空仓观察。</div>
+                  </div>
+                  <div class="text-[10px] text-gray-400 font-mono">{{ astroSelectedDay || '-' }}</div>
+                </div>
+                <div class="mt-2 flex items-center justify-end">
+                  <button @click="ensureDailyRiskAuto(true)" class="px-2.5 py-1 rounded border border-gray-200 text-gray-700 hover:bg-gray-50 text-xs disabled:opacity-60" :disabled="dailyRiskLoading || !baziProfile?.ok || !astroSelectedDay">
+                    {{ dailyRiskLoading ? '生成中' : '重新生成' }}
+                  </button>
+                </div>
+                <div class="mt-3 text-sm text-gray-800 leading-relaxed whitespace-pre-wrap min-h-[3rem]">
+                  {{ dailyRiskAuto || (baziReady ? '—' : '填写信息后自动生成') }}
+                </div>
+              </div>
+            </div>
+
+            <div class="q-panel p-5 overflow-hidden">
+              <div class="flex items-start justify-between gap-4">
+                <div>
+                  <div class="text-[11px] font-semibold text-q-subtext uppercase tracking-widest">月度卡 (Month)</div>
+                  <div class="mt-1 text-lg font-bold text-q-text tracking-tight">
+                    {{ astroMonthStr || '-' }} <span class="text-gray-400 font-normal">·</span> {{ astroMonthGanzhi || '-' }}月
+                  </div>
+                </div>
+              </div>
+
+              <div class="mt-4 rounded-lg border border-gray-100 bg-gray-50/40 p-4 group relative">
+                <div class="flex items-center justify-between">
+                  <div class="text-xs text-gray-500">月度预判</div>
+                  <div class="text-[10px] text-gray-400 font-mono">{{ astroMonthGanzhi || '-' }}</div>
+                </div>
+                <button v-if="!editMonthOutlook" @click="editMonthOutlook = true" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity px-2 py-1 rounded border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 text-[10px]">编辑</button>
+                <div v-if="!editMonthOutlook" class="mt-2 text-sm text-gray-800 leading-relaxed whitespace-pre-wrap min-h-[3.5rem]">
+                  {{ monthOutlook || '—' }}
+                </div>
+                <textarea v-else v-model="monthOutlook" rows="3" @blur="editMonthOutlook = false" class="mt-2 w-full border border-gray-200 rounded px-2 py-2 text-sm focus:outline-none focus:border-q-primary" placeholder="例如：能源走强，整体脉冲式波动"></textarea>
+              </div>
+
+              <div class="mt-4">
+                <div class="text-[11px] font-semibold text-q-subtext uppercase tracking-widest">月相轴</div>
+                <div class="mt-1 text-xs text-gray-500 leading-relaxed max-w-[70ch]">
+                  <div>打开页面会自动定位当日；点击任意日期会联动本周交易表与明日模块。</div>
+                  <div class="mt-1">新月/上弦月/满月/下弦月为观察窗口，用复盘与回测验证“月满则亏/月缺则赢”是否成立。</div>
+                </div>
+
+                <div id="astro-phase-scroll" class="mt-3 overflow-x-auto pb-2">
+                  <div class="min-w-[860px] flex items-stretch gap-2">
+                    <button v-for="d in astroMonthDays" :key="d.date" :data-date="d.date"
+                      @click="selectAstroDay(d.date)"
+                      class="flex flex-col items-center justify-between w-20 shrink-0 rounded-lg border transition-all duration-200 px-2 py-2"
+                      :class="astroSelectedDay === d.date ? 'border-q-primary bg-blue-50 shadow-sm' : 'border-gray-100 bg-white hover:bg-gray-50'"
+                    >
+                      <div class="w-full flex items-center justify-between">
+                        <span class="text-[10px] font-mono text-gray-400">{{ d.date.slice(8) }}</span>
+                        <span class="text-[10px] font-mono" :class="d.waxingWaning === '盈' ? 'text-q-up' : 'text-q-down'">{{ d.waxingWaning }}</span>
+                      </div>
+                      <div class="mt-1 h-7 w-7" v-html="astroPhaseSvg(d)"></div>
+                      <div class="mt-1 text-[10px] font-mono" :class="astroPhaseRiskClass(d.phaseIndex)">{{ astroPhaseRiskText(d.phaseIndex) }}</div>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="q-panel p-5 overflow-hidden">
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <div class="text-[11px] font-semibold text-q-subtext uppercase tracking-widest">本周交易表 (Week)</div>
+                <div class="mt-1 text-xs text-gray-400 font-mono">{{ astroWeekRangeText }}</div>
+              </div>
+              <div class="text-xs text-gray-400">{{ astroWeekStatus }}</div>
+            </div>
+            <div class="mt-4 overflow-x-auto">
+              <table class="min-w-[980px] w-full text-xs">
+                <thead>
+                  <tr class="text-gray-500 border-b border-gray-100">
+                    <th class="text-left py-2 pr-3 font-medium sticky left-0 bg-white z-10">ETF</th>
+                    <th v-for="d in astroWeekTradingDays" :key="d.date" class="text-left py-2 pr-3 font-medium">
+                      <div class="font-mono text-[11px] text-gray-600">{{ d.date.slice(5) }}</div>
+                      <div class="text-[11px] text-gray-500">{{ d.sixtyCycleDay }}</div>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr class="border-b border-gray-50">
+                    <td class="py-2 pr-3 sticky left-0 bg-white z-10 text-gray-800 font-semibold">大盘</td>
+                    <td v-for="d in astroWeekTradingDays" :key="d.date" class="py-2 pr-3">
+                      <span class="text-sm" :class="astroWeekCellTextClass(d.date, '__market__')">{{ astroWeekCellTag(d.date, '__market__') }}</span>
+                    </td>
+                  </tr>
+                  <tr v-for="sym in etfSymbols" :key="sym" class="border-b border-gray-50">
+                    <td class="py-2 pr-3 sticky left-0 bg-white z-10 text-gray-800 font-medium">{{ symbolNames[sym] || sym }}</td>
+                    <td v-for="d in astroWeekTradingDays" :key="d.date" class="py-2 pr-3">
+                      <span class="text-sm" :class="astroWeekCellTextClass(d.date, sym)">{{ astroWeekCellTag(d.date, sym) }}</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="q-panel p-5">
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <div class="text-[11px] font-semibold text-q-subtext uppercase tracking-widest">明日 (Tomorrow)</div>
+                <div class="mt-1 text-sm font-semibold text-q-text">
+                  {{ astroSelectedDay || '-' }} · {{ astroSelectedPhase || '-' }} <span class="text-gray-300 mx-1">|</span> 目标日：{{ astroPredict?.astro?.horizons?.['1']?.date || '-' }} · {{ astroPhaseRiskText(astroPredict?.astro?.horizons?.['1']?.phaseIndex) || '-' }}
+                </div>
+              </div>
+              <div class="flex items-center gap-2">
+                <button @click="runAstroPredict(astroSelectedDay)" class="px-2.5 py-1 rounded border border-gray-200 text-gray-700 hover:bg-gray-50 text-xs">更新预测</button>
+              </div>
+            </div>
+
+            <div class="mt-4">
+              <div class="rounded-lg border border-gray-100 bg-gray-50/40 px-4 py-3 flex items-center justify-between gap-4">
+                <div class="text-xs text-gray-500">次日大盘上涨</div>
+                <div class="flex items-center gap-2">
+                  <span class="text-sm text-gray-800 font-medium">{{ marketDirectionText('1') }}</span>
+                </div>
+              </div>
+
+              <div class="mt-3 overflow-x-auto">
+                <table class="min-w-full text-xs">
+                  <thead>
+                    <tr class="text-gray-500 border-b border-gray-100">
+                      <th class="text-left py-2 pr-3 font-medium">品种</th>
+                      <th class="text-left py-2 pr-3 font-medium">次日情况</th>
+                      <th class="text-left py-2 pr-3 font-medium">+5</th>
+                      <th class="text-left py-2 pr-3 font-medium">+15</th>
+                      <th class="text-left py-2 pr-3 font-medium">+30</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="sym in etfSymbols" :key="sym" class="border-b border-gray-50">
+                      <td class="py-2 pr-3 text-gray-800 font-medium">{{ symbolNames[sym] || sym }}</td>
+                      <td class="py-2 pr-3">
+                        <span class="text-sm text-gray-800 font-medium">{{ astroDirectionText(sym, '1') }}</span>
+                      </td>
+                      <td class="py-2 pr-3">
+                        <span class="px-2 py-0.5 rounded-full border text-[10px] font-medium" :class="astroProbTagClass(sym, '5')">{{ astroProbTag(sym, '5') }}</span>
+                      </td>
+                      <td class="py-2 pr-3">
+                        <span class="px-2 py-0.5 rounded-full border text-[10px] font-medium" :class="astroProbTagClass(sym, '15')">{{ astroProbTag(sym, '15') }}</span>
+                      </td>
+                      <td class="py-2 pr-3">
+                        <span class="px-2 py-0.5 rounded-full border text-[10px] font-medium" :class="astroProbTagClass(sym, '30')">{{ astroProbTag(sym, '30') }}</span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="mt-5 border-t border-gray-100 pt-4">
+              <div class="flex items-center justify-between mb-3">
+                <div class="text-[11px] font-semibold text-q-subtext uppercase tracking-widest">ETF 走势对比</div>
+                <div class="flex items-center gap-2">
+                  <button @click="astroHistoryWindow = 5; renderAstroHistoryChart()" class="px-2 py-1 rounded border text-[10px]" :class="astroHistoryWindow === 5 ? 'border-q-primary bg-blue-50 text-q-primary' : 'border-gray-200 text-gray-600 hover:bg-gray-50'">5日</button>
+                  <button @click="astroHistoryWindow = 15; renderAstroHistoryChart()" class="px-2 py-1 rounded border text-[10px]" :class="astroHistoryWindow === 15 ? 'border-q-primary bg-blue-50 text-q-primary' : 'border-gray-200 text-gray-600 hover:bg-gray-50'">15日</button>
+                  <button @click="astroHistoryWindow = 30; renderAstroHistoryChart()" class="px-2 py-1 rounded border text-[10px]" :class="astroHistoryWindow === 30 ? 'border-q-primary bg-blue-50 text-q-primary' : 'border-gray-200 text-gray-600 hover:bg-gray-50'">30日</button>
+                </div>
+              </div>
+              <div class="flex flex-wrap gap-2 mb-3">
+                <button v-for="sym in etfSymbols" :key="sym" @click="toggleAstroHistorySymbol(sym)" class="px-2 py-1 rounded-full border text-[10px] font-medium"
+                  :class="astroHistorySymbols.includes(sym) ? 'border-gray-800 bg-gray-900 text-white' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'">
+                  {{ (symbolNames[sym] || sym).replace('ETF', '') }}
+                </button>
+              </div>
+              <div id="chart-astro-history" class="w-full h-[260px]"></div>
+            </div>
+
+            <div class="mt-5 border-t border-gray-100 pt-4">
+              <div class="flex items-center justify-between">
+                <div class="text-[11px] font-semibold text-q-subtext uppercase tracking-widest">昨日预测复盘 (Review)</div>
+                <div class="text-xs text-gray-400 font-mono">{{ astroReviewText }}</div>
+              </div>
+              <div class="mt-3 overflow-x-auto">
+                <table class="min-w-full text-xs">
+                  <thead>
+                    <tr class="text-gray-500 border-b border-gray-100">
+                      <th class="text-left py-2 pr-3 font-medium">品种</th>
+                      <th class="text-left py-2 pr-3 font-medium">预测(+1)</th>
+                      <th class="text-left py-2 pr-3 font-medium">实际</th>
+                      <th class="text-left py-2 pr-3 font-medium">命中</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="it in astroReviewItems" :key="it.symbol" class="border-b border-gray-50">
+                      <td class="py-2 pr-3 text-gray-800 font-medium">{{ it.name || it.symbol }}</td>
+                      <td class="py-2 pr-3 font-mono" :class="it.predUp ? 'text-q-up' : 'text-q-down'">{{ it.predUp ? '看多' : '看空' }}</td>
+                      <td class="py-2 pr-3 font-mono" :class="it.actualUp ? 'text-q-up' : 'text-q-down'">{{ it.actualUp ? '上涨' : '下跌' }}</td>
+                      <td class="py-2 pr-3">
+                        <span class="px-2 py-0.5 rounded-full border text-[10px] font-semibold" :class="it.hit ? 'border-green-200 bg-green-50 text-green-700' : 'border-gray-200 bg-gray-50 text-gray-500'">{{ it.hit ? '✅' : '—' }}</span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div class="q-panel p-5">
+            <div class="flex items-center justify-between mb-3">
+              <div class="text-[11px] font-semibold text-q-subtext uppercase tracking-widest">手工复盘录入</div>
+              <div class="text-xs text-gray-400">{{ journalStatus }}</div>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <div class="text-xs text-gray-500 mb-1">日期</div>
+                <input v-model="journalDay" class="w-full border border-gray-200 rounded px-2 py-1 text-sm font-mono focus:outline-none focus:border-q-primary" placeholder="YYYY-MM-DD">
+              </div>
+              <div>
+                <div class="text-xs text-gray-500 mb-1">情绪(1-5)</div>
+                <select v-model="journalMood" class="w-full border border-gray-200 rounded px-2 py-1 text-sm focus:outline-none focus:border-q-primary">
+                  <option :value="1">1</option>
+                  <option :value="2">2</option>
+                  <option :value="3">3</option>
+                  <option :value="4">4</option>
+                  <option :value="5">5</option>
+                </select>
+              </div>
+              <div class="flex items-end">
+                <button @click="submitJournal()" class="w-full px-3 py-2 rounded bg-q-primary text-white text-sm font-medium hover:bg-blue-600 disabled:opacity-60" :disabled="journalSubmitting">
+                  提交并更新
+                </button>
+              </div>
+            </div>
+            <div class="mt-3">
+              <div class="text-xs text-gray-500 mb-1">备注</div>
+              <textarea v-model="journalNote" class="w-full border border-gray-200 rounded px-2 py-2 text-sm focus:outline-none focus:border-q-primary" rows="3" placeholder="系统性风险/冲动/执行情况等"></textarea>
+            </div>
+          </div>
+
+          <div class="q-panel p-5 overflow-hidden">
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <div class="text-[11px] font-semibold text-q-subtext uppercase tracking-widest">AI 聊天</div>
+                <div class="mt-1 text-xs text-gray-500">在天时实验里直接提问，便于结合当日选中日期与复盘记录。</div>
+              </div>
+              <div class="flex items-center gap-2">
+                <button @click="clearChat()" class="px-2.5 py-1 rounded border border-gray-200 text-gray-700 hover:bg-gray-50 text-xs">清空</button>
+              </div>
+            </div>
+
+            <div id="chat-scroll" class="mt-4 h-[420px] overflow-y-auto rounded-lg border border-gray-100 bg-gray-50/40 p-4 space-y-3">
+              <div v-if="!chatMessages || chatMessages.length === 0" class="text-xs text-gray-400">还没有对话内容</div>
+              <div v-for="m in chatMessages" :key="m.ts" class="flex" :class="m.role === 'user' ? 'justify-end' : 'justify-start'">
+                <div class="max-w-[80%] rounded-2xl px-3 py-2 text-sm whitespace-pre-wrap"
+                  :class="m.role === 'user' ? 'bg-q-primary text-white' : 'bg-white border border-gray-100 text-gray-800'">
+                  {{ m.content }}
+                </div>
+              </div>
+            </div>
+
+            <div v-if="chatError" class="mt-3 text-xs text-q-down">{{ chatError }}</div>
+
+            <div class="mt-4 flex items-end gap-2">
+              <textarea v-model="chatInput" rows="2" class="flex-1 border border-gray-200 rounded px-3 py-2 text-sm focus:outline-none focus:border-q-primary" placeholder="输入问题，回车发送，Shift+回车换行"
+                @keydown.enter.exact.prevent="sendChat()"></textarea>
+              <button @click="sendChat()" class="px-3 py-2 rounded bg-q-primary text-white text-sm font-medium hover:bg-blue-600 disabled:opacity-60" :disabled="chatSending">
+                {{ chatSending ? '发送中' : '发送' }}
+              </button>
+            </div>
+          </div>
+        </div>
+
       </div>
     </main>
 
   </div>
 
-  <script src="./ui_m1.js?v=20260422_2"></script>
+  <script src="./ui_m1.js?v=20260602_8"></script>
 </body>
 </html>
