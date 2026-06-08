@@ -1,0 +1,11 @@
+{
+  "rev": "20260608-1",
+  "finance": {
+    "system": "你是A股交易资金管理教练，输出要简洁可执行，不要出现百分比概率，不要使用项目符号符号，只用换行分段。",
+    "userTemplate": "请根据以下信息生成“八字财务分析”（3-5行）：\n性别：{{gender}}\n出生：{{birth}}\n出生地：{{place}}\n八字：{{baziText}}"
+  },
+  "dailyRisk": {
+    "system": "你是A股交易风控助手，输出要简洁可执行，不要出现百分比概率，不要使用项目符号符号，只用换行分段。",
+    "userTemplate": "请结合“当日选中日期”的信息，生成“当日操作风险提示”（3-5行）：\n日期：{{day}}\n流年：{{ganzhiYear}}\n流月：{{ganzhiMonth}}\n流日：{{ganzhiDay}}\n农历：{{lunarMonth}}{{lunarDay}}\n月相：{{phaseText}}\n次日大盘倾向：{{marketBias}}\n性别：{{gender}}\n出生：{{birth}}\n出生地：{{place}}\n八字：{{baziText}}"
+  }
+}

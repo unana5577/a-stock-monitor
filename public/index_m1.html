@@ -766,6 +766,8 @@
                   </div>
                 </div>
 
+                <div v-if="policyError" class="mt-2 text-[10px] text-orange-600">波段策略数据未就绪</div>
+
                 <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <div class="text-[11px] font-semibold text-q-subtext uppercase tracking-widest mb-2">风控预警</div>
@@ -812,16 +814,19 @@
             <div class="overflow-x-auto">
               <table class="min-w-full text-xs">
                 <thead>
-                  <tr class="text-gray-500 border-b border-gray-100">
-                    <th class="text-left py-2 pr-3 font-medium w-10">选</th>
-                    <th class="text-left py-2 pr-3 font-medium">ETF</th>
-                    <th class="text-left py-2 pr-3 font-medium">板块</th>
-                    <th class="text-left py-2 pr-3 font-medium">池子</th>
-                    <th class="text-right py-2 pr-3 font-medium">现仓</th>
-                    <th class="text-right py-2 pr-3 font-medium">目标</th>
-                    <th class="text-left py-2 pr-3 font-medium">建议</th>
-                    <th class="text-right py-2 pr-3 font-medium w-40">金额(元)</th>
-                    <th class="text-right py-2 pr-0 font-medium w-20">操作</th>
+                  <tr class="text-gray-500 border-b border-gray-100 text-[11px]">
+                    <th class="text-left py-2 pr-2 font-medium w-8">选</th>
+                    <th class="text-left py-2 pr-2 font-medium">ETF</th>
+                    <th class="text-left py-2 pr-2 font-medium">板块</th>
+                    <th class="text-left py-2 pr-2 font-medium">趋势状态</th>
+                    <th class="text-left py-2 pr-2 font-medium">触发</th>
+                    <th class="text-center py-2 px-1 font-medium">信号</th>
+                    <th class="text-right py-2 pr-2 font-medium">止损</th>
+                    <th class="text-right py-2 pr-2 font-medium">现仓</th>
+                    <th class="text-right py-2 pr-2 font-medium">目标</th>
+                    <th class="text-left py-2 pr-2 font-medium">建议</th>
+                    <th class="text-right py-2 pr-2 font-medium w-28">金额(元)</th>
+                    <th class="text-right py-2 pr-0 font-medium w-16">操作</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -833,21 +838,22 @@
                       <div class="text-gray-800 font-semibold">{{ r.name }}</div>
                       <div class="text-[11px] text-gray-500 line-clamp-1" :title="r.reason">{{ r.reason }}</div>
                     </td>
-                    <td class="py-2 pr-3 text-gray-700">{{ r.category }}</td>
-                    <td class="py-2 pr-3">
-                      <span class="px-2 py-0.5 rounded-full border text-[10px] font-semibold"
-                            :class="r.pool === '趋势向上' ? 'border-green-200 bg-green-50 text-green-700' : (r.pool === '高风险' ? 'border-red-200 bg-red-50 text-red-700' : 'border-yellow-200 bg-yellow-50 text-yellow-800')">
-                        {{ r.pool }}
-                      </span>
+                    <td class="py-2 pr-2 text-gray-700">{{ r.category }}</td>
+                    <td class="py-2 pr-2 text-xs" :class="r.trendState.includes('持仓') || r.trendState === '筑底中' ? 'text-green-700 font-medium' : (r.trendState.includes('冷却') ? 'text-red-600 font-medium' : 'text-gray-500')">
+                      {{ r.trendState }}
                     </td>
-                    <td class="py-2 pr-3 text-right font-mono text-gray-700">{{ (r.currentWeight * 100).toFixed(1) }}%</td>
-                    <td class="py-2 pr-3 text-right font-mono text-gray-700">{{ (r.targetWeight * 100).toFixed(1) }}%</td>
-                    <td class="py-2 pr-3">
-                      <span v-if="r.action !== '不动'" class="px-2 py-0.5 rounded-full border text-[10px] font-semibold"
-                            :class="r.action === '买入' ? 'border-green-200 bg-green-50 text-green-700' : 'border-red-200 bg-red-50 text-red-700'">
-                        {{ r.action }}
-                      </span>
-                      <span v-else class="px-2 py-0.5 rounded-full border border-gray-200 bg-gray-50 text-[10px] font-semibold text-gray-500">不动</span>
+                    <td class="py-2 pr-2 text-[10px] text-gray-600">{{ r.triggerType || '—' }}</td>
+                    <td class="py-2 px-1 text-center text-xs" :class="r.signalStrength === '强' ? 'text-green-700 font-medium' : (r.signalStrength === '中' ? 'text-yellow-600 font-medium' : (r.signalStrength === '弱' ? 'text-orange-600' : 'text-gray-400'))">
+                      {{ r.signalStrength }}
+                    </td>
+                    <td class="py-2 pr-2 text-right text-[10px] font-mono text-gray-500">
+                      <span v-if="r.stopWarn && r.stopWarn !== '—'">{{ r.stopWarn }}% / {{ r.stopExec }}%</span>
+                      <span v-else>—</span>
+                    </td>
+                    <td class="py-2 pr-2 text-right font-mono text-gray-700">{{ (r.currentWeight * 100).toFixed(1) }}%</td>
+                    <td class="py-2 pr-2 text-right font-mono text-gray-700">{{ (r.targetWeight * 100).toFixed(1) }}%</td>
+                    <td class="py-2 pr-3 text-xs font-medium" :class="r.action === '买入' ? 'text-green-700' : (r.action === '卖出' ? 'text-red-600' : 'text-gray-400')">
+                      {{ r.action }}
                     </td>
                     <td class="py-2 pr-3 text-right">
                       <input v-if="r.selectable" v-model.number="suggestionOverrides[r.symbol]" type="number" min="0"
@@ -1085,7 +1091,10 @@
                     <div class="text-xs text-gray-500">当日操作风险提示</div>
                     <div class="mt-1 text-xs text-gray-500 leading-relaxed max-w-[70ch]">绑定当前选中日期，用于提醒今日是否适合进攻/防守/空仓观察。</div>
                   </div>
-                  <div class="text-[10px] text-gray-400 font-mono">{{ astroSelectedDay || '-' }}</div>
+                  <div class="text-[10px] text-gray-400 font-mono">
+                    <div class="text-right">{{ astroSelectedDay || '-' }}</div>
+                    <div class="text-right">{{ (astroSelectedGanzhiDay ? `流日:${astroSelectedGanzhiDay}` : '') }}{{ (astroSelectedLunarDay ? ` · ${astroSelectedLunarDay}` : '') }}</div>
+                  </div>
                 </div>
                 <div class="mt-2 flex items-center justify-end">
                   <button @click="ensureDailyRiskAuto(true)" class="px-2.5 py-1 rounded border border-gray-200 text-gray-700 hover:bg-gray-50 text-xs disabled:opacity-60" :disabled="dailyRiskLoading || !baziProfile?.ok || !astroSelectedDay">
@@ -1136,10 +1145,11 @@
                     >
                       <div class="w-full flex items-center justify-between">
                         <span class="text-[10px] font-mono text-gray-400">{{ d.date.slice(8) }}</span>
-                        <span class="text-[10px] font-mono" :class="d.waxingWaning === '盈' ? 'text-q-up' : 'text-q-down'">{{ d.waxingWaning }}</span>
+                        <span class="text-[10px] font-mono text-gray-400">{{ d.lunarDay || '' }}</span>
                       </div>
                       <div class="mt-1 h-7 w-7" v-html="astroPhaseSvg(d)"></div>
-                      <div class="mt-1 text-[10px] font-mono" :class="astroPhaseRiskClass(d.phaseIndex)">{{ astroPhaseRiskText(d.phaseIndex) }}</div>
+                      <div class="mt-1 text-[10px] font-mono text-gray-700">{{ d.sixtyCycleDay || '' }}</div>
+                      <div class="mt-1 text-[10px] font-mono" :class="astroPhaseRiskClass(d.phaseIndex)">{{ astroPhaseRiskText(d) }}</div>
                     </button>
                   </div>
                 </div>

@@ -19,6 +19,8 @@ const app = createApp({
     const lastUpdate = ref('---');
     const marketAmount = ref(null);
     const lifecycleItems = ref([]);
+    const policyData = ref({});
+    const policyError = ref('');
     const intradaySnapshotItems = ref([]);
     const breadthData = ref({ up: 0, flat: 0, down: 0, total: 0 });
     const volumeHistory = ref([]);
@@ -254,6 +256,26 @@ const app = createApp({
 
     const baziReady = computed(() => !!(userGender.value && userBirth.value && userPlaceText.value));
     const baziSubmitted = ref(false);
+    const BAZI_CACHE_KEY = 'astro_bazi_profile_v1';
+
+    const restoreBaziCache = () => {
+      try {
+        const raw = localStorage.getItem(BAZI_CACHE_KEY) || '';
+        const obj = raw ? JSON.parse(raw) : null;
+        if (!obj || !obj.ok) return;
+        const birth = String(userBirth.value || '').trim();
+        const place = String(userPlaceText.value || '').trim();
+        const placeDetail = String(userArea.value || '').trim();
+        const gender = String(userGender.value || '').trim();
+        if (String(obj.birth || '').trim() !== birth) return;
+        if (String(obj.place || '').trim() !== place) return;
+        if (String(obj.placeDetail || '').trim() !== placeDetail) return;
+        if (String(obj.gender || '').trim() !== gender) return;
+        baziProfile.value = obj;
+        baziSubmitted.value = true;
+      } catch (e) { void e; }
+    };
+    restoreBaziCache();
 
     const fetchBaziProfile = async () => {
       const birth = String(userBirth.value || '').trim();
@@ -279,6 +301,7 @@ const app = createApp({
         const json = await res.json();
         if (json && json.ok) {
           baziProfile.value = json;
+          try { localStorage.setItem(BAZI_CACHE_KEY, JSON.stringify(json)); } catch (e) { void e; }
         } else {
           baziProfile.value = null;
           baziError.value = json && json.error ? String(json.error) : '生成失败';
@@ -404,6 +427,23 @@ const app = createApp({
       rebalanceBandPct: Number(localStorage.getItem('sim_rebalance_band_pct') || 5),
       maxCategoryPct: Number(localStorage.getItem('sim_max_category_pct') || 30)
     });
+    const policyConfig = ref({
+      heatUpDays: Number(localStorage.getItem('policy_heat_up_days') || 3),
+      overheatRatio: Number(localStorage.getItem('policy_overheat_ratio') || 0.9),
+      cooldownMinDays: Number(localStorage.getItem('policy_cooldown_min_days') || 3),
+      biasResetRatio: Number(localStorage.getItem('policy_bias_reset_ratio') || 0.6),
+      firstEntryRatio: Number(localStorage.getItem('policy_first_entry_ratio') || 0.6),
+      buildingEntryRatio: Number(localStorage.getItem('policy_building_entry_ratio') || 0.25),
+      priceDiscountFactor: Number(localStorage.getItem('policy_price_discount_factor') || 0.5),
+      topupBiasMA20: Number(localStorage.getItem('policy_topup_bias_ma20') || 3.0),
+      stopWarnMult: Number(localStorage.getItem('policy_stop_warn_mult') || 5),
+      stopExecMult: Number(localStorage.getItem('policy_stop_exec_mult') || 8),
+      stopWarnCap: Number(localStorage.getItem('policy_stop_warn_cap') || 12),
+      stopExecCap: Number(localStorage.getItem('policy_stop_exec_cap') || 18)
+    });
+    const savePolicyConfig = () => {
+      Object.entries(policyConfig.value).forEach(([k, v]) => localStorage.setItem(`policy_${k}`, v));
+    };
     const simState = ref({
       cash: 0,
       positions: {},
@@ -901,22 +941,31 @@ const app = createApp({
       const equity = simMetrics.value.equity || 0;
       if (equity <= 0) return [];
       const band = Math.max(0, Number(simConfig.value.rebalanceBandPct || 0)) / 100;
-      const holdSyms = (etfLifecycleHold.value || []).map(i => i.symbol);
-      const sellSyms = (etfLifecycleSell.value || []).map(i => i.symbol);
-      const holdSet = new Set(holdSyms);
-      const sellSet = new Set(sellSyms);
-      if (!holdSyms.length && !sellSyms.length) return [];
+      const pData = policyData.value || {};
 
-      const targets = {};
-      if (holdSyms.length) {
-        const w = 1 / holdSyms.length;
-        holdSyms.forEach((s) => { targets[s] = w; });
-      }
-      sellSyms.forEach((s) => { targets[s] = 0; });
+      const strengthWeight = { '强': 1.0, '中': 0.5, '弱': 0.25 };
+      const activeSet = [];
+      Object.entries(pData).forEach(([sym, p]) => {
+        const act = p.action;
+        if (['ENTER', 'BUILD', 'HOLD', 'TOPUP'].includes(act)) {
+          activeSet.push({ sym, strength: p.signal_strength || '中', priceFactor: p.price_factor || 1.0 });
+        }
+      });
+      if (!activeSet.length) return [];
+
+      let totalW = 0;
+      activeSet.forEach(a => { totalW += (strengthWeight[a.strength] || 0.5) * a.priceFactor; });
+      if (totalW <= 0) return [];
+
+      const baselineWeight = 1.0 / activeSet.length;
 
       const suggestions = [];
-      Object.keys(targets).forEach((sym) => {
-        const targetWeight = targets[sym];
+      activeSet.forEach(({ sym, strength, priceFactor }) => {
+        const sw = strengthWeight[strength] || 0.5;
+        let targetWeight = baselineWeight * sw * priceFactor / totalW;
+        const p = pData[sym];
+        const positionLevel = Number(p?.position_level || 0);
+        targetWeight = targetWeight * positionLevel;
         const curVal = getPositionValue(sym);
         const curW = equity > 0 ? curVal / equity : 0;
         const delta = targetWeight - curW;
@@ -929,15 +978,7 @@ const app = createApp({
         if (notional <= 0) return;
 
         const cat = etfCategoryMap[sym] || '未分类';
-        const item = (etfLifecycleItems.value || []).find(i => i.symbol === sym);
-        let reason = sellSet.has(sym)
-          ? `高风险极值：${item?.动能 || '高位风险'}，建议减仓至0%`
-          : (holdSet.has(sym) ? `趋势向上：${item?.动能 || '趋势向上'}，等权目标配置` : '等待趋势信号');
-        if (sym === 'sh512400') {
-          if (sellSet.has(sym)) reason = `有色强势高位，偏离均线接近极值，先落袋减仓；动能：${item?.动能 || '高位风险'}`;
-          else if (holdSet.has(sym)) reason = `有色趋势偏强，优先考虑回撤分批吸；动能：${item?.动能 || '趋势向上'}`;
-          else reason = `有色暂无明确优势，先观望等待趋势确认`;
-        }
+        const reason = (pData[sym] && pData[sym].reason) ? pData[sym].reason : '策略信号';
 
         suggestions.push({
           symbol: sym,
@@ -961,35 +1002,55 @@ const app = createApp({
       return m;
     });
 
-    const getLifecyclePool = (sym) => {
-      const sell = (etfLifecycleSell.value || []).some(i => i.symbol === sym);
-      if (sell) return '高风险';
-      const hold = (etfLifecycleHold.value || []).some(i => i.symbol === sym);
-      if (hold) return '趋势向上';
-      return '观望';
+    const getTrendStateLabel = (sym) => {
+      const p = (policyData.value || {})[sym];
+      if (!p) return '—';
+      const s = p.trend_state || '—';
+      if (s === 'COOLING') return `冷却(${p.cooldown_left || '?'}天)`;
+      if (s === 'BUILDING') return '筑底中';
+      if (s === 'IN') return `持仓 ${(p.position_level||0)*100}%`;
+      return '空仓';
+    };
+
+    const getTriggerType = (sym) => {
+      const p = (policyData.value || {})[sym];
+      const a = p && p.action;
+      if (a === 'BUILD') return '筑底试探';
+      if (a === 'ENTER') return '趋势确认';
+      if (a === 'TOPUP') return '补仓';
+      if (a === 'CUT') return '动能减弱';
+      if (a === 'EXIT') return p.reason && p.reason.includes('过热') ? '过热清仓' : '趋势破坏';
+      if (a === 'STOP_WARN') return '止损预警';
+      if (a === 'STOP_EXIT') return '止损清仓';
+      if (a === 'HOLD') return '持有';
+      return '—';
     };
 
     const tradeTableRows = computed(() => {
       const equity = simMetrics.value.equity || 0;
-      const holdCount = (etfLifecycleHold.value || []).length;
-      const holdTarget = holdCount > 0 ? 1 / holdCount : 0;
+      const pData = policyData.value || {};
       return (etfSymbols || []).map((sym) => {
+        const p = pData[sym] || {};
         const sugg = tradeSuggestionMap.value?.[sym] || null;
         const val = getPositionValue(sym);
         const w = equity > 0 ? val / equity : 0;
-        const pool = getLifecyclePool(sym);
         const action = sugg ? (sugg.action === 'BUY' ? '买入' : '卖出') : '不动';
-        const targetWeight = sugg ? sugg.targetWeight : (pool === '趋势向上' ? holdTarget : 0);
+        const targetWeight = sugg ? sugg.targetWeight : 0;
         const amt = sugg ? Number(suggestionOverrides.value?.[sym] ?? sugg.notional) : 0;
         const selectable = !!sugg;
         const item = (etfLifecycleItems.value || []).find(i => i.symbol === sym);
         const momentum = item?.动能 || '';
-        const reason = sugg ? sugg.reason : (momentum ? `趋势信号：${momentum}` : '等待趋势信号');
+        const reason = sugg ? sugg.reason : (p.reason || (momentum ? `趋势信号：${momentum}` : '等待策略信号'));
         return {
           symbol: sym,
           name: symbolNames[sym] || sym,
           category: etfCategoryMap[sym] || '未分类',
-          pool,
+          trendState: getTrendStateLabel(sym),
+          triggerType: getTriggerType(sym),
+          positionLevel: p.position_level != null ? Math.round(p.position_level * 100) + '%' : '0%',
+          signalStrength: p.signal_strength || '—',
+          stopWarn: p.stop_warn_line || '—',
+          stopExec: p.stop_exec_line || '—',
           currentWeight: w,
           targetWeight,
           action,
@@ -998,9 +1059,10 @@ const app = createApp({
           reason
         };
       }).sort((a, b) => {
-        if (a.selectable !== b.selectable) return a.selectable ? -1 : 1;
-        if (a.pool !== b.pool) return a.pool === '趋势向上' ? -1 : (b.pool === '趋势向上' ? 1 : (a.pool === '高风险' ? -1 : 1));
-        return (b.currentWeight || 0) - (a.currentWeight || 0);
+        const stateOrder = { '持仓': 0, '筑底中': 1, '冷却': 2, '空仓': 3, '—': 4 };
+        const aState = a.trendState.startsWith('持仓') ? '持仓' : a.trendState.startsWith('冷却') ? '冷却' : a.trendState;
+        const bState = b.trendState.startsWith('持仓') ? '持仓' : b.trendState.startsWith('冷却') ? '冷却' : b.trendState;
+        return (stateOrder[aState] || 9) - (stateOrder[bState] || 9);
       });
     });
 
@@ -1420,6 +1482,8 @@ const app = createApp({
             intradaySnapshotItems.value = data.intraday_snapshot.items;
           }
           if (data.warmup && data.warmup.history) warmupHistory.value = data.warmup.history;
+          if (data.policy && data.policy.policies) policyData.value = data.policy.policies;
+          else if (data.policy && data.policy.day) policyError.value = 'policy empty';
           lastUpdate.value = new Date().toLocaleTimeString('zh-CN', { hour12: false });
           
           // Draw Correlation Chart once warmup is ready
@@ -1475,6 +1539,14 @@ const app = createApp({
       } finally {
         astroLoading.value = false;
       }
+    };
+
+    const getBeijingToday = () => {
+      const d = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Shanghai' }));
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${dd}`;
     };
 
     const fetchAstroCalendarMonth = async (monthStr) => {
@@ -1726,36 +1798,83 @@ const app = createApp({
     const astroPhaseSvg = (d) => {
       const idx = Number(d && d.phaseIndex);
       const i = Number.isFinite(idx) ? Math.max(0, Math.min(7, idx)) : 0;
-      const cut = [1.0, 0.82, 0.62, 0.38, 0.0, -0.38, -0.62, -0.82][i];
-      const g = d && d.waxingWaning === '盈' ? 1 : 0;
-      const side = g ? 1 : -1;
-      const cx = 14 + side * cut * 10;
-      const r = 12;
-      const clip = `<clipPath id="mc"><circle cx="14" cy="14" r="${r}"/></clipPath>`;
-      const grad = `<radialGradient id="gl" cx="30%" cy="30%"><stop offset="0%" stop-color="#FFFFFF"/><stop offset="55%" stop-color="#F2F4F8"/><stop offset="100%" stop-color="#D9DEE8"/></radialGradient>`;
-      const bg = `<circle cx="14" cy="14" r="${r}" fill="#0B1220"/>`;
-      const disc = `<circle cx="14" cy="14" r="${r}" fill="url(#gl)"/>`;
-      const shade = i === 4 ? '' : `<circle cx="${cx}" cy="14" r="${r}" fill="#0B1220"/>`;
-      const ring = `<circle cx="14" cy="14" r="${r}" fill="none" stroke="rgba(17,24,39,0.08)" stroke-width="1"/>`;
-      const sparkle = `<circle cx="9" cy="9" r="1.2" fill="rgba(255,255,255,0.35)"/><circle cx="19" cy="7" r="0.9" fill="rgba(255,255,255,0.25)"/>`;
-      return `<svg viewBox="0 0 28 28" width="28" height="28" xmlns="http://www.w3.org/2000/svg">${grad}${clip}<g clip-path="url(#mc)">${bg}${disc}${shade}${sparkle}</g>${ring}</svg>`;
+      
+      const paths = [
+        "", 
+        "M 14 2 A 12 12 0 0 1 14 26 A 5 12 0 0 0 14 2",
+        "M 14 2 A 12 12 0 0 1 14 26 L 14 2",
+        "M 14 2 A 12 12 0 0 1 14 26 A 5 12 0 0 1 14 2",
+        "FULL",
+        "M 14 2 A 12 12 0 0 0 14 26 A 5 12 0 0 0 14 2",
+        "M 14 2 A 12 12 0 0 0 14 26 L 14 2",
+        "M 14 2 A 12 12 0 0 0 14 26 A 5 12 0 0 1 14 2"
+      ];
+
+      const litPath = paths[i];
+      const isFull = litPath === "FULL";
+      const isNew = litPath === "";
+      
+      const craters = `
+        <circle cx="10" cy="12" r="1.5" fill="rgba(0,0,0,0.1)" />
+        <circle cx="18" cy="18" r="2.2" fill="rgba(0,0,0,0.08)" />
+        <circle cx="15" cy="8" r="1.2" fill="rgba(0,0,0,0.08)" />
+        <circle cx="21" cy="12" r="1.8" fill="rgba(0,0,0,0.06)" />
+        <circle cx="9" cy="19" r="1.4" fill="rgba(0,0,0,0.08)" />
+      `;
+
+      return `
+        <svg viewBox="0 0 28 28" width="28" height="28" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <!-- 经典的明亮黄渐变 -->
+            <radialGradient id="moonGrad" cx="35%" cy="35%" r="65%">
+              <stop offset="0%" stop-color="#FFF9C4"/>
+              <stop offset="60%" stop-color="#FDD835"/>
+              <stop offset="100%" stop-color="#FBC02D"/>
+            </radialGradient>
+            <filter id="softTerminator" x="-20%" y="-20%" width="140%" height="140%">
+              <feGaussianBlur in="SourceGraphic" stdDeviation="0.4" />
+            </filter>
+            <clipPath id="moonCircle">
+              <circle cx="14" cy="14" r="12" />
+            </clipPath>
+          </defs>
+          <!-- 1. 弱化的黑色暗部：50% 透明黑，增强球体存在感 -->
+          <circle cx="14" cy="14" r="12" fill="rgba(0,0,0,0.5)" />
+          
+          <!-- 2. 明亮部分：经典黄 -->
+          <g filter="url(#softTerminator)">
+            ${isFull ? 
+              `<circle cx="14" cy="14" r="12" fill="url(#moonGrad)" />` : 
+              (isNew ? '' : `<path d="${litPath}" fill="url(#moonGrad)" />`)
+            }
+          </g>
+
+          <!-- 3. 月球坑：回归深色系纹理 -->
+          <g clip-path="url(#moonCircle)" style="mix-blend-mode: multiply">
+            ${craters}
+          </g>
+
+          <!-- 4. 细微描边确保清晰度 -->
+          <circle cx="14" cy="14" r="12" fill="none" stroke="rgba(0,0,0,0.05)" stroke-width="0.5" />
+        </svg>
+      `;
     };
 
-    const astroPhaseRiskText = (idx) => {
-      const i = Number(idx);
+    const astroPhaseRiskText = (d) => {
+      const i = Number(d && d.phaseIndex);
       if (!Number.isFinite(i)) return '';
-      if (i === 4) return '满月';
-      if (i === 0) return '新月';
-      if (i === 2) return '上弦月';
-      if (i === 6) return '下弦月';
-      return '';
+      const name = String(d && d.phaseName || '').trim();
+      if (name) return name;
+      const map = ['新月', '娥眉月', '上弦月', '盈凸月', '满月', '亏凸月', '下弦月', '残月'];
+      return map[i] || '';
     };
 
     const astroPhaseRiskClass = (idx) => {
-      const t = astroPhaseRiskText(idx);
-      if (!t) return 'text-gray-300';
-      if (t === '满月') return 'text-gray-700';
-      if (t === '新月') return 'text-gray-700';
+      const i = Number(idx);
+      const t = Number.isFinite(i) ? i : -1;
+      if (t < 0) return 'text-gray-300';
+      if (t === 4 || t === 0) return 'text-gray-700';
+      if (t === 2 || t === 6) return 'text-gray-600';
       return 'text-gray-500';
     };
 
@@ -1766,11 +1885,19 @@ const app = createApp({
       return hit ? hit.sixtyCycleDay : (astroPredict.value?.astro?.asOf?.sixtyCycleDay || '');
     });
 
+    const astroSelectedLunarDay = computed(() => {
+      const d = astroSelectedDay.value;
+      if (!d) return '';
+      const hit = astroMonthDays.value.find(x => x.date === d) || astroWeekDays.value.find(x => x.date === d);
+      if (hit && hit.lunarMonth && hit.lunarDay) return `${hit.lunarMonth}${hit.lunarDay}`;
+      return '';
+    });
+
     const astroSelectedPhase = computed(() => {
       const d = astroSelectedDay.value;
       if (!d) return '';
       const hit = astroMonthDays.value.find(x => x.date === d) || astroWeekDays.value.find(x => x.date === d);
-      return hit ? `${astroPhaseRiskText(hit.phaseIndex)} ${hit.waxingWaning}`.trim() : '';
+      return hit ? `${astroPhaseRiskText(hit)}`.trim() : '';
     });
 
     const marketTag = (h) => {
@@ -2395,10 +2522,9 @@ const app = createApp({
       fetchMinuteData();
       fetchBreadth();
       fetchVolumeHistory();
-      fetchAstroPredict().then(() => {
-        const d = astroSelectedDay.value || (astroPredict.value ? astroPredict.value.asOfDay : '');
-        if (d) selectAstroDay(d);
-      });
+      const d = astroSelectedDay.value || getBeijingToday();
+      astroSelectedDay.value = d;
+      selectAstroDay(d);
 
       window.addEventListener('resize', () => {
         Object.values(chartInstances).forEach(chart => chart.resize());
@@ -2499,6 +2625,7 @@ const app = createApp({
       astroWeekTradingDays,
       astroWeekStatus,
       astroSelectedGanzhiDay,
+      astroSelectedLunarDay,
       astroSelectedPhase,
       userGender,
       userBirth,
@@ -2556,6 +2683,10 @@ const app = createApp({
       fmtHeatDelta,
       getItemStats,
       simConfig,
+      policyConfig,
+      policyData,
+      policyError,
+      savePolicyConfig,
       simState,
       simMetrics,
       simPositionsList,
