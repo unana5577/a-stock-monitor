@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>五阶段策略 · 交易助手</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            'q-bg': '#F4F4F5',
+            'q-panel': '#FFFFFF',
+            'q-border': '#E4E4E7',
+            'q-text': '#18181B',
+            'q-subtext': '#71717A',
+            'q-up': '#EF4444',
+            'q-down': '#10B981',
+            'q-flat': '#A1A1AA',
+            'q-primary': '#2563EB',
+            'q-sidebar': '#FFFFFF',
+            'q-side-text': '#52525B',
+            'q-side-hover': '#F4F4F5',
+            'q-side-active': '#18181B'
+          },
+          fontFamily: {
+            mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
+            sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', '"PingFang SC"', '"Segoe UI"', 'Roboto', 'sans-serif'],
+          },
+          boxShadow: {
+            'q': '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
+          }
+        }
+      }
+    }
+  </script>
+
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+
+  <style>
+    body {
+      background-color: #F4F4F5;
+      color: #18181B;
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+      margin: 0; padding: 0;
+      -webkit-font-smoothing: antialiased;
+    }
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #D4D4D8; border-radius: 2px; }
+
+    .q-panel {
+      background: #FFFFFF;
+      border: 1px solid #E4E4E7;
+      border-radius: 8px;
+      box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.02);
+    }
+    .stat-value {
+      font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+    }
+    [v-cloak] { display: none; }
+
+    .stage-uptrend  { border-left: 3px solid #10B981; }  /* 主升 绿 */
+    .stage-startup  { border-left: 3px solid #F59E0B; }  /* 启动 黄 */
+    .stage-ranged   { border-left: 3px solid #3B82F6; }  /* 震荡 蓝 */
+    .stage-declining{ border-left: 3px solid #F97316; }  /* 下跌 橙 */
+    .stage-defense  { border-left: 3px solid #EF4444; }  /* 防守 红 */
+
+    .badge-uptrend   { background: #D1FAE5; color: #065F46; }
+    .badge-startup   { background: #FEF3C7; color: #92400E; }
+    .badge-ranged    { background: #DBEAFE; color: #1E40AF; }
+    .badge-declining { background: #FFEDD5; color: #9A3412; }
+    .badge-defense   { background: #FEE2E2; color: #991B1B; }
+  </style>
+</head>
+<body class="min-h-screen">
+
+<div id="app" v-cloak class="max-w-6xl mx-auto px-4 py-6">
+
+  <!-- Header -->
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="text-xl font-bold text-q-text">五阶段策略调度</h1>
+      <p class="text-sm text-q-subtext mt-1">
+        日线 {{ day }} · {{ stages.length }} 只ETF · 自动刷新 {{ refreshSec }}s
+      </p>
+    </div>
+    <div class="flex items-center gap-3">
+      <button @click="toggleAutoRefresh"
+        class="px-3 py-1.5 text-xs rounded-md border border-q-border text-q-subtext hover:bg-q-bg transition">
+        {{ autoRefresh ? '⏸ 暂停' : '▶ 刷新' }}
+      </button>
+      <span class="text-xs text-q-subtext" v-if="error">{{ error }}</span>
+    </div>
+  </div>
+
+  <!-- Stage Cards Grid -->
+  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+    <div v-for="s in stages" :key="s.symbol"
+      :class="['q-panel p-5', stageBorderClass(s.stage)]">
+
+      <!-- Top: name + stage badge -->
+      <div class="flex items-center justify-between mb-3">
+        <div class="flex items-center gap-2">
+          <span class="text-lg">{{ s.stage_icon }}</span>
+          <span class="font-semibold text-q-text">{{ s.name }}</span>
+          <span class="text-xs text-q-subtext font-mono">{{ s.symbol }}</span>
+        </div>
+        <span :class="['px-2 py-0.5 rounded-md text-xs font-medium', stageBadgeClass(s.stage)]">
+          {{ s.stage }}
+        </span>
+      </div>
+
+      <!-- Price row -->
+      <div class="flex items-baseline gap-2 mb-3">
+        <span class="text-2xl font-bold stat-value text-q-text">{{ s.close }}</span>
+        <span :class="['text-sm font-mono', s.pct >= 0 ? 'text-q-up' : 'text-q-down']">
+          {{ s.pct >= 0 ? '+' : '' }}{{ s.pct }}%
+        </span>
+      </div>
+
+      <!-- MA indicators -->
+      <div class="grid grid-cols-2 gap-2 mb-3">
+        <div class="bg-q-bg rounded-md px-3 py-2">
+          <span class="text-[10px] text-q-subtext block">MA20</span>
+          <span class="text-sm font-mono text-q-text">{{ s.ma20 }}</span>
+        </div>
+        <div class="bg-q-bg rounded-md px-3 py-2">
+          <span class="text-[10px] text-q-subtext block">MA60</span>
+          <span class="text-sm font-mono text-q-text">{{ s.ma60 }}</span>
+        </div>
+      </div>
+
+      <!-- MA slope -->
+      <div class="flex items-center gap-2 mb-3">
+        <span class="text-[10px] text-q-subtext">MA20斜率</span>
+        <span :class="['text-xs font-mono', s.ma20_slope >= 0 ? 'text-q-up' : 'text-q-down']">
+          {{ s.ma20_slope >= 0 ? '+' : '' }}{{ fmtSlope(s.ma20_slope) }}
+        </span>
+        <span class="text-[10px] text-q-subtext ml-auto">量比 {{ s.vol_ratio }}</span>
+      </div>
+
+      <!-- 90d range bar -->
+      <div class="mb-2">
+        <div class="flex justify-between text-[10px] text-q-subtext">
+          <span>90日低: {{ s.low_90d }}</span>
+          <span>90日高: {{ s.high_90d }}</span>
+        </div>
+        <div class="mt-1 h-1.5 bg-q-bg rounded-full overflow-hidden">
+          <div class="h-full rounded-full transition-all duration-500"
+            :style="{ width: rangePct(s) + '%', background: rangeColor(s) }">
+          </div>
+        </div>
+      </div>
+
+      <!-- Position hint -->
+      <div class="text-[11px] text-q-subtext mt-1">
+        {{ positionHint(s) }}
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="mt-6 text-center text-[10px] text-q-subtext">
+    端口 8783 · 数据来自 :8787 /api/m1/stage_state · V2 固定参数版
+  </div>
+</div>
+
+<script src="ui.js"></script>
+</body>
+</html>
