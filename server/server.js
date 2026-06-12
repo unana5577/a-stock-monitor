@@ -26,16 +26,18 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // 1. Route dispatch — stop if response already ended
+  // 1. Route dispatch — handler returns true if matched, stop immediately
+  let routeMatched = false;
   for (const handle of routes) {
-    if (res.writableEnded) break;
     try {
-      await handle(req, res);
+      routeMatched = await handle(req, res);
+      if (routeMatched) break;
     } catch (e) {
       console.error('Route error:', e.message);
     }
   }
-  if (res.writableEnded) return;
+  // Guard: routeMatched skips static file serving even for async handlers
+  if (routeMatched || res.writableEnded) return;
 
   // 2. Static file serving
   const pathname = url.pathname || '/';
@@ -66,4 +68,12 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(ctx.PORT, () => {
   console.log(`proxy server on http://localhost:${ctx.PORT} [Ashare+Tencent]`);
+});
+
+// Safety: prevent execFile callback errors from crashing the server
+process.on('uncaughtException', (err) => {
+  console.error('[uncaughtException]', err.message);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandledRejection]', String(reason));
 });

@@ -28,7 +28,7 @@ module.exports = function() {
           if (last && last >= day && volLast !== day && p?.series?.sse?.length && p.series.sse.some(x => x.amount > 0)) {
             res.setHeader('Content-Type', 'application/json; charset=utf-8');
             res.end(cached);
-            return;
+            return true;
           }
         }
       } catch (e) {
@@ -56,11 +56,11 @@ module.exports = function() {
         }
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         res.end(cached);
-        return;
+        return true;
       }
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.end(JSON.stringify({ day, series: {}, volume: [], rev: OVERVIEW_CACHE_REV }));
-      return;
+      return true;
     }
     const payload = await buildOverviewHistoryPayload(day);
     if (payload) {
@@ -72,11 +72,11 @@ module.exports = function() {
       }
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.end(payload);
-      return;
+      return true;
     }
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.end(JSON.stringify({ day, series: {}, volume: [], rev: OVERVIEW_CACHE_REV }));
-    return;
+    return true;
   }
   if (url.pathname === '/api/m1/data/breadth' && req.method === 'GET') {
     try {
@@ -120,7 +120,7 @@ module.exports = function() {
       res.statusCode = 500;
       res.end(JSON.stringify({ ok: false, error: e.message }));
     }
-    return;
+    return true;
   }
 
   if (url.pathname === '/api/m1/data/volume_history' && req.method === 'GET') {
@@ -186,7 +186,7 @@ module.exports = function() {
       res.statusCode = 500;
       res.end(JSON.stringify({ ok: false, error: e.message }));
     }
-    return;
+    return true;
   }
 
   if (url.pathname === '/api/m1/data/overview' && req.method === 'GET') {
@@ -288,7 +288,7 @@ module.exports = function() {
       res.statusCode = 500;
       res.end(JSON.stringify({ ok: false, error: e.message }));
     }
-    return;
+    return true;
   }
 
   if (url.pathname === '/api/m1/policy' && req.method === 'GET') {
@@ -308,7 +308,7 @@ module.exports = function() {
       res.statusCode = 500;
       res.end(JSON.stringify({ ok: false, error: e.message }));
     }
-    return;
+    return true;
   }
 
   if (url.pathname === '/api/m1/market_state' && req.method === 'GET') {
@@ -321,7 +321,7 @@ module.exports = function() {
           res.statusCode = 500;
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
           res.end(JSON.stringify({ ok: false, error: String(stderr || err.message) }));
-          return;
+          return true;
         }
         try {
           const data = JSON.parse(stdout.trim());
@@ -337,7 +337,7 @@ module.exports = function() {
       res.statusCode = 500;
       res.end(JSON.stringify({ ok: false, error: e.message }));
     }
-    return;
+    return true;
   }
 
   if (url.pathname === '/api/m1/market_state' && req.method === 'POST') {
@@ -348,7 +348,7 @@ module.exports = function() {
         res.statusCode = 400;
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         res.end(JSON.stringify({ ok: false, error: 'invalid state, use: 震荡/上升/下跌' }));
-        return;
+        return true;
       }
       const pythonBin = 'python3';
       execFile(pythonBin, ['-c',
@@ -358,7 +358,7 @@ module.exports = function() {
           res.statusCode = 500;
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
           res.end(JSON.stringify({ ok: false, error: String(stderr || err.message) }));
-          return;
+          return true;
         }
         try {
           const data = JSON.parse(stdout.trim());
@@ -373,7 +373,7 @@ module.exports = function() {
       res.statusCode = 500;
       res.end(JSON.stringify({ ok: false, error: e.message }));
     }
-    return;
+    return true;
   }
 
   if (url.pathname === '/api/m1/market_state' && req.method === 'DELETE') {
@@ -386,7 +386,7 @@ module.exports = function() {
           res.statusCode = 500;
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
           res.end(JSON.stringify({ ok: false, error: String(stderr || err.message) }));
-          return;
+          return true;
         }
         try {
           const data = JSON.parse(stdout.trim());
@@ -401,7 +401,7 @@ module.exports = function() {
       res.statusCode = 500;
       res.end(JSON.stringify({ ok: false, error: e.message }));
     }
-    return;
+    return true;
   }
 
   if (url.pathname === '/api/m1/ranged_strategy' && req.method === 'GET') {
@@ -414,7 +414,7 @@ module.exports = function() {
           res.statusCode = 500;
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
           res.end(JSON.stringify({ ok: false, error: String(stderr || err.message) }));
-          return;
+          return true;
         }
         try {
           const data = JSON.parse(stdout.trim());
@@ -430,7 +430,7 @@ module.exports = function() {
       res.statusCode = 500;
       res.end(JSON.stringify({ ok: false, error: e.message }));
     }
-    return;
+    return true;
   }
 
   if (url.pathname === '/api/m1/ranged_strategy/execute' && req.method === 'POST') {
@@ -442,7 +442,7 @@ module.exports = function() {
         res.statusCode = 400;
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         res.end(JSON.stringify({ ok: false, error: 'symbol and signal_type required' }));
-        return;
+        return true;
       }
       const pythonBin = 'python3';
       execFile(pythonBin, ['-c',
@@ -452,7 +452,7 @@ module.exports = function() {
           res.statusCode = 500;
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
           res.end(JSON.stringify({ ok: false, error: String(stderr || err.message) }));
-          return;
+          return true;
         }
         try {
           const data = JSON.parse(stdout.trim());
@@ -467,7 +467,7 @@ module.exports = function() {
       res.statusCode = 500;
       res.end(JSON.stringify({ ok: false, error: e.message }));
     }
-    return;
+    return true;
   }
 
   if (url.pathname === '/api/m1/ranged_strategy/reset' && req.method === 'POST') {
@@ -485,7 +485,7 @@ module.exports = function() {
           res.statusCode = 500;
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
           res.end(JSON.stringify({ ok: false, error: String(stderr || err.message) }));
-          return;
+          return true;
         }
         try {
           const data = JSON.parse(stdout.trim());
@@ -500,7 +500,7 @@ module.exports = function() {
       res.statusCode = 500;
       res.end(JSON.stringify({ ok: false, error: e.message }));
     }
-    return;
+    return true;
   }
 
   if (url.pathname === '/api/m1/data/minute' && req.method === 'GET') {
@@ -608,7 +608,7 @@ module.exports = function() {
       res.statusCode = 500;
       res.end(JSON.stringify({ ok: false, error: e.message }));
     }
-    return;
+    return true;
   }
 
   if (url.pathname === '/api/m1/run' && req.method === 'POST') {
@@ -681,7 +681,7 @@ module.exports = function() {
         res.end(JSON.stringify({ error: e.message }));
       }
     });
-    return;
+    return true;
   }
 
   // ── /api/m1/stage_state — 五阶段策略实时状态 (V2) ──
@@ -697,7 +697,7 @@ module.exports = function() {
           res.statusCode = 500;
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
           res.end(JSON.stringify({ ok: false, error: String(stderr || err.message) }));
-          return;
+          return true;
         }
         try {
           const data = JSON.parse(stdout.trim());
@@ -713,7 +713,7 @@ module.exports = function() {
       res.statusCode = 500;
       res.end(JSON.stringify({ ok: false, error: e.message }));
     }
-    return;
+    return true;
   }
 
     return false;

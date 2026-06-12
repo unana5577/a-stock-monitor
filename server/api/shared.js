@@ -21,12 +21,12 @@ module.exports = function() {
       res.writeHead(500);
       res.end('prompt read error');
     }
-    return;
+    return true;
   }
   if (url.pathname === '/api/prompt/sector-analysis') {
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.end(JSON.stringify({ text: SECTOR_PROMPT }));
-    return;
+    return true;
   }
   if (url.pathname === '/api/ai/report' && req.method === 'GET') {
     const day = url.searchParams.get('day') || latestTradingDay();
@@ -56,7 +56,7 @@ module.exports = function() {
       if (!fs.existsSync(p)) {
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         res.end(JSON.stringify({ ok: false, msg: 'no report found' }));
-        return;
+        return true;
       }
       
       try {
@@ -83,7 +83,7 @@ module.exports = function() {
     
     // 直接返回 Promise 的结果
     handleReport();
-    return;
+    return true;
   }
   
   if (url.pathname === '/api/ai/debug' && req.method === 'POST') {
@@ -110,7 +110,7 @@ module.exports = function() {
       res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ error: code === 401 ? '缺少API Key' : '调用失败' }));
     }
-    return;
+    return true;
   }
   if (url.pathname === '/api/ai/sector-debug' && req.method === 'POST') {
     try {
@@ -136,7 +136,7 @@ module.exports = function() {
       res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ error: code === 401 ? '缺少API Key' : '调用失败' }));
     }
-    return;
+    return true;
   }
   if (url.pathname === '/api/ai/sector-analysis') {
     const aiReportPath = path.join(__dirname, 'data/market/ai/etf_report.jsonl');
@@ -159,7 +159,7 @@ module.exports = function() {
     } else {
       res.end(JSON.stringify({ text: "暂无今日 AI 板块轮动解析数据，等待自动化任务触发..." }));
     }
-    return;
+    return true;
   }
   if (url.pathname.startsWith('/api/minute/')) {
     const code = url.pathname.split('/').pop();
@@ -251,7 +251,7 @@ module.exports = function() {
 
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.end(JSON.stringify({ day, data: merged, prevClose }));
-      return;
+      return true;
     }
 
     // 原有板块分时逻辑
@@ -260,7 +260,7 @@ module.exports = function() {
     if (!mapped) {
       res.writeHead(404);
       res.end('not found');
-      return;
+      return true;
     }
 
     const marketOpen = isMarketOpenNow();
@@ -437,7 +437,7 @@ module.exports = function() {
     });
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.end(JSON.stringify({ day, target_day: targetDay, source_day: sourceDay, data_incomplete: dataIncomplete, series: merged, latest: merged[merged.length - 1] || null, prevClose }));
-    return;
+    return true;
   }
   if (url.pathname === '/api/market/amount_daily/backfill') {
     const start = url.searchParams.get('start') || '2025-05-19';
@@ -445,7 +445,7 @@ module.exports = function() {
     const out = await backfillMarketAmountDaily(startDay);
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.end(JSON.stringify(out));
-    return;
+    return true;
   }
   if (url.pathname === '/api/market/amount_daily') {
     const map = readMarketAmountDailyMap();
@@ -457,7 +457,7 @@ module.exports = function() {
       .map(v => ({ day: v.day, total: v.total, sh: v.sh, sz: v.sz }));
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.end(JSON.stringify({ ok: true, items }));
-    return;
+    return true;
   }
 
   // --- [M1 沙盒 BFF 路由] ---
@@ -488,7 +488,7 @@ module.exports = function() {
         res.end(JSON.stringify({ error: e.message }));
       }
     });
-    return;
+    return true;
   }
 
   if (url.pathname === '/api/runner/journal') {
@@ -497,25 +497,25 @@ module.exports = function() {
       res.statusCode = 400;
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.end(JSON.stringify({ ok: false, error: 'invalid path' }));
-      return;
+      return true;
     }
     const abs = path.join(__dirname, rel);
     if (!fs.existsSync(abs)) {
       res.statusCode = 404;
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.end(JSON.stringify({ ok: false, error: 'not found', path: rel }));
-      return;
+      return true;
     }
     try {
       const obj = JSON.parse(fs.readFileSync(abs, 'utf8'));
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.end(JSON.stringify({ ok: true, journal: obj }));
-      return;
+      return true;
     } catch (e) {
       res.statusCode = 500;
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.end(JSON.stringify({ ok: false, error: e.message, path: rel }));
-      return;
+      return true;
     }
   }
 
@@ -525,25 +525,25 @@ module.exports = function() {
       res.statusCode = 400;
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.end(JSON.stringify({ ok: false, error: 'invalid path' }));
-      return;
+      return true;
     }
     const abs = path.join(__dirname, rel);
     if (!fs.existsSync(abs)) {
       res.statusCode = 404;
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.end(JSON.stringify({ ok: false, error: 'not found', path: rel }));
-      return;
+      return true;
     }
     try {
       const txt = fs.readFileSync(abs, 'utf8');
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.end(JSON.stringify({ ok: true, path: rel, text: txt }));
-      return;
+      return true;
     } catch (e) {
       res.statusCode = 500;
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.end(JSON.stringify({ ok: false, error: e.message, path: rel }));
-      return;
+      return true;
     }
   }
 
@@ -559,7 +559,7 @@ module.exports = function() {
     const latest = items.length ? items[items.length - 1] : null;
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.end(JSON.stringify({ ok: true, updated, latest, items }));
-    return;
+    return true;
   }
   // 市场日期 API
   if (url.pathname === '/api/market/date') {
@@ -568,7 +568,7 @@ module.exports = function() {
     const isOpen = isInTradingTime(parts);
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.end(JSON.stringify({ date: marketDate, isOpen, parts }));
-    return;
+    return true;
   }
   if (url.pathname === '/api/snapshot') {
     const snap = await buildSnapshotPayload();
@@ -577,7 +577,7 @@ module.exports = function() {
     snap.aiText = needAi ? await ensureAiText(snap) : (lastAiText || '');
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.end(JSON.stringify(snap));
-    return;
+    return true;
   }
   if (url.pathname === '/api/snapshot/latest') {
     const forceRefresh = url.searchParams.get('refresh') === '1';
@@ -599,7 +599,7 @@ module.exports = function() {
         fresh.aiText = needAi ? await ensureAiText(fresh) : (lastAiText || '');
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         res.end(JSON.stringify(fresh));
-        return;
+        return true;
       }
       const fallback = lastGoodSnapshot.payload || snap;
       if (fallback) {
@@ -617,7 +617,7 @@ module.exports = function() {
             archiveSnapshot(v);
           }).catch(() => {});
         }
-        return;
+        return true;
       }
     }
     snap = repairSnapshot(snap);
@@ -652,13 +652,13 @@ module.exports = function() {
     if (!snap) {
       res.writeHead(503, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Service temporarily unavailable' }));
-      return;
+      return true;
     }
     const needAi = url.searchParams.get('ai') !== '0';
     snap.aiText = needAi ? await ensureAiText(snap) : (lastAiText || '');
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.end(JSON.stringify(snap));
-    return;
+    return true;
   }
   if (url.pathname === '/api/data/health') {
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -666,10 +666,10 @@ module.exports = function() {
     if (!health) {
       res.writeHead(503, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ error: 'Failed to get data health status' }));
-      return;
+      return true;
     }
     res.end(JSON.stringify(health));
-    return;
+    return true;
   }
   if (url.pathname === '/api/data/monitoring') {
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -677,10 +677,10 @@ module.exports = function() {
     if (!monitoring) {
       res.writeHead(503, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ error: 'Failed to get data monitoring status' }));
-      return;
+      return true;
     }
     res.end(JSON.stringify(monitoring));
-    return;
+    return true;
   }
   if (url.pathname === '/health') {
     res.setHeader('Content-Type', 'application/json');
@@ -697,7 +697,7 @@ module.exports = function() {
         lastMinuteTl: mtl?.series?.length || 0
       }
     }));
-    return;
+    return true;
   }
   if (url.pathname === '/api/market/status') {
     const parts = getBeijingParts();
@@ -725,7 +725,7 @@ module.exports = function() {
       reason,
       strategy
     }));
-    return;
+    return true;
   }
 
   if (url.pathname === '/api/news') {
@@ -733,7 +733,7 @@ module.exports = function() {
     if (!day) {
       res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ error: 'invalid date, expected YYYY-MM-DD' }));
-      return;
+      return true;
     }
     const sector = String(url.searchParams.get('sector') || '').trim();
     const level = String(url.searchParams.get('level') || '').trim();
@@ -754,7 +754,7 @@ module.exports = function() {
       filtered: filteredNews.length,
       news: filteredNews.slice(0, limit)
     }));
-    return;
+    return true;
   }
 
   if (url.pathname === '/api/news/heat') {
@@ -762,7 +762,7 @@ module.exports = function() {
     if (!day) {
       res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ error: 'invalid date, expected YYYY-MM-DD' }));
-      return;
+      return true;
     }
     const allNews = readNewsByDate(day);
     const heat = buildNewsHeat(allNews);
@@ -777,7 +777,7 @@ module.exports = function() {
       by_type_sentiment: heat.byTypeSentiment,
       by_sector_sentiment: heat.bySectorSentiment
     }));
-    return;
+    return true;
   }
 
   if (url.pathname === '/api/watch-stocks') {
@@ -790,7 +790,7 @@ module.exports = function() {
         if (!code) {
           res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
           res.end(JSON.stringify({ error: 'stock code is required' }));
-          return;
+          return true;
         }
         const list = readWatchStocks();
         if (!list.includes(code)) list.push(code);
@@ -801,12 +801,12 @@ module.exports = function() {
         res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
         res.end(JSON.stringify({ error: 'bad request' }));
       }
-      return;
+      return true;
     }
     const list = readWatchStocks();
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.end(JSON.stringify({ total: list.length, watch_stocks: list }));
-    return;
+    return true;
   }
 
   if (url.pathname === '/api/calendar') {
@@ -814,7 +814,7 @@ module.exports = function() {
     if (!month) {
       res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ error: 'invalid date, expected YYYY-MM' }));
-      return;
+      return true;
     }
     const events = readCalendarEvents().filter((item) => {
       const day = String(item?.date || '').trim();
@@ -822,7 +822,7 @@ module.exports = function() {
     });
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.end(JSON.stringify({ month, total: events.length, events }));
-    return;
+    return true;
   }
 
   if (url.pathname === '/api/sector/rank') {
@@ -832,21 +832,21 @@ module.exports = function() {
     if (cached) {
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.end(cached);
-      return;
+      return true;
     }
     execFile('python3', ['fetch_sector_data.py', 'rank'], getExecOptions(), (err, stdout) => {
       if (err) {
         console.error(err);
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: "Failed to fetch sector rank" }));
-        return;
+        return true;
       }
       const out = (stdout || '').trim();
       if (out && isJsonText(out)) writeJsonCache(cacheFile, out);
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.end(out || '{}');
     });
-    return;
+    return true;
   }
 
   if (url.pathname === '/api/sector/history') {
@@ -892,7 +892,7 @@ module.exports = function() {
       if (cacheFile && payload && isJsonText(payload)) writeJsonCache(cacheFile, payload);
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.end(payload);
-      return;
+      return true;
     }
     let staleCached = null;
     if (cacheFile) {
@@ -912,7 +912,7 @@ module.exports = function() {
           if (latest && !tooOld && String(latest).localeCompare(day) >= 0) {
             res.setHeader('Content-Type', 'application/json; charset=utf-8');
             res.end(cached);
-            return;
+            return true;
           }
           // 交易日内（含午休）不使用缓存，获取实时数据
           const inSession = isTradingDaySession();
@@ -923,7 +923,7 @@ module.exports = function() {
             res.setHeader('Content-Type', 'application/json; charset=utf-8');
             res.end(cached);
             warmupSectorCache('history_dynamic', list, days, cacheFile);
-            return;
+            return true;
           } else if (tooOld) {
             staleCached = cached;
           }
@@ -956,7 +956,7 @@ module.exports = function() {
               res.setHeader('Content-Type', 'application/json; charset=utf-8');
               res.end(cached);
               if (cacheFile) warmupSectorCache('history_dynamic', list, days, cacheFile);
-              return;
+              return true;
             } else if (tooOld) {
               staleCached = cached;
             }
@@ -979,7 +979,7 @@ module.exports = function() {
       if (staleCached) {
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         res.end(staleCached);
-        return;
+        return true;
       }
       const opts = { ...getExecOptions(), env: { ...getExecOptions().env || process.env, CACHE_ONLY: '1' } };
     execFile('python3', args, opts, (err, stdout) => {
@@ -988,13 +988,13 @@ module.exports = function() {
           if (cacheFile) writeJsonCache(cacheFile, out);
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
           res.end(out);
-          return;
+          return true;
         }
         const names = list.split(',').map(s => s.trim()).filter(Boolean);
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         res.end(JSON.stringify({ day, history: {}, indicators: {}, minute: {}, correlations: [], watch: names, data_incomplete: true, reason: 'market_closed' }));
       });
-      return;
+      return true;
     }
     execFile('python3', args, getExecOptions(), (err, stdout) => {
       if (err) {
@@ -1003,18 +1003,18 @@ module.exports = function() {
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
           res.end(staleCached);
           if (cacheFile) warmupSectorCache('history_dynamic', list, days, cacheFile);
-          return;
+          return true;
         }
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: "Failed to fetch sector history" }));
-        return;
+        return true;
       }
       const out = (stdout || '').trim();
       if (cacheFile && out && isJsonText(out)) writeJsonCache(cacheFile, out);
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.end(out || '{}');
     });
-    return;
+    return true;
   }
 
   if (url.pathname === '/api/sector/warmup') {
@@ -1047,7 +1047,7 @@ module.exports = function() {
     };
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.end(JSON.stringify({ day, start: startParam || null, end: endParam, status, days }));
-    return;
+    return true;
   }
 
   if (url.pathname === '/api/sector/proxy') {
@@ -1085,7 +1085,7 @@ module.exports = function() {
       }
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.end(JSON.stringify(readSectorProxyConfig()));
-      return;
+      return true;
     }
     if (req.method === 'POST') {
       const raw = await readBody(req);
@@ -1103,18 +1103,18 @@ module.exports = function() {
       fs.writeFileSync(PROXY_FILE, JSON.stringify(next, null, 2));
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.end(JSON.stringify(next));
-      return;
+      return true;
     }
     res.writeHead(405, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify({ error: 'method_not_allowed' }));
-    return;
+    return true;
   }
 
   if (url.pathname === '/api/sector/force_etf') {
     if (req.method !== 'POST') {
       res.writeHead(405, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ error: 'method_not_allowed' }));
-      return;
+      return true;
     }
     const raw = await readBody(req);
     let body = {};
@@ -1132,7 +1132,7 @@ module.exports = function() {
     fs.writeFileSync(PROXY_FILE, JSON.stringify(next, null, 2));
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.end(JSON.stringify(next));
-    return;
+    return true;
   }
 
   if (url.pathname === '/api/sector/history_proxy') {
@@ -1163,7 +1163,7 @@ module.exports = function() {
             obj.source = 'etf_proxy_warmup';
             res.setHeader('Content-Type', 'application/json; charset=utf-8');
             res.end(JSON.stringify(obj));
-            return;
+            return true;
           }
         } catch (e) {
           console.error('Warmup读取错误:', e);
@@ -1180,7 +1180,7 @@ module.exports = function() {
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
           res.end(cached);
         }
-        return;
+        return true;
       }
       const latestCached = findLatestCacheFileOnOrBefore('sector-history-proxy', day);
       if (latestCached) {
@@ -1195,7 +1195,7 @@ module.exports = function() {
             res.setHeader('Content-Type', 'application/json; charset=utf-8');
             res.end(txt);
           }
-          return;
+          return true;
         }
       }
       const fallbackFile = findLatestCacheFileOnOrBefore('sector-history', null);
@@ -1211,7 +1211,7 @@ module.exports = function() {
             normalized.source = 'fallback_index';
             res.setHeader('Content-Type', 'application/json; charset=utf-8');
             res.end(JSON.stringify(normalized));
-            return;
+            return true;
           } catch (e) {
             void e;
           }
@@ -1220,7 +1220,7 @@ module.exports = function() {
       // 没有缓存数据且非交易时间，返回空数据
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.end(JSON.stringify({ day, history: {}, indicators: {}, minute: {}, correlations: [], watch: names, variant, data_incomplete: true, missing: missingNames, reason: 'market_closed', source: 'etf_proxy' }));
-      return;
+      return true;
     }
     const history = {};
     const minute = {};
@@ -1294,7 +1294,7 @@ module.exports = function() {
       res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ error: 'proxy_history_failed' }));
     }
-    return;
+    return true;
   }
 
   if (url.pathname === '/api/sector/rotation_proxy') {
@@ -1316,7 +1316,7 @@ module.exports = function() {
       if (cached) {
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         res.end(cached);
-        return;
+        return true;
       }
       const latestCached = findLatestCacheFileOnOrBefore('sector-rotation-proxy', day);
       if (latestCached) {
@@ -1324,7 +1324,7 @@ module.exports = function() {
         if (txt) {
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
           res.end(txt);
-          return;
+          return true;
         }
       }
       const fallbackFile = findLatestCacheFileOnOrBefore('sector-rotation', day);
@@ -1339,7 +1339,7 @@ module.exports = function() {
             obj.source = 'fallback_index';
             res.setHeader('Content-Type', 'application/json; charset=utf-8');
             res.end(JSON.stringify(obj));
-            return;
+            return true;
           } catch (e) {
             void e;
           }
@@ -1347,7 +1347,7 @@ module.exports = function() {
       }
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.end(JSON.stringify({ day, mainline: [], groups: {}, reason: 'market_closed', data_incomplete: true, variant, missing: missingNames, source: 'etf_proxy' }));
-      return;
+      return true;
     }
     const seriesMap = {};
     const fetchOne = async (name) => {
@@ -1466,7 +1466,7 @@ module.exports = function() {
       res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ error: 'rotation_proxy_failed' }));
     }
-    return;
+    return true;
   }
 
   if (url.pathname === '/api/sector/rotation/intraday') {
@@ -1485,7 +1485,7 @@ module.exports = function() {
         if (!marketOpen || age < INTRADAY_CACHE_TTL_MS) {
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
           res.end(cachedText);
-          return;
+          return true;
         }
       } catch (e) {
         void e;
@@ -1498,7 +1498,7 @@ module.exports = function() {
       if (Array.isArray(bars) && bars.length) {
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.end(JSON.stringify({ day, ts: lastIntradayRotation.ts, intraday: lastIntradayRotation.payload }));
-      return;
+      return true;
       }
     }
     try {
@@ -1578,13 +1578,13 @@ module.exports = function() {
       if (cachedText) {
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         res.end(cachedText);
-        return;
+        return true;
       }
       const fallback = lastIntradayRotation.payload ? { day: lastIntradayRotation.day || day, ts: lastIntradayRotation.ts || now(), intraday: lastIntradayRotation.payload } : { day, ts: now(), intraday: { bars: [], signal: '数据缺失', reason: [] } };
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.end(JSON.stringify(fallback));
     }
-    return;
+    return true;
   }
 
   if (url.pathname === '/api/sector/rotation/sequence') {
@@ -1599,13 +1599,13 @@ module.exports = function() {
       if (cached) {
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         res.end(cached);
-        return;
+        return true;
       }
       const latest = readLatestRotationSequence();
       if (latest) {
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         res.end(latest);
-        return;
+        return true;
       }
     }
     const file = rotationSequencePath(day);
@@ -1615,17 +1615,17 @@ module.exports = function() {
       writeJsonCache(file, txt);
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.end(txt);
-      return;
+      return true;
     }
     const latest = readLatestRotationSequence();
     if (latest) {
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.end(latest);
-      return;
+      return true;
     }
     res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify({ error: 'sequence_failed' }));
-    return;
+    return true;
   }
   if (url.pathname === '/api/sector/lifecycle_proxy') {
     url.pathname = '/api/sector/lifecycle';
@@ -1681,11 +1681,11 @@ module.exports = function() {
         if (!validationPassed) {
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
           res.end(JSON.stringify({ day: expectedDay || dataDay, items: [], data_incomplete: true, reason: 'trading_day_mismatch' }));
-          return;
+          return true;
         }
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         res.end(cached);
-        return;
+        return true;
       }
     }
     const useDynamic = list && list.trim();
@@ -1711,7 +1711,7 @@ module.exports = function() {
             if (dataDay === today) {
               res.setHeader('Content-Type', 'application/json; charset=utf-8');
               res.end(txt);
-              return;
+              return true;
             }
           }
         }
@@ -1727,17 +1727,17 @@ module.exports = function() {
             console.warn(`交易日验证失败(CACHE_ONLY): 数据=${dataDay}, 预期=${today}`);
             res.setHeader('Content-Type', 'application/json; charset=utf-8');
             res.end(JSON.stringify({ day: today, items: [], data_incomplete: true, reason: 'trading_day_mismatch' }));
-            return;
+            return true;
           }
           if (cacheFile) writeJsonCache(cacheFile, JSON.stringify(obj));
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
           res.end(JSON.stringify(obj));
-          return;
+          return true;
         }
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         res.end(JSON.stringify({ day, items: [], data_incomplete: true, reason: 'market_closed' }));
       });
-      return;
+      return true;
     }
     const opts = { ...getExecOptions(), env: { ...getExecOptions().env || process.env, FORCE_SECTOR_ETF: forceEnv } };
     execFile('python3', args, opts, (err, stdout) => {
@@ -1745,7 +1745,7 @@ module.exports = function() {
         console.error(err);
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: "Failed to fetch sector lifecycle" }));
-        return;
+        return true;
       }
       const out = (stdout || '').trim();
       if (out && isJsonText(out)) {
@@ -1790,7 +1790,7 @@ module.exports = function() {
         if (!validationPassed) {
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
           res.end(JSON.stringify({ day: expectedDay || dataDay, items: [], data_incomplete: true, reason: 'trading_day_mismatch' }));
-          return;
+          return true;
         }
         // 按评分排序并添加Top排名
         if (Array.isArray(obj.items)) {
@@ -1807,7 +1807,7 @@ module.exports = function() {
         res.end('{}');
       }
     });
-    return;
+    return true;
   }
 
   if (url.pathname === '/api/sector/lifecycle/frontend') {
@@ -1819,7 +1819,7 @@ module.exports = function() {
       const data = fs.readFileSync(frontendFile, 'utf-8');
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.end(data);
-      return;
+      return true;
     }
 
     // 如果今天的文件不存在，查找最新的文件
@@ -1835,14 +1835,14 @@ module.exports = function() {
         const data = fs.readFileSync(latestFile, 'utf-8');
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         res.end(data);
-        return;
+        return true;
       }
     }
 
     // 如果没有任何文件，返回空结果
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.end(JSON.stringify({ date: today, items: [] }));
-    return;
+    return true;
   }
 
   if (url.pathname === '/api/sector/rotation') {
@@ -1857,7 +1857,7 @@ module.exports = function() {
       if (snap) {
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         res.end(snap);
-        return;
+        return true;
       }
       const latestFile = findLatestRotationSnapshot();
       if (latestFile) {
@@ -1865,7 +1865,7 @@ module.exports = function() {
         if (txt) {
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
           res.end(txt);
-          return;
+          return true;
         }
       }
     }
@@ -1875,7 +1875,7 @@ module.exports = function() {
       if (cached) {
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         res.end(cached);
-        return;
+        return true;
       }
     }
     const useDynamic = list && list.trim();
@@ -1894,26 +1894,26 @@ module.exports = function() {
           if (cacheFile) writeJsonCache(cacheFile, out);
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
           res.end(out);
-          return;
+          return true;
         }
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         res.end(JSON.stringify({ day, mainline: [], groups: {}, data_incomplete: true, reason: 'market_closed' }));
       });
-      return;
+      return true;
     }
     execFile('python3', args, getExecOptions(), (err, stdout) => {
       if (err) {
         console.error(err);
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: "Failed to fetch sector rotation" }));
-        return;
+        return true;
       }
       const out = (stdout || '').trim();
       if (cacheFile && out && isJsonText(out)) writeJsonCache(cacheFile, out);
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.end(out || '{}');
     });
-    return;
+    return true;
   }
 
   if (url.pathname === '/api/sector/profile') {
@@ -1934,12 +1934,12 @@ module.exports = function() {
         res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
         res.end(JSON.stringify({ error: 'bad request' }));
       }
-      return;
+      return true;
     }
     const payload = readSectorProfile();
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.end(JSON.stringify(payload));
-    return;
+    return true;
   }
 
   // ETF 代码验证接口
@@ -1948,13 +1948,13 @@ module.exports = function() {
     if (!code) {
       res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ error: 'missing code parameter' }));
-      return;
+      return true;
     }
     // 格式验证
     if (!/^(sh|sz)\d{6}$/.test(code)) {
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.end(JSON.stringify({ valid: false, code, error: '格式错误，应为 sh/sz + 6位数字' }));
-      return;
+      return true;
     }
     // 调用 Python 验证数据可用性
     const { execFile } = require('child_process');
@@ -1993,7 +1993,7 @@ except Exception as e:
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.end(JSON.stringify(result));
     });
-    return;
+    return true;
   }
 
   if (url.pathname === '/api/sector/watch-list') {
@@ -2009,13 +2009,13 @@ except Exception as e:
         res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
         res.end(JSON.stringify({ error: 'bad request' }));
       }
-      return;
+      return true;
     }
     const list = readWatchList();
     execFile('python3', ['fetch_sector_data.py', 'history_dynamic', list.join(','), '20'], () => {});
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.end(JSON.stringify({ watch_list: list }));
-    return;
+    return true;
   }
 
   if (url.pathname === '/api/market/breadth') {
@@ -2026,7 +2026,7 @@ except Exception as e:
     if (breadthCache && isNum(breadthCache.up) && isNum(breadthCache.down)) {
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.end(JSON.stringify({ ok: true, data: { ...breadthCache, day } }));
-      return;
+      return true;
     }
 
     // 备选方案：从 archive 数据读取
@@ -2037,7 +2037,7 @@ except Exception as e:
       const total = Number(snapUp || 0) + Number(snapDown || 0);
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.end(JSON.stringify({ ok: true, data: { up: snapUp, down: snapDown, flat: 0, total, day } }));
-      return;
+      return true;
     }
     if (isMarketOpenNow()) {
       const rt = await fetchBreadthRealtime();
@@ -2045,7 +2045,7 @@ except Exception as e:
         const total = Number(rt.total || (rt.up + rt.down + (rt.flat || 0)) || 0);
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         res.end(JSON.stringify({ ok: true, data: { up: rt.up, down: rt.down, flat: rt.flat || 0, total, day } }));
-        return;
+        return true;
       }
     }
     const cacheFile = cacheJsonPath('market-breadth', day);
@@ -2057,7 +2057,7 @@ except Exception as e:
           if (!obj.day && !obj.date) obj.day = day;
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
           res.end(JSON.stringify({ ok: true, data: obj }));
-          return;
+          return true;
         }
       } catch (e) {
         console.error(e);
@@ -2075,7 +2075,7 @@ except Exception as e:
             writeJsonCache(cacheFile, payload);
             res.setHeader('Content-Type', 'application/json; charset=utf-8');
             res.end(JSON.stringify({ ok: true, data: obj }));
-            return;
+            return true;
           }
         }
       } else {
@@ -2092,7 +2092,7 @@ except Exception as e:
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.end(JSON.stringify({ ok: true, data: obj }));
     });
-    return;
+    return true;
   }
 
   if (url.pathname === '/api/signals') {
@@ -2104,7 +2104,7 @@ except Exception as e:
       count: signals.length,
       signals
     }));
-    return;
+    return true;
   }
 
   if (url.pathname === '/api/panic') {
@@ -2135,7 +2135,7 @@ except Exception as e:
       down,
       total
     }));
-    return;
+    return true;
   }
 
     return false; // No route matched

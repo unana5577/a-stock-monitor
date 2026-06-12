@@ -7,6 +7,8 @@ const fs = require('fs');
 const path = require('path');
 const { execFile } = require('child_process');
 
+const ROOT = path.join(__dirname, '..', '..');
+
 module.exports = function() {
   const handleRoute = async function(req, res) {
     const url = new URL(req.url, `http://${req.headers.host}`);
@@ -34,7 +36,7 @@ module.exports = function() {
           return res.end(JSON.stringify({ ok: false, error: 'missing place' }));
         }
 
-        const script = path.join(__dirname, 'treasolo', 'm1_bazi.py');
+        const script = path.join(ROOT, 'treasolo', 'm1_bazi.py');
         if (!fs.existsSync(script)) {
           res.statusCode = 500;
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -54,7 +56,7 @@ module.exports = function() {
         ];
         if (trueSolar) args.push('--true_solar');
 
-        execFile(pythonBin, args, { cwd: __dirname, timeout: 60000, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
+        execFile(pythonBin, args, { cwd: ROOT, timeout: 60000, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
           const out = String(stdout || '').trim();
           if (err) {
             res.statusCode = 500;
@@ -75,28 +77,28 @@ module.exports = function() {
         res.end(JSON.stringify({ ok: false, error: e.message }));
       }
     });
-    return;
+    return true;
   }
 
   if (url.pathname === '/api/m1/config/bazi_prompts' && req.method === 'GET') {
     try {
-      const fp = path.join(__dirname, '八字', 'prompts.json');
+      const fp = path.join(ROOT, '八字', 'prompts.json');
       if (!fs.existsSync(fp)) {
         res.statusCode = 404;
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         res.end(JSON.stringify({ ok: false, error: 'prompts not found' }));
-        return;
+        return true;
       }
       const txt = fs.readFileSync(fp, 'utf8');
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.setHeader('Cache-Control', 'no-store');
       res.end(txt);
-      return;
+      return true;
     } catch (e) {
       res.statusCode = 500;
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.end(JSON.stringify({ ok: false, error: e.message }));
-      return;
+      return true;
     }
   }
 
@@ -107,15 +109,15 @@ module.exports = function() {
         res.statusCode = 400;
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         res.end(JSON.stringify({ ok: false, error: 'missing day' }));
-        return;
+        return true;
       }
 
-      const script = path.join(__dirname, 'treasolo', 'm1_day_astro.py');
+      const script = path.join(ROOT, 'treasolo', 'm1_day_astro.py');
       if (!fs.existsSync(script)) {
         res.statusCode = 500;
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         res.end(JSON.stringify({ ok: false, error: 'm1_day_astro.py not found' }));
-        return;
+        return true;
       }
 
       const pythonBin =
@@ -123,29 +125,29 @@ module.exports = function() {
         (fs.existsSync('/opt/homebrew/bin/python3') ? '/opt/homebrew/bin/python3' : 'python3');
 
       const args = [script, '--day', day];
-      execFile(pythonBin, args, { cwd: __dirname, timeout: 60000, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
+      execFile(pythonBin, args, { cwd: ROOT, timeout: 60000, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
         const out = String(stdout || '').trim();
         if (err) {
           res.statusCode = 500;
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
           res.end(JSON.stringify({ ok: false, error: (stderr || err.message || '').trim(), stdout: out }));
-          return;
+          return true;
         }
         if (out && out.startsWith('{')) {
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
           res.end(out);
-          return;
+          return true;
         }
         res.statusCode = 500;
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         res.end(JSON.stringify({ ok: false, error: 'invalid day_astro output', stderr: (stderr || '').trim(), stdout: out }));
       });
-      return;
+      return true;
     } catch (e) {
       res.statusCode = 500;
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.end(JSON.stringify({ ok: false, error: e.message }));
-      return;
+      return true;
     }
   }
 
@@ -159,15 +161,15 @@ module.exports = function() {
         res.statusCode = 400;
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         res.end(JSON.stringify({ ok: false, error: 'missing month or range' }));
-        return;
+        return true;
       }
 
-      const script = path.join(__dirname, 'treasolo', 'm1_astro_calendar.py');
+      const script = path.join(ROOT, 'treasolo', 'm1_astro_calendar.py');
       if (!fs.existsSync(script)) {
         res.statusCode = 500;
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         res.end(JSON.stringify({ ok: false, error: 'm1_astro_calendar.py not found' }));
-        return;
+        return true;
       }
 
       const pythonBin =
@@ -181,32 +183,31 @@ module.exports = function() {
         args.push('--start', start, '--end', end);
       }
 
-      execFile(pythonBin, args, { cwd: __dirname, timeout: 60000, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
+      execFile(pythonBin, args, { cwd: ROOT, timeout: 60000, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
         const out = String(stdout || '').trim();
         if (err) {
           res.statusCode = 500;
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
           res.end(JSON.stringify({ ok: false, error: (stderr || err.message || '').trim(), stdout: out }));
-          return;
+          return true;
         }
         if (out && out.startsWith('{')) {
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
           res.end(out);
-          return;
+          return true;
         }
         res.statusCode = 500;
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         res.end(JSON.stringify({ ok: false, error: 'invalid astro_calendar output', stderr: (stderr || '').trim(), stdout: out }));
       });
-      return;
+      return true;
     } catch (e) {
       res.statusCode = 500;
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.end(JSON.stringify({ ok: false, error: e.message }));
-      return;
+      return true;
     }
   }
-  // --- [M1 沙盒 BFF 路由结束] ---
 
     return false;
   };
