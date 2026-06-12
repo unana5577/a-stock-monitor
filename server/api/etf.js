@@ -1,0 +1,14 @@
+const ctx = require('../context');
+ctx.install(global);
+
+module.exports = function() {
+  const handleRoute = async function(req, res) {
+    const url = new URL(req.url, `http://${req.headers.host}`);
+
+    // Agent B: ETF 行情页专属路由写在这里
+    // 例如: if (url.pathname === '/api/etf/xxx') { ... }
+
+    return false;
+  };
+  return handleRoute;
+};
