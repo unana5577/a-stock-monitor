@@ -4,117 +4,186 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>M1 Quant Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            'q-bg': '#F4F4F5',
+            'q-panel': '#FFFFFF',
+            'q-border': '#E4E4E7',
+            'q-text': '#18181B',
+            'q-subtext': '#71717A',
+            'q-up': '#EF4444',
+            'q-down': '#10B981',
+            'q-flat': '#A1A1AA',
+            'q-primary': '#2563EB',
+            'q-sidebar': '#FFFFFF',
+            'q-side-text': '#52525B',
+            'q-side-hover': '#F4F4F5',
+            'q-side-active': '#18181B'
+          },
+          fontFamily: {
+            mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
+            sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', '"PingFang SC"', '"Segoe UI"', 'Roboto', 'sans-serif'],
+          },
+          boxShadow: {
+            'q': '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
+          }
+        }
+      }
+    }
+  </script>
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body { height: 100%; overflow: hidden; font-family: Inter, -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; }
-    body { display: flex; flex-direction: column; background: #F4F4F5; }
+    body {
+      background-color: #F4F4F5;
+      color: #18181B;
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+      margin: 0;
+      padding: 0;
+      -webkit-font-smoothing: antialiased;
+    }
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #D4D4D8; border-radius: 2px; }
+    ::-webkit-scrollbar-thumb:hover { background: #A1A1AA; }
 
-    .tab-bar {
-      height: 48px;
-      background: #FFFFFF;
-      border-bottom: 1px solid #E4E4E7;
+    .sidebar-btn {
       display: flex;
       align-items: center;
-      padding: 0 16px;
-      gap: 4px;
-      flex-shrink: 0;
-      z-index: 100;
-    }
-    .tab-logo {
-      font-weight: 700;
-      font-size: 14px;
-      color: #18181B;
-      margin-right: 16px;
-      letter-spacing: 0.5px;
-      white-space: nowrap;
-    }
-    .tab-logo span { color: #71717A; font-weight: 400; }
-    .tab-btn {
-      padding: 6px 16px;
-      font-size: 13px;
+      justify-content: center;
+      padding: 10px 0;
       border-radius: 6px;
+      transition: all 0.15s;
+      cursor: pointer;
       border: none;
       background: transparent;
-      color: #52525B;
-      cursor: pointer;
-      transition: all 0.15s;
-      white-space: nowrap;
+      font-size: inherit;
+      font-family: inherit;
     }
-    .tab-btn:hover { background: #F4F4F5; color: #18181B; }
-    .tab-btn.active { background: rgba(37, 99, 235, 0.12); color: #2563EB; font-weight: 600; }
-    .tab-status {
-      margin-left: auto;
-      font-size: 11px;
-      color: #A1A1AA;
-      display: flex;
-      align-items: center;
-      gap: 8px;
+    @media (min-width: 768px) {
+      .sidebar-btn { justify-content: flex-start; padding: 10px 12px; }
     }
-    .tab-status .dot { width: 6px; height: 6px; border-radius: 50%; }
-    .tab-status .dot.online { background: #10B981; }
-    .tab-status .dot.offline { background: #EF4444; }
+    .sidebar-btn svg { width: 20px; height: 20px; flex-shrink: 0; }
+    .sidebar-btn .btn-label { display: none; }
+    @media (min-width: 768px) {
+      .sidebar-btn .btn-label { display: block; margin-left: 12px; font-size: 14px; font-weight: 500; }
+    }
 
-    .content-area {
-      flex: 1;
-      position: relative;
-      overflow: hidden;
-    }
+    .sidebar-btn.default  { color: #52525B; }
+    .sidebar-btn.default:hover { background: #F4F4F5; color: #18181B; }
+    .sidebar-btn.active { background: rgba(37, 99, 235, 0.12); color: #2563EB; }
+    .sidebar-btn.disabled { color: #71717A; cursor: not-allowed; opacity: 0.4; }
+    .sidebar-btn.disabled:hover { background: transparent; }
+
+    .content-area { position: relative; flex: 1; overflow: hidden; }
     .content-area iframe {
-      position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      border: none;
-      display: none;
+      position: absolute; inset: 0; width: 100%; height: 100%;
+      border: none; display: none;
     }
     .content-area iframe.active { display: block; }
   </style>
 </head>
-<body>
-  <div class="tab-bar">
-    <div class="tab-logo">M1 <span>QUANT</span></div>
-    <button class="tab-btn active" data-tab="overview" onclick="switchTab('overview')">盘中概览</button>
-    <button class="tab-btn" data-tab="etf" onclick="switchTab('etf')">ETF行情</button>
-    <button class="tab-btn" data-tab="trade" onclick="switchTab('trade')">交易助手</button>
-    <button class="tab-btn" data-tab="astro" onclick="switchTab('astro')">天时实验</button>
-    <div class="tab-status">
-      <span class="dot online" id="status-dot"></span>
-      <span id="status-text">已连接</span>
+<body class="h-screen overflow-hidden flex">
+
+  <!-- ==============================
+       LEFT SIDEBAR (左侧导航栏)
+       ============================== -->
+  <aside class="w-16 md:w-56 flex flex-col bg-q-sidebar border-r border-q-border transition-all duration-300 z-20">
+    <div class="h-14 flex items-center justify-center md:justify-start md:px-5 border-b border-q-border">
+      <div class="w-3 h-3 rounded-full bg-q-primary animate-pulse"></div>
+      <span class="hidden md:block ml-3 font-bold text-q-text tracking-wider text-sm">M1 <span class="text-q-subtext font-normal">QUANT</span></span>
     </div>
-  </div>
-  <div class="content-area">
-    <iframe id="frame-overview" class="active" src="http://127.0.0.1:8781" allow="clipboard-write"></iframe>
-    <iframe id="frame-etf" src="" data-src="http://127.0.0.1:8782" allow="clipboard-write"></iframe>
-    <iframe id="frame-trade" src="" data-src="http://127.0.0.1:8783" allow="clipboard-write"></iframe>
-    <iframe id="frame-astro" src="" data-src="http://127.0.0.1:8784" allow="clipboard-write"></iframe>
-  </div>
+
+    <nav class="flex-1 py-4 flex flex-col gap-1 px-2">
+      <button class="sidebar-btn active" data-tab="overview" onclick="switchTab('overview')">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>
+        <span class="btn-label">盘中概览</span>
+      </button>
+
+      <button class="sidebar-btn default" data-tab="etf" onclick="switchTab('etf')">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg>
+        <span class="btn-label">ETF行情</span>
+      </button>
+
+      <button class="sidebar-btn default" data-tab="trade" onclick="switchTab('trade')">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7h18M3 12h18M3 17h18"></path></svg>
+        <span class="btn-label">交易助手</span>
+      </button>
+
+      <button class="sidebar-btn default" data-tab="astro" onclick="switchTab('astro')">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v2m0 14v2m9-9h-2M5 12H3m15.364-6.364l-1.414 1.414M7.05 16.95l-1.414 1.414m0-11.314L7.05 7.05m9.9 9.9l1.414 1.414M12 8a4 4 0 100 8 4 4 0 000-8z"></path></svg>
+        <span class="btn-label">天时实验</span>
+      </button>
+
+      <div class="mt-4 mb-2 px-3 text-[10px] uppercase tracking-wider text-q-subtext hidden md:block">探索</div>
+      <button class="sidebar-btn disabled" disabled>
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+        <span class="btn-label">竞价选股</span>
+      </button>
+    </nav>
+
+    <div class="p-3 border-t border-q-border text-center md:text-left">
+      <div class="hidden md:flex justify-between items-center text-xs text-q-subtext mb-1">
+        <span>Sys. Sync</span>
+        <span id="sys-time" class="font-mono text-[10px]">--:--:--</span>
+      </div>
+      <div class="w-2 h-2 rounded-full bg-green-500 mx-auto md:mx-0 shadow-[0_0_5px_rgba(16,185,129,0.3)]"></div>
+    </div>
+  </aside>
+
+  <!-- ==============================
+       RIGHT MAIN AREA (iframe 工作区)
+       ============================== -->
+  <main class="flex-1 flex flex-col h-full overflow-hidden bg-q-bg">
+    <div class="content-area">
+      <iframe id="frame-overview" class="active" src="http://127.0.0.1:8781" allow="clipboard-write"></iframe>
+      <iframe id="frame-etf" src="" data-src="http://127.0.0.1:8782" allow="clipboard-write"></iframe>
+      <iframe id="frame-trade" src="" data-src="http://127.0.0.1:8783" allow="clipboard-write"></iframe>
+      <iframe id="frame-astro" src="" data-src="http://127.0.0.1:8784" allow="clipboard-write"></iframe>
+    </div>
+  </main>
 
   <script>
-    const PAGES = {
-      overview: { port: 8781 },
-      etf:      { port: 8782 },
-      trade:    { port: 8783 },
-      astro:    { port: 8784 }
+    const PAGE_SRCS = {
+      overview: 'http://127.0.0.1:8781',
+      etf:      'http://127.0.0.1:8782',
+      trade:    'http://127.0.0.1:8783',
+      astro:    'http://127.0.0.1:8784'
     };
 
-    let currentTab = 'overview';
+    let active = 'overview';
 
     function switchTab(name) {
-      if (name === currentTab) return;
-      currentTab = name;
+      if (name === active) return;
+      active = name;
 
-      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-      document.querySelector(`[data-tab="${name}"]`).classList.add('active');
+      document.querySelectorAll('.sidebar-btn').forEach(b => {
+        b.classList.remove('active', 'default');
+        if (b.disabled) return;
+        b.classList.add(b.getAttribute('data-tab') === name ? 'active' : 'default');
+      });
 
       document.querySelectorAll('.content-area iframe').forEach(f => f.classList.remove('active'));
-      const frame = document.getElementById(`frame-${name}`);
+      const frame = document.getElementById('frame-' + name);
       frame.classList.add('active');
-
       if (!frame.src || frame.src === window.location.href) {
-        const ds = frame.getAttribute('data-src');
-        if (ds) frame.src = ds;
+        frame.src = PAGE_SRCS[name];
       }
     }
+
+    function updateClock() {
+      const tz = 'Asia/Shanghai';
+      const now = new Date().toLocaleString('en-US', { timeZone: tz });
+      const d = new Date(now);
+      const hh = String(d.getHours()).padStart(2, '0');
+      const mm = String(d.getMinutes()).padStart(2, '0');
+      const ss = String(d.getSeconds()).padStart(2, '0');
+      document.getElementById('sys-time').textContent = hh + ':' + mm + ':' + ss;
+    }
+    updateClock();
+    setInterval(updateClock, 10000);
   </script>
 </body>
 </html>

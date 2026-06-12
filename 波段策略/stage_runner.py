@@ -68,6 +68,21 @@ def compute_snapshot(symbol: str, target_day: str) -> dict:
     max_high = max(highs) if highs else row["close"]
     min_low = min(lows) if lows else row["close"]
 
+    # 资金热度: 近5日 vs 近20日均成交额
+    slice5 = rows[max(0, idx - 4):idx + 1]
+    slice20 = rows[max(0, idx - 19):idx + 1]
+    amounts5 = [r.get("amount", 0) or 0 for r in slice5]
+    amounts20 = [r.get("amount", 0) or 0 for r in slice20]
+    avg5 = sum(amounts5) / max(len(amounts5), 1)
+    avg20 = sum(amounts20) / max(len(amounts20), 1)
+    amount_ratio = round(avg5 / avg20, 2) if avg20 > 0 and avg5 > 0 else 1.0
+    if amount_ratio >= 1.3:
+        amount_trend = "放量进场"
+    elif amount_ratio >= 0.7:
+        amount_trend = "量能持平"
+    else:
+        amount_trend = "缩量"
+
     return {
         "symbol": symbol,
         "name": SYMBOL_NAMES.get(symbol, symbol),
@@ -82,6 +97,8 @@ def compute_snapshot(symbol: str, target_day: str) -> dict:
         "ma60": diag.get("ma60"),
         "ma20_slope": diag.get("ma20_slope"),
         "vol_ratio": diag.get("vol_ratio"),
+        "amount_trend": amount_trend,
+        "amount_ratio": amount_ratio,
         "high_90d": round(max_high, 4),
         "low_90d": round(min_low, 4),
     }

@@ -316,7 +316,7 @@ module.exports = function() {
       const pythonBin = 'python3';
       execFile(pythonBin, ['-c',
         'import sys,os; sys.path.insert(0,os.getcwd()); from 波段策略.market_state import get_effective_state; import json; print(json.dumps(get_effective_state(),ensure_ascii=False))'
-      ], { cwd: __dirname, timeout: 10000, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
+      ], { cwd: path.resolve(__dirname, '../..'), timeout: 10000, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
         if (err) {
           res.statusCode = 500;
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -353,7 +353,7 @@ module.exports = function() {
       const pythonBin = 'python3';
       execFile(pythonBin, ['-c',
         `import sys,os; sys.path.insert(0,os.getcwd()); from 波段策略.market_state import apply_user_override; import json; print(json.dumps(apply_user_override("${state}"),ensure_ascii=False))`
-      ], { cwd: __dirname, timeout: 10000, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
+      ], { cwd: path.resolve(__dirname, '../..'), timeout: 10000, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
         if (err) {
           res.statusCode = 500;
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -381,7 +381,7 @@ module.exports = function() {
       const pythonBin = 'python3';
       execFile(pythonBin, ['-c',
         'import sys,os; sys.path.insert(0,os.getcwd()); from 波段策略.market_state import clear_user_override; import json; print(json.dumps(clear_user_override(),ensure_ascii=False))'
-      ], { cwd: __dirname, timeout: 10000, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
+      ], { cwd: path.resolve(__dirname, '../..'), timeout: 10000, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
         if (err) {
           res.statusCode = 500;
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -409,7 +409,7 @@ module.exports = function() {
       const pythonBin = 'python3';
       execFile(pythonBin, ['-c',
         'import sys,os; sys.path.insert(0,os.getcwd()); from 波段策略.ranged_strategy import compute_signals; import json; print(json.dumps(compute_signals(),ensure_ascii=False))'
-      ], { cwd: __dirname, timeout: 15000, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
+      ], { cwd: path.resolve(__dirname, '../..'), timeout: 15000, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
         if (err) {
           res.statusCode = 500;
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -447,7 +447,7 @@ module.exports = function() {
       const pythonBin = 'python3';
       execFile(pythonBin, ['-c',
         `import sys,os; sys.path.insert(0,os.getcwd()); from 波段策略.ranged_strategy import execute_signal; import json; print(json.dumps(execute_signal("${sym.replace(/"/g,'\\"')}","${signalType.replace(/"/g,'\\"')}"),ensure_ascii=False))`
-      ], { cwd: __dirname, timeout: 10000, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
+      ], { cwd: path.resolve(__dirname, '../..'), timeout: 10000, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
         if (err) {
           res.statusCode = 500;
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -480,7 +480,7 @@ module.exports = function() {
       const pythonBin = 'python3';
       execFile(pythonBin, ['-c',
         `import sys,os; sys.path.insert(0,os.getcwd()); from 波段策略.ranged_strategy import reset_ranged_state; import json; print(json.dumps(reset_ranged_state(${capital}),ensure_ascii=False))`
-      ], { cwd: __dirname, timeout: 10000, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
+      ], { cwd: path.resolve(__dirname, '../..'), timeout: 10000, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
         if (err) {
           res.statusCode = 500;
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -668,7 +668,7 @@ module.exports = function() {
           return res.end(JSON.stringify({ error: 'unknown script' }));
         }
         
-        execFile('python3', args, { cwd: __dirname, timeout: 120000, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
+        execFile('python3', args, { cwd: path.resolve(__dirname, '../..'), timeout: 120000, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
           res.end(JSON.stringify({
             ok: !err,
@@ -692,7 +692,7 @@ module.exports = function() {
       const args = ['波段策略/stage_runner.py', '--day', day];
       if (syms) args.push('--symbols', syms);
 
-      execFile('python3', args, { cwd: __dirname, timeout: 15000, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
+      execFile('python3', args, { cwd: path.resolve(__dirname, '../..'), timeout: 15000, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
         if (err) {
           res.statusCode = 500;
           res.setHeader('Content-Type', 'application/json; charset=utf-8');

@@ -3,7 +3,7 @@ const fs = require('fs')
 const path = require('path')
 
 const PORT = 8783
-const API_HOST = 'http://127.0.0.1:8787'
+const API_HOST = 'http://127.0.0.1:8788'
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',

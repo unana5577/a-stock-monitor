@@ -11,27 +11,16 @@
       theme: {
         extend: {
           colors: {
-            'q-bg': '#F4F4F5',
-            'q-panel': '#FFFFFF',
-            'q-border': '#E4E4E7',
-            'q-text': '#18181B',
-            'q-subtext': '#71717A',
-            'q-up': '#EF4444',
-            'q-down': '#10B981',
-            'q-flat': '#A1A1AA',
-            'q-primary': '#2563EB',
-            'q-sidebar': '#FFFFFF',
-            'q-side-text': '#52525B',
-            'q-side-hover': '#F4F4F5',
-            'q-side-active': '#18181B'
+            'q-bg': '#F4F4F5','q-panel': '#FFFFFF','q-border': '#E4E4E7','q-text': '#18181B',
+            'q-subtext': '#71717A','q-up': '#EF4444','q-down': '#10B981','q-flat': '#A1A1AA',
+            'q-primary': '#2563EB','q-sidebar': '#FFFFFF','q-side-text': '#52525B',
+            'q-side-hover': '#F4F4F5','q-side-active': '#18181B'
           },
           fontFamily: {
-            mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
-            sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', '"PingFang SC"', '"Segoe UI"', 'Roboto', 'sans-serif'],
+            mono: ['"JetBrains Mono"','ui-monospace','SFMono-Regular','Menlo','Monaco','Consolas','monospace'],
+            sans: ['Inter','-apple-system','BlinkMacSystemFont','"PingFang SC"','"Segoe UI"','Roboto','sans-serif'],
           },
-          boxShadow: {
-            'q': '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
-          }
+          boxShadow: { q: '0 1px 2px 0 rgba(0, 0, 0, 0.05)' }
         }
       }
     }
@@ -39,136 +28,393 @@
 
   <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+  <script src="./trade_allocator.js?v=20260612_1"></script>
 
   <style>
     body {
-      background-color: #F4F4F5;
-      color: #18181B;
-      font-family: Inter, -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
-      margin: 0; padding: 0;
-      -webkit-font-smoothing: antialiased;
+      background-color: #F4F4F5; color: #18181B;
+      font-family: Inter,-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;
+      margin:0; padding:0; -webkit-font-smoothing:antialiased;
     }
-    ::-webkit-scrollbar { width: 4px; height: 4px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: #D4D4D8; border-radius: 2px; }
-
-    .q-panel {
-      background: #FFFFFF;
-      border: 1px solid #E4E4E7;
-      border-radius: 8px;
-      box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.02);
-    }
-    .stat-value {
-      font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
-    }
-    [v-cloak] { display: none; }
-
-    .stage-uptrend  { border-left: 3px solid #10B981; }  /* 主升 绿 */
-    .stage-startup  { border-left: 3px solid #F59E0B; }  /* 启动 黄 */
-    .stage-ranged   { border-left: 3px solid #3B82F6; }  /* 震荡 蓝 */
-    .stage-declining{ border-left: 3px solid #F97316; }  /* 下跌 橙 */
-    .stage-defense  { border-left: 3px solid #EF4444; }  /* 防守 红 */
-
-    .badge-uptrend   { background: #D1FAE5; color: #065F46; }
-    .badge-startup   { background: #FEF3C7; color: #92400E; }
-    .badge-ranged    { background: #DBEAFE; color: #1E40AF; }
-    .badge-declining { background: #FFEDD5; color: #9A3412; }
-    .badge-defense   { background: #FEE2E2; color: #991B1B; }
+    ::-webkit-scrollbar{width:4px;height:4px}
+    ::-webkit-scrollbar-track{background:transparent}
+    ::-webkit-scrollbar-thumb{background:#D4D4D8;border-radius:2px}
+    .q-panel{background:#FFFFFF;border:1px solid #E4E4E7;border-radius:8px;box-shadow:0 1px 2px 0 rgba(0,0,0,0.02)}
+    .stat-value{font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,monospace}
+    [v-cloak]{display:none}
   </style>
 </head>
 <body class="min-h-screen">
 
-<div id="app" v-cloak class="max-w-6xl mx-auto px-4 py-6">
+<div id="app" v-cloak class="max-w-6xl mx-auto px-4 py-6 space-y-6">
 
   <!-- Header -->
-  <div class="flex items-center justify-between mb-6">
+  <div class="flex items-center justify-between">
     <div>
-      <h1 class="text-xl font-bold text-q-text">五阶段策略调度</h1>
+      <h1 class="text-xl font-bold text-q-text">交易助手</h1>
       <p class="text-sm text-q-subtext mt-1">
-        日线 {{ day }} · {{ stages.length }} 只ETF · 自动刷新 {{ refreshSec }}s
+        日线 {{ day }} · {{ Object.keys(stageMap).length }} 只ETF
+        · <span v-if="autoRefresh">自动刷新 {{ refreshSec }}s</span>
+        <span v-else>已暂停</span>
       </p>
     </div>
     <div class="flex items-center gap-3">
       <button @click="toggleAutoRefresh"
-        class="px-3 py-1.5 text-xs rounded-md border border-q-border text-q-subtext hover:bg-q-bg transition">
+        class="px-3 py-1.5 text-xs rounded-md border border-q-border text-q-subtext hover:bg-q-bg">
         {{ autoRefresh ? '⏸ 暂停' : '▶ 刷新' }}
       </button>
-      <span class="text-xs text-q-subtext" v-if="error">{{ error }}</span>
+      <span class="text-xs text-red-500" v-if="error">{{ error }}</span>
     </div>
   </div>
 
-  <!-- Stage Cards Grid -->
-  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-    <div v-for="s in stages" :key="s.symbol"
-      :class="['q-panel p-5', stageBorderClass(s.stage)]">
+  <!-- 五阶段标签 -->
+  <div class="q-panel p-4">
+    <div class="flex items-center gap-3 mb-2">
+      <span class="text-xs text-q-subtext font-semibold uppercase tracking-widest">五阶段策略</span>
+      <span class="text-xs text-q-subtext" v-if="Object.keys(stageMap).length">数据就绪</span>
+      <span class="text-xs text-q-subtext" v-else>加载中...</span>
+    </div>
+    <div class="flex flex-wrap gap-2">
+      <span v-for="e in sortedStageEntries" :key="e.sym"
+        class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium border"
+        :class="{
+          'bg-green-50 border-green-200 text-green-800': e.s.stage==='主升',
+          'bg-yellow-50 border-yellow-200 text-yellow-800': e.s.stage==='启动',
+          'bg-blue-50 border-blue-200 text-blue-800': e.s.stage==='震荡',
+          'bg-orange-50 border-orange-200 text-orange-800': e.s.stage==='下跌',
+          'bg-red-50 border-red-200 text-red-800': e.s.stage==='防守'
+        }">
+        {{ e.s.stage_icon }} {{ e.s.name }}: {{ e.s.stage }}
+      </span>
+    </div>
+  </div>
 
-      <!-- Top: name + stage badge -->
-      <div class="flex items-center justify-between mb-3">
-        <div class="flex items-center gap-2">
-          <span class="text-lg">{{ s.stage_icon }}</span>
-          <span class="font-semibold text-q-text">{{ s.name }}</span>
-          <span class="text-xs text-q-subtext font-mono">{{ s.symbol }}</span>
+  <!-- 总览 -->
+  <div class="q-panel p-5">
+    <div class="text-[11px] font-semibold text-q-subtext uppercase tracking-widest">总览</div>
+    <div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div class="rounded-lg border border-gray-100 bg-gray-50/60 p-4 relative">
+        <div class="flex items-center justify-between">
+          <div class="text-[11px] text-gray-500">总资金</div>
+          <button @click="openCapitalModal()" class="text-[10px] text-blue-600 hover:text-blue-800 border border-blue-300 rounded px-2 py-0.5 hover:bg-blue-50 transition">初始资金</button>
         </div>
-        <span :class="['px-2 py-0.5 rounded-md text-xs font-medium', stageBadgeClass(s.stage)]">
-          {{ s.stage }}
-        </span>
+        <div class="mt-1 stat-value text-2xl font-bold text-q-text">{{ fmtCny(simMetrics.equity) }}</div>
+        <div class="mt-1 text-[11px] text-gray-500">浮动收益：<span class="font-mono" :class="simMetrics.pnl>=0?'text-q-up':'text-q-down'">{{ fmtCny(simMetrics.pnl) }}</span></div>
       </div>
-
-      <!-- Price row -->
-      <div class="flex items-baseline gap-2 mb-3">
-        <span class="text-2xl font-bold stat-value text-q-text">{{ s.close }}</span>
-        <span :class="['text-sm font-mono', s.pct >= 0 ? 'text-q-up' : 'text-q-down']">
-          {{ s.pct >= 0 ? '+' : '' }}{{ s.pct }}%
-        </span>
+      <div class="rounded-lg border border-gray-100 bg-gray-50/60 p-4">
+        <div class="text-[11px] text-gray-500">剩余现金</div>
+        <div class="mt-1 stat-value text-2xl font-bold text-q-text">{{ fmtCny(simState.cash) }}</div>
+        <div class="mt-1 text-[11px] text-gray-500">持仓市值：<span class="font-mono">{{ fmtCny(simMetrics.positionsValue) }}</span></div>
       </div>
+      <div class="rounded-lg border border-gray-100 bg-gray-50/60 p-4">
+        <div class="text-[11px] text-gray-500">整体仓位</div>
+        <div class="mt-1 stat-value text-2xl font-bold text-q-text">{{ (simMetrics.positionPct*100).toFixed(1) }}%</div>
+        <div class="mt-1 text-[11px] text-gray-500">现金占比：<span class="font-mono">{{ ((1-simMetrics.positionPct)*100).toFixed(1) }}%</span></div>
+      </div>
+    </div>
 
-      <!-- MA indicators -->
-      <div class="grid grid-cols-2 gap-2 mb-3">
-        <div class="bg-q-bg rounded-md px-3 py-2">
-          <span class="text-[10px] text-q-subtext block">MA20</span>
-          <span class="text-sm font-mono text-q-text">{{ s.ma20 }}</span>
+    <div class="mt-5 grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div class="rounded-lg border border-gray-100 bg-white p-4">
+        <div class="text-[11px] font-semibold text-q-subtext uppercase tracking-widest">持仓分布</div>
+        <div class="mt-2 flex items-center justify-between text-xs text-gray-600">
+          <div class="flex items-center gap-2"><span class="inline-block w-2 h-2 rounded-sm bg-blue-500"></span> 科技 <span class="font-mono text-gray-800">{{ (simMajorExposure.tech*100).toFixed(1) }}%</span></div>
+          <div class="flex items-center gap-2"><span class="inline-block w-2 h-2 rounded-sm bg-emerald-500"></span> 资源 <span class="font-mono text-gray-800">{{ (simMajorExposure.resource*100).toFixed(1) }}%</span></div>
         </div>
-        <div class="bg-q-bg rounded-md px-3 py-2">
-          <span class="text-[10px] text-q-subtext block">MA60</span>
-          <span class="text-sm font-mono text-q-text">{{ s.ma60 }}</span>
+        <div class="mt-3 h-2.5 w-full bg-gray-100 rounded-full overflow-hidden flex">
+          <div class="h-full bg-blue-500" :style="{width:(simMajorExposure.tech*100)+'%'}"></div>
+          <div class="h-full bg-emerald-500" :style="{width:(simMajorExposure.resource*100)+'%'}"></div>
         </div>
+        <div class="mt-2 text-[11px] text-gray-400">分类仅用于风控与展示</div>
       </div>
-
-      <!-- MA slope -->
-      <div class="flex items-center gap-2 mb-3">
-        <span class="text-[10px] text-q-subtext">MA20斜率</span>
-        <span :class="['text-xs font-mono', s.ma20_slope >= 0 ? 'text-q-up' : 'text-q-down']">
-          {{ s.ma20_slope >= 0 ? '+' : '' }}{{ fmtSlope(s.ma20_slope) }}
-        </span>
-        <span class="text-[10px] text-q-subtext ml-auto">量比 {{ s.vol_ratio }}</span>
-      </div>
-
-      <!-- 90d range bar -->
-      <div class="mb-2">
-        <div class="flex justify-between text-[10px] text-q-subtext">
-          <span>90日低: {{ s.low_90d }}</span>
-          <span>90日高: {{ s.high_90d }}</span>
-        </div>
-        <div class="mt-1 h-1.5 bg-q-bg rounded-full overflow-hidden">
-          <div class="h-full rounded-full transition-all duration-500"
-            :style="{ width: rangePct(s) + '%', background: rangeColor(s) }">
+      <div>
+        <div class="text-[11px] font-semibold text-q-subtext uppercase tracking-widest mb-2">风控预警</div>
+        <div v-if="simRiskAlerts.length===0" class="text-xs text-gray-400 italic">暂无预警</div>
+        <div v-else class="space-y-2">
+          <div v-for="r in simRiskAlerts" :key="r.key" class="flex items-center justify-between rounded border px-3 py-2 text-xs"
+            :class="r.level==='high'?'border-red-200 bg-red-50':'border-yellow-200 bg-yellow-50'">
+            <div class="font-medium" :class="r.level==='high'?'text-red-700':'text-yellow-800'">{{ r.title }}</div>
+            <div class="font-mono text-gray-600">{{ r.value }}</div>
           </div>
         </div>
       </div>
+    </div>
+  </div>
 
-      <!-- Position hint -->
-      <div class="text-[11px] text-q-subtext mt-1">
-        {{ positionHint(s) }}
+  <!-- ETF全列表 -->
+  <div class="q-panel p-5">
+    <div class="flex items-center justify-between mb-4">
+      <div>
+        <div class="text-[11px] font-semibold text-q-subtext uppercase tracking-widest">关注ETF全列表</div>
+        <div class="mt-1 text-xs text-gray-500">勾选后批量执行；单行执行会先弹出确认框</div>
+      </div>
+      <div class="text-xs text-gray-400 font-mono">建议数：{{ tradeSuggestions.length }} · 已勾选：{{ tradeSelectedCount }}</div>
+    </div>
+
+    <div class="flex items-center justify-between mb-3">
+      <label class="flex items-center gap-2 text-xs text-gray-600 select-none">
+        <input type="checkbox" class="accent-blue-600" :checked="tradeAllSelected" @change="toggleTradeSelectAll()">
+        全选可执行
+      </label>
+      <button @click="executeSelectedSuggestions()"
+        class="px-3 py-1.5 rounded bg-q-primary text-white text-xs font-semibold hover:bg-blue-600 disabled:opacity-30"
+        :disabled="tradeSelectedCount===0">批量执行 ({{ tradeSelectedCount }})</button>
+    </div>
+
+    <div class="overflow-x-auto">
+      <table class="min-w-full text-xs">
+        <thead>
+          <tr class="text-gray-500 border-b border-gray-100 text-[11px]">
+            <th class="text-left py-2 pr-2 font-medium w-8">选</th>
+            <th class="text-left py-2 pr-2 font-medium w-36">ETF</th>
+            <th class="text-left py-2 pr-2 font-medium w-44">阶段 · 原因</th>
+            <th class="text-right py-2 pr-2 font-medium w-28">现持仓</th>
+            <th class="text-right py-2 pr-2 font-medium w-28">目标仓位</th>
+            <th class="text-left py-2 pr-2 font-medium w-44">建议操作</th>
+            <th class="text-right py-2 pr-2 font-medium w-20">止损价</th>
+            <th class="text-right py-2 pr-0 font-medium w-24">执行</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="r in tradeTableRows" :key="r.symbol" class="border-b border-gray-50 hover:bg-gray-50/40">
+            <td class="py-2 pr-3">
+              <input type="checkbox" class="accent-blue-600" v-model="selectedSuggestions[r.symbol]" :disabled="!r.selectable">
+            </td>
+            <td class="py-2 pr-3">
+              <div class="text-gray-800 font-semibold text-xs">{{ r.name }}</div>
+              <div class="text-[10px] text-gray-400">{{ r.category }}</div>
+            </td>
+            <td class="py-2 pr-2">
+              <div class="text-xs font-medium" :class="{
+                'text-green-700':r._stage==='主升','text-yellow-600':r._stage==='启动',
+                'text-blue-600':r._stage==='震荡','text-orange-500':r._stage==='下跌','text-red-600':r._stage==='防守'
+              }">{{ r.stage_icon }} {{ r._stage }}</div>
+              <div class="text-[10px] text-gray-500 mt-0.5">{{ r.triggerDetail }}</div>
+            </td>
+            <td class="py-2 pr-2 text-right text-xs">
+              <div v-if="r.curShares>0" class="text-gray-700 font-mono">{{ r.curShares }}股</div>
+              <div v-if="r.curShares>0" class="text-[10px] text-gray-500 font-mono">¥{{ fmtCny(r.curVal) }}</div>
+              <div v-else class="text-gray-400 text-[11px]">空仓</div>
+            </td>
+            <td class="py-2 pr-2 text-right text-xs">
+              <div v-if="r.targetPct>0" class="text-gray-700 font-mono">{{ r.targetShares }}股</div>
+              <div v-if="r.targetPct>0" class="text-[10px] text-gray-500 font-mono">¥{{ fmtCny(r.targetVal) }}</div>
+              <div v-if="r.targetPct>0" class="text-[10px] text-gray-400">({{ (r.targetPct*100).toFixed(0) }}%仓位)</div>
+              <div v-else class="text-gray-400 text-[11px]">—</div>
+            </td>
+            <td class="py-2 pr-3 text-xs">
+              <div v-if="r.executed" class="text-gray-400 text-[11px]">{{ r.execLabel }}</div>
+              <div v-else-if="r.selectable" class="font-medium" :class="r.action==='买入'?'text-green-700':'text-red-600'">
+                <div>{{ r.action }} {{ r.tradeShares }}股@{{ r.tradePrice }}</div>
+                <div class="text-[10px] text-gray-500 font-mono">¥{{ fmtCny(r.tradeNotional) }}</div>
+              </div>
+              <div v-else-if="r.action==='不动'" class="text-gray-400 text-[11px]">不动</div>
+              <div v-else-if="r.action==='回避'" class="text-orange-500 text-[11px] font-medium">回避</div>
+              <div v-else class="text-gray-400 text-[11px]">—</div>
+            </td>
+            <td class="py-2 pr-2 text-right text-xs">
+              <span v-if="r.stopPrice&&r.stopPrice!=='—'" class="font-mono text-gray-600">{{ r.stopPrice }}</span>
+              <span v-else class="text-gray-300">—</span>
+            </td>
+            <td class="py-2 pr-0 text-right">
+              <button v-if="r.executed" class="px-2 py-1 rounded bg-gray-100 text-gray-400 text-[11px] cursor-default" disabled>{{ r.execLabel }}</button>
+              <button v-else-if="r.selectable" @click="executeSuggestion(r.symbol)" class="px-3 py-1.5 rounded bg-q-primary text-white text-xs font-semibold hover:bg-blue-600 disabled:opacity-50" :disabled="!r.selectable">执行</button>
+              <span v-else class="text-gray-300 text-[11px]">—</span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 账户明细 -->
+  <div class="q-panel p-5">
+    <div class="flex items-center justify-between gap-4 mb-4">
+      <div>
+        <div class="text-[11px] font-semibold text-q-subtext uppercase tracking-widest">账户明细</div>
+        <div class="mt-1 text-xs text-gray-500">持仓与交易记录联动更新</div>
+      </div>
+      <div class="flex items-center gap-1 bg-gray-100 p-0.5 rounded-md">
+        <button @click="tradeBottomTab='positions'" class="px-3 py-1 text-xs rounded-sm transition-all" :class="tradeBottomTab==='positions'?'bg-white text-q-text shadow-sm font-medium':'text-gray-500 hover:text-gray-700'">持仓</button>
+        <button @click="tradeBottomTab='trades'" class="px-3 py-1 text-xs rounded-sm transition-all" :class="tradeBottomTab==='trades'?'bg-white text-q-text shadow-sm font-medium':'text-gray-500 hover:text-gray-700'">交易记录</button>
+      </div>
+    </div>
+
+    <!-- 持仓 -->
+    <div v-show="tradeBottomTab==='positions'">
+      <div class="flex items-center justify-between mb-3">
+        <div class="text-xs text-gray-500">持仓数：<span class="font-mono text-gray-700">{{ simPositionsList.length }}</span></div>
+        <div class="flex items-center gap-2">
+          <label class="px-2.5 py-1 rounded border border-gray-200 text-gray-700 hover:bg-gray-50 text-[11px] cursor-pointer">
+            上传持仓截图
+            <input type="file" accept="image/*" class="hidden" @change="onHoldingsScreenshot">
+          </label>
+          <button @click="resetSimAccount()" class="px-2.5 py-1 rounded border border-gray-200 text-gray-700 hover:bg-gray-50 text-[11px]">重置</button>
+        </div>
+      </div>
+      <div v-if="holdingsScreenshot" class="mb-2 text-[10px] text-gray-500">已上传截图</div>
+      <div v-if="simPositionsList.length===0" class="text-xs text-gray-400 italic">暂无持仓</div>
+      <div v-else class="overflow-x-auto">
+        <table class="min-w-full text-xs">
+          <thead>
+            <tr class="text-gray-500 border-b border-gray-100">
+              <th class="text-left py-2 pr-3 font-medium">标的</th>
+              <th class="text-right py-2 pr-3 font-medium">份额</th>
+              <th class="text-right py-2 pr-3 font-medium">均价</th>
+              <th class="text-right py-2 pr-3 font-medium">现价</th>
+              <th class="text-right py-2 pr-3 font-medium">市值</th>
+              <th class="text-right py-2 pr-3 font-medium">收益</th>
+              <th class="text-right py-2 pr-0 font-medium w-14">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="p in simPositionsList" :key="p.symbol" class="border-b border-gray-50">
+              <td class="py-2 pr-3 text-gray-800 font-medium">{{ symbolNames[p.symbol] || p.symbol }}</td>
+              <td class="py-2 pr-3 text-right font-mono">{{ p.shares }}</td>
+              <td class="py-2 pr-3 text-right font-mono">{{ p.avgPrice.toFixed(3) }}</td>
+              <td class="py-2 pr-3 text-right font-mono">{{ p.lastPrice?p.lastPrice.toFixed(3):'-' }}</td>
+              <td class="py-2 pr-3 text-right font-mono">{{ fmtCny(p.value) }}</td>
+              <td class="py-2 pr-3 text-right font-mono" :class="p.pnl>=0?'text-q-up':'text-q-down'">{{ fmtCny(p.pnl) }}</td>
+              <td class="py-2 pr-0 text-right">
+                <button @click="editPosition(p.symbol)" class="text-[10px] text-gray-500 hover:text-q-primary underline">修改</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 交易记录 -->
+    <div v-show="tradeBottomTab==='trades'">
+      <div class="flex items-center justify-between mb-3">
+        <div class="text-xs text-gray-500">记录数：<span class="font-mono text-gray-700">{{ simState.trades.length }}</span></div>
+      </div>
+      <div v-if="simState.trades.length===0" class="text-xs text-gray-400 italic">暂无交易</div>
+      <div v-else class="overflow-x-auto">
+        <table class="min-w-full text-xs">
+          <thead>
+            <tr class="text-gray-500 border-b border-gray-100">
+              <th class="text-left py-2 pr-3 font-medium">时间</th>
+              <th class="text-left py-2 pr-3 font-medium">标的</th>
+              <th class="text-left py-2 pr-3 font-medium">方向</th>
+              <th class="text-right py-2 pr-3 font-medium">份额</th>
+              <th class="text-right py-2 pr-3 font-medium">价格</th>
+              <th class="text-right py-2 pr-3 font-medium">金额</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="t in simTradesLatest" :key="t.id" class="border-b border-gray-50">
+              <td class="py-2 pr-3 font-mono text-gray-600">{{ t.ts }}</td>
+              <td class="py-2 pr-3 text-gray-800 font-medium">{{ symbolNames[t.symbol]||t.symbol }}</td>
+              <td class="py-2 pr-3 font-mono" :class="t.side==='BUY'?'text-q-up':'text-q-down'">{{ t.side }}</td>
+              <td class="py-2 pr-3 text-right font-mono">{{ t.shares }}</td>
+              <td class="py-2 pr-3 text-right font-mono">{{ t.price.toFixed(3) }}</td>
+              <td class="py-2 pr-3 text-right font-mono">{{ fmtCny(t.notional) }}</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
   </div>
 
-  <!-- Footer -->
-  <div class="mt-6 text-center text-[10px] text-q-subtext">
-    端口 8783 · 数据来自 :8787 /api/m1/stage_state · V2 固定参数版
+  <!-- 交易确认弹窗 -->
+  <div v-if="tradeConfirmOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+    <div class="w-full max-w-3xl bg-white rounded-xl border border-gray-200 shadow-xl overflow-hidden">
+      <div class="px-5 py-4 border-b border-gray-100 flex items-start justify-between gap-3">
+        <div>
+          <div class="text-sm font-bold text-q-text">确认执行</div>
+          <div class="mt-1 text-xs text-gray-500">可修改份额(100的整数倍)与成交价，确认后写入模拟账户</div>
+        </div>
+        <button @click="closeTradeConfirm()" class="px-2.5 py-1 rounded border border-gray-200 text-gray-700 hover:bg-gray-50 text-xs">关闭</button>
+      </div>
+      <div class="p-5">
+        <div class="overflow-x-auto">
+          <table class="min-w-full text-xs">
+            <thead>
+              <tr class="text-gray-500 border-b border-gray-100">
+                <th class="text-left py-2 pr-3 font-medium">标的</th>
+                <th class="text-left py-2 pr-3 font-medium">方向</th>
+                <th class="text-right py-2 pr-3 font-medium">份额</th>
+                <th class="text-right py-2 pr-3 font-medium">成交价</th>
+                <th class="text-right py-2 pr-0 font-medium">金额</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="it in tradeConfirmItems" :key="it.symbol" class="border-b border-gray-50">
+                <td class="py-2 pr-3 text-gray-800 font-medium">
+                  <div>{{ it.name }}</div>
+                  <div class="text-[11px] text-gray-500 line-clamp-1" :title="it.reason">{{ it.reason }}</div>
+                </td>
+                <td class="py-2 pr-3 font-mono" :class="it.side==='BUY'?'text-q-up':'text-q-down'">{{ it.side }}</td>
+                <td class="py-2 pr-3 text-right">
+                  <input v-model.number="it.shares" type="number" min="0" step="100" class="w-28 border border-gray-200 rounded px-2 py-1 text-sm font-mono focus:outline-none focus:border-q-primary">
+                </td>
+                <td class="py-2 pr-3 text-right">
+                  <input v-model.number="it.price" type="number" min="0" step="0.001" class="w-28 border border-gray-200 rounded px-2 py-1 text-sm font-mono focus:outline-none focus:border-q-primary">
+                </td>
+                <td class="py-2 pr-0 text-right font-mono text-gray-700">{{ fmtCny((Number(it.shares||0) * Number(it.price||0)) || 0) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div v-if="tradeConfirmError" class="mt-3 text-sm text-red-600 font-semibold">{{ tradeConfirmError }}</div>
+        <div class="mt-4 flex items-center justify-end gap-2">
+          <button @click="closeTradeConfirm()" class="px-3 py-2 rounded border border-gray-200 text-gray-700 hover:bg-gray-50 text-xs font-semibold">取消</button>
+          <button @click="confirmTradeConfirm()" class="px-4 py-2 rounded bg-q-primary text-white text-xs font-semibold hover:bg-blue-600">确认执行</button>
+        </div>
+      </div>
+    </div>
   </div>
+
+  <!-- 总资金弹窗 -->
+  <div v-if="capitalModalOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+    <div class="w-full max-w-sm bg-white rounded-xl border border-gray-200 shadow-xl overflow-hidden">
+      <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+        <div>
+          <div class="text-sm font-bold text-q-text">设置总资金</div>
+          <div class="mt-1 text-xs text-gray-500">修改后剩余现金自动调整</div>
+        </div>
+        <button @click="closeCapitalModal()" class="px-2.5 py-1 rounded border border-gray-200 text-gray-700 hover:bg-gray-50 text-xs">关闭</button>
+      </div>
+      <div class="p-5">
+        <div class="text-xs text-gray-500 mb-1">当前：现金 ¥{{ fmtCny(simState.cash) }} + 持仓 ¥{{ fmtCny(simMetrics.positionsValue) }}</div>
+        <input v-model.number="capitalModalValue" type="number" min="0" class="w-full border border-gray-200 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:border-q-primary" placeholder="100000">
+        <div class="mt-4 flex items-center justify-end gap-2">
+          <button @click="closeCapitalModal()" class="px-3 py-2 rounded border border-gray-200 text-gray-700 hover:bg-gray-50 text-xs font-semibold">取消</button>
+          <button @click="confirmCapitalModal()" class="px-4 py-2 rounded bg-q-primary text-white text-xs font-semibold hover:bg-blue-600">确认</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 持仓修改弹窗 -->
+  <div v-if="posEditOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+    <div class="w-full max-w-sm bg-white rounded-xl border border-gray-200 shadow-xl overflow-hidden">
+      <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+        <div>
+          <div class="text-sm font-bold text-q-text">修改持仓：{{ symbolNames[posEditSym]||posEditSym }}</div>
+          <div class="mt-1 text-xs text-gray-500">修改后自动更新持仓均价与市值</div>
+        </div>
+        <button @click="closePosEdit()" class="px-2.5 py-1 rounded border border-gray-200 text-gray-700 hover:bg-gray-50 text-xs">关闭</button>
+      </div>
+      <div class="p-5">
+        <div class="mb-3">
+          <div class="text-[11px] text-gray-500 mb-1">份额（100的整数倍）</div>
+          <input v-model.number="posEditShares" type="number" min="0" step="100" class="w-full border border-gray-200 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:border-q-primary">
+        </div>
+        <div class="mb-3">
+          <div class="text-[11px] text-gray-500 mb-1">均价</div>
+          <input v-model.number="posEditPrice" type="number" min="0" step="0.001" class="w-full border border-gray-200 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:border-q-primary">
+        </div>
+        <div class="mt-4 flex items-center justify-end gap-2">
+          <button @click="closePosEdit()" class="px-3 py-2 rounded border border-gray-200 text-gray-700 hover:bg-gray-50 text-xs font-semibold">取消</button>
+          <button @click="confirmPosEdit()" class="px-4 py-2 rounded bg-q-primary text-white text-xs font-semibold hover:bg-blue-600">确认</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
 </div>
 
-<script src="ui.js"></script>
+<script src="./ui.js?v=20260612_2"></script>
 </body>
 </html>
