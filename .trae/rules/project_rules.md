@@ -45,6 +45,7 @@
 
 | 端口 | 用途 | Agent |
 |------|------|-------|
+| `8780` | 统一入口页（壳子，iframe 聚合四个页面） | 公共 |
 | `8787` | 共享数据 API（不改，所有页面共用） | 所有人只读 |
 | `8781` | 盘中概览页 | Agent A |
 | `8782` | ETF 行情页 | Agent B |
@@ -55,6 +56,10 @@
 
 ```
 pages/
+  shell/            → 公共（端口 8780）
+    index.html
+    server.js
+
   overview/         → Agent A（端口 8781）
     index.html
     ui.js
@@ -83,6 +88,24 @@ server.js           → 8787，共享数据 API（所有 Agent 只读不改）
 **跨板块共享原则**
 - 共享数据 API（8787）只允许在 `server.js`（或 `pages/api/` 路由）中新增**只读**查询路由；不得新增可修改数据的写路由（除非用户明确允许）。
 - 如果两个页面需要同一种新数据，在 8787 加一条 API 路由，两个页面的 Agent 各自通过 `fetch('/api/...')` 调用，不得各自复制一份数据处理逻辑。
+
+
+**统一入口页（Shell）说明**
+- 统一入口在 `pages/shell/`，端口 **8780**，用于聚合四个独立页面。
+- Shell 用 **iframe** 嵌入各页面（`http://127.0.0.1:8781~8784`），tab 栏切换时懒加载 iframe。
+- 各 Agent **不需要**在 Shell 里写任何代码；自己的页面在自己的端口跑，Shell 自动聚合。
+- 各 Agent **不要在页面里写导航栏、Tab 切换、侧边栏**——这些由 Shell 统一提供。页面只需做好自己的内容区即可。
+
+**页面 UI 公约（在 iframe 内正确显示的强制规则）**
+| 规则 | 说明 |
+|------|------|
+| **不要设 `overflow: hidden` 在 body** | iframe 内页面用 `overflow-y: auto` 保持自身滚动，否则内容被裁切 |
+| **页面标题用 `<title>` 标签** | Shell tab 切换不需要页面自带 header，自己页的 header 保留 `页面名称 + 更新时间` |
+| **背景色统一 `#F4F4F5`（q-bg）** | 和 Shell 的背景无缝融合，不要用其他颜色 |
+| **不使用 `target="_parent"` 或 `window.parent`** | iframe 是各 Agent 的沙盒，不要试图操作外层 DOM |
+| **页面的 API 请求走自己端口的代理** | 已经在 server.js 里配好了 `/api/*` 转 8787 的转发，Agent 不需要额外处理 |
+| **`<head>` 里的 Tailwind/Vue/ECharts CDN 照抄** | 每个 iframe 是独立文档，必须各自引入依赖（已在 skeletons 中配好） |
+| **字体统一** | `font-family: Inter, -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif` |
 
 #### 8. 后端切块隔离（每个 Agent 只能改自己的路由文件）
 
