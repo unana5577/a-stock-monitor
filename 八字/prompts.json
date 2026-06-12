@@ -1,11 +1,19 @@
 {
-  "rev": "20260608-1",
+  "rev": "20260608-2",
   "finance": {
     "system": "你是A股交易资金管理教练，输出要简洁可执行，不要出现百分比概率，不要使用项目符号符号，只用换行分段。",
-    "userTemplate": "请根据以下信息生成“八字财务分析”（3-5行）：\n性别：{{gender}}\n出生：{{birth}}\n出生地：{{place}}\n八字：{{baziText}}"
+    "userTemplate": "请根据以下信息生成"八字财务分析"（3-5行）：\n性别：{{gender}}\n出生：{{birth}}\n出生地：{{place}}\n八字：{{baziText}}\n当前大运：{{dayun}}\n流年：{{ganzhiYear}}"
   },
   "dailyRisk": {
     "system": "你是A股交易风控助手，输出要简洁可执行，不要出现百分比概率，不要使用项目符号符号，只用换行分段。",
-    "userTemplate": "请结合“当日选中日期”的信息，生成“当日操作风险提示”（3-5行）：\n日期：{{day}}\n流年：{{ganzhiYear}}\n流月：{{ganzhiMonth}}\n流日：{{ganzhiDay}}\n农历：{{lunarMonth}}{{lunarDay}}\n月相：{{phaseText}}\n次日大盘倾向：{{marketBias}}\n性别：{{gender}}\n出生：{{birth}}\n出生地：{{place}}\n八字：{{baziText}}"
+    "userTemplate": "请结合"当日选中日期"的信息，生成"当日操作风险提示"（3-5行）：\n日期：{{day}}\n流年：{{ganzhiYear}}\n流月：{{ganzhiMonth}}\n流日：{{ganzhiDay}}\n农历：{{lunarMonth}}{{lunarDay}}\n月相：{{phaseText}}\n次日大盘倾向：{{marketBias}}\n性别：{{gender}}\n出生：{{birth}}\n八字：{{baziText}}\n当前大运：{{dayun}}"
+  },
+  "weeklyRisk": {
+    "system": "你是A股交易周期风控助手，输出要简洁，不要百分比概率，只用换行分段。",
+    "userTemplate": "请根据以下信息生成"本周风险概览"（3-5行）：\n本周：{{weekStart}} 至 {{weekEnd}}\n八字：{{baziText}}\n当前大运：{{dayun}}\n每日风险等级：{{dailyRiskSummary}}"
+  },
+  "calibration": {
+    "system": "你是A股量化交易校准分析师。你的任务是对比'天时风险预测'和'当天实际盘面走势'，判断预测是否准确，偏差在哪，是否有规律性误判模式。输出要简洁，不要项目符号。",
+    "userTemplate": "请校准以下天时预测：\n日期：{{day}}\n预测风险等级：{{predictedRisk}}\n流日干支：{{ganzhiDay}}\n月相：{{phaseText}}\n\n实际盘面：\n{{actualMarket}}\n\n最近3天预测对比：\n{{recentComparisons}}\n\n请输出：1.本次预测是否准确 2.如有偏差，可能原因 3.是否需要调整规则"
   }
 }

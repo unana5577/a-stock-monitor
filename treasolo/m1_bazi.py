@@ -8,6 +8,7 @@ from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
 from tyme4py.solar import SolarDay, SolarTime
+from tyme4py.eightchar import ChildLimit, Gender as EcGender
 
 
 TZ = ZoneInfo("Asia/Shanghai")
@@ -179,6 +180,51 @@ def apply_true_solar(dt: datetime, lon: float) -> tuple[datetime, float]:
     return dt + timedelta(minutes=offset), float(offset)
 
 
+def compute_dayun(dt: datetime, gender: str) -> dict | None:
+    g = str(gender or "").strip()
+    if g not in ("男", "女"):
+        return None
+    try:
+        st = SolarTime.from_ymd_hms(dt.year, dt.month, dt.day, dt.hour, dt.minute, 0)
+        eg = EcGender.MAN if g == "男" else EcGender.WOMAN
+        cl = ChildLimit(st, eg)
+        start_age = cl.get_start_age()
+        start_df = cl.get_start_decade_fortune()
+        if not start_df:
+            return {"error": "dayun_not_found"}
+        df = start_df
+        all_list = []
+        for _ in range(12):
+            if df:
+                all_list.append({
+                    "name": df.get_name(),
+                    "startAge": int(df.get_start_age()),
+                    "endAge": int(df.get_end_age()),
+                })
+                df = df.next(1)
+            else:
+                break
+        current_age = start_age + (dt.year + dt.month / 12.0) - (dt.year + dt.month / 12.0)
+        import datetime as _dt
+        now = _dt.datetime.now()
+        age = now.year - dt.year - ((now.month, now.day) < (dt.month, dt.day))
+        cur = None
+        for d in all_list:
+            if d["startAge"] <= age <= d["endAge"]:
+                cur = d
+                break
+        if not cur and all_list:
+            cur = all_list[0]
+        return {
+            "startAge": start_age,
+            "current": cur["name"] if cur else "",
+            "currentAgeRange": f"{cur['startAge']}-{cur['endAge']}岁" if cur else "",
+            "all": all_list,
+        }
+    except Exception:
+        return {"error": "dayun_calc_failed"}
+
+
 def compute_bazi(dt: datetime) -> dict:
     sd = SolarDay.from_ymd(dt.year, dt.month, dt.day)
     scd = sd.get_sixty_cycle_day()
@@ -273,6 +319,7 @@ def main() -> int:
         "placeDetail": str(args.place_detail or "").strip(),
         "trueSolar": ts_meta,
         "bazi": compute_bazi(used_dt),
+        "dayun": compute_dayun(dt0, args.gender),
     }
     print(json.dumps(payload, ensure_ascii=False))
     return 0

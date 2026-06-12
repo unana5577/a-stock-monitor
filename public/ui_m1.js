@@ -21,6 +21,20 @@ const app = createApp({
     const lifecycleItems = ref([]);
     const policyData = ref({});
     const policyError = ref('');
+    const stageMap = ref({});
+    const fetchStageState = async () => {
+      try {
+        const r = await fetch(`${API_BASE}/api/m1/stage_state`);
+        const j = await r.json();
+        if (j.ok && j.data) stageMap.value = j.data.stages || {};
+      } catch {}
+    };
+    const sortedStageEntries = computed(() => {
+      const entries = Object.entries(stageMap.value || {});
+      const order = { '主升': 0, '防守': 1, '启动': 2, '下跌': 3, '震荡': 4 };
+      entries.sort((a, b) => (order[a[1].stage] || 9) - (order[b[1].stage] || 9));
+      return entries.map(([sym, s]) => ({ sym, s }));
+    });
     const intradaySnapshotItems = ref([]);
     const breadthData = ref({ up: 0, flat: 0, down: 0, total: 0 });
     const volumeHistory = ref([]);
@@ -235,6 +249,23 @@ const app = createApp({
       return v;
     });
     const baziProfile = ref(null);
+    const baziPrompts = ref(null);
+
+    const loadBaziPrompts = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/m1/config/bazi_prompts`);
+        const json = await res.json();
+        if (json && json.rev) baziPrompts.value = json;
+      } catch (e) { void e; }
+    };
+
+    const replaceTemplate = (tmpl, vars) => {
+      let s = String(tmpl || '');
+      Object.entries(vars || {}).forEach(([k, v]) => {
+        s = s.replaceAll(`{{${k}}}`, String(v ?? ''));
+      });
+      return s;
+    };
     const baziLoading = ref(false);
     const baziError = ref('');
     const financeAuto = ref('');
@@ -398,7 +429,27 @@ const app = createApp({
           context: {
             activeTab: activeTab.value,
             selectedDay: astroSelectedDay.value || '',
-            monthGanzhi: astroMonthGanzhi.value || ''
+            monthGanzhi: astroMonthGanzhi.value || '',
+            bazi: (baziProfile.value?.ok ? {
+              year: baziProfile.value.bazi?.year || '',
+              month: baziProfile.value.bazi?.month || '',
+              day: baziProfile.value.bazi?.day || '',
+              hour: baziProfile.value.bazi?.hour || '',
+              text: baziProfile.value.bazi?.text || '',
+              dayun: (baziProfile.value.dayun?.current ? {
+                current: baziProfile.value.dayun.current,
+                currentAgeRange: baziProfile.value.dayun.currentAgeRange || '',
+                startAge: baziProfile.value.dayun.startAge,
+                all: baziProfile.value.dayun.all || []
+              } : undefined)
+            } : undefined),
+            dayAstro: (astroSelectedDay.value ? {
+              ganzhiYear: baziProfile.value?.bazi?.year || '',
+              ganzhiMonth: astroMonthGanzhi.value || '',
+              ganzhiDay: astroSelectedGanzhiDay.value || '',
+              lunarDay: astroSelectedLunarDay.value || '',
+              phaseText: astroSelectedPhase.value || ''
+            } : undefined)
           }
         };
         const res = await fetch(`${API_BASE}/api/ai/chat`, {
@@ -423,9 +474,7 @@ const app = createApp({
 
     const SIM_KEY = 'm1_sim_account_v1';
     const simConfig = ref({
-      initialCash: Number(localStorage.getItem('sim_initial_cash') || 100000),
-      rebalanceBandPct: Number(localStorage.getItem('sim_rebalance_band_pct') || 5),
-      maxCategoryPct: Number(localStorage.getItem('sim_max_category_pct') || 30)
+      initialCash: Number(localStorage.getItem('sim_initial_cash') || 100000)
     });
     const policyConfig = ref({
       heatUpDays: Number(localStorage.getItem('policy_heat_up_days') || 3),
@@ -451,10 +500,53 @@ const app = createApp({
     });
     const suggestionOverrides = ref({});
     const selectedSuggestions = ref({});
+    const tradeExecutedToday = ref({});
     const tradeConfirmOpen = ref(false);
     const tradeConfirmItems = ref([]);
     const tradeConfirmError = ref('');
     const tradeBottomTab = ref('positions');
+
+    const capitalModalOpen = ref(false);
+    const capitalModalValue = ref(0);
+    const openCapitalModal = () => {
+      capitalModalValue.value = Math.round(simMetrics.value.equity || simConfig.value.initialCash || 0);
+      capitalModalOpen.value = true;
+    };
+    const closeCapitalModal = () => { capitalModalOpen.value = false; };
+    const confirmCapitalModal = () => {
+      const val = Math.max(0, Number(capitalModalValue.value || 0));
+      if (!Number.isFinite(val)) return;
+      simConfig.value.initialCash = val;
+      const positionsVal = simMetrics.value.positionsValue || 0;
+      simState.value.cash = Math.max(0, val - positionsVal);
+      capitalModalOpen.value = false;
+      saveSimLocal();
+    };
+
+    const posEditOpen = ref(false);
+    const posEditSym = ref('');
+    const posEditShares = ref(0);
+    const posEditPrice = ref(0);
+    const editPosition = (sym) => {
+      const p = simState.value.positions?.[sym];
+      posEditSym.value = sym;
+      posEditShares.value = Number(p?.shares || 0);
+      posEditPrice.value = Number(p?.avgPrice || 0);
+      posEditOpen.value = true;
+    };
+    const closePosEdit = () => { posEditOpen.value = false; };
+    const confirmPosEdit = () => {
+      const sh = Math.floor(Number(posEditShares.value || 0) / 100) * 100;
+      const px = Number(posEditPrice.value || 0);
+      if (sh < 0 || !Number.isFinite(px) || px <= 0) return;
+      if (sh === 0) {
+        delete simState.value.positions[posEditSym.value];
+      } else {
+        simState.value.positions[posEditSym.value] = { shares: sh, avgPrice: px };
+      }
+      posEditOpen.value = false;
+      saveSimLocal();
+    };
 
     const holdingsScreenshot = ref(localStorage.getItem('sim_holdings_screenshot') || '');
     const holdingsScreenshotUpdatedAt = ref(localStorage.getItem('sim_holdings_screenshot_at') || '');
@@ -908,20 +1000,6 @@ const app = createApp({
 
     const simRiskAlerts = computed(() => {
       const alerts = [];
-      const maxPct = Number(simConfig.value.maxCategoryPct || 0) / 100;
-      const exposure = simCategoryExposure.value || {};
-      Object.keys(exposure).forEach((cat) => {
-        const pct = exposure[cat];
-        if (!Number.isFinite(pct)) return;
-        if (pct > maxPct && maxPct > 0) {
-          alerts.push({
-            key: `cat:${cat}`,
-            level: pct > maxPct * 1.15 ? 'high' : 'mid',
-            title: `板块超配：${cat}`,
-            value: `${(pct * 100).toFixed(1)}%`
-          });
-        }
-      });
       if ((simMetrics.value.cash || 0) < 0) {
         alerts.push({ key: 'cash:neg', level: 'high', title: '现金为负', value: fmtCny(simMetrics.value.cash) });
       }
@@ -937,38 +1015,77 @@ const app = createApp({
       return shares * lastPrice;
     };
 
+    const STAGE_TARGET = { '主升': 0.80, '震荡': 0.70, '启动': 0.30, '下跌': 0.30, '防守': 0.00 };
+    const STAGE_STOP = { '主升': 0.90, '震荡': 0.92, '启动': 0.95, '下跌': 0.92, '防守': 1.0 };
+
+    const fmtShares = (shares, price) => {
+      const sh = Math.round(shares || 0);
+      const px = Number(price || 0);
+      if (!sh) return '—';
+      if (px > 0) return sh + '股 ¥' + fmtCny(sh * px);
+      return sh + '股';
+    };
+
+    const fmtStopPrice = (stage, price, avgPrice) => {
+      const st = stage || '震荡';
+      const mult = STAGE_STOP[st] || 0.92;
+      if (mult >= 1.0) return '—';
+      const ref = avgPrice > 0 ? avgPrice : price;
+      if (!ref) return '—';
+      return '¥' + (ref * mult).toFixed(3);
+    };
+
+    const stageTriggers = (s) => {
+      const stage = s.stage || '';
+      const parts = [];
+      if (stage === '防守') {
+        parts.push('空头排列 MA20<MA60');
+        if (s.vol_ratio != null && s.vol_ratio < 0.8) parts.push('缩量');
+        else if (s.amount_trend && s.amount_trend !== '量能持平') parts.push(s.amount_trend);
+      } else if (stage === '主升') {
+        parts.push('多头排列');
+        if (s.ma20_slope != null && s.ma20_slope > 0) parts.push('不创新低');
+        if (s.amount_trend && s.amount_trend !== '量能持平') parts.push(s.amount_trend);
+      } else if (stage === '启动') {
+        parts.push('站上MA20 · 斜率转正');
+        if (s.vol_ratio != null && s.vol_ratio > 1.2) parts.push('放量突破');
+        else if (s.amount_trend) parts.push(s.amount_trend);
+      } else if (stage === '下跌') {
+        parts.push('跌破MA20 · 斜率转负');
+        if (s.vol_ratio != null && s.vol_ratio < 0.8) parts.push('缩量');
+      } else if (stage === '震荡') {
+        if (s.ma20 && s.close) {
+          const pct = ((s.close - s.ma20) / s.ma20 * 100);
+          parts.push('横盘 MA20' + (pct >= 0 ? '+' : '') + pct.toFixed(1) + '%');
+        }
+        if (s.ma20_slope != null && Math.abs(s.ma20_slope * 100) < 0.3) parts.push('斜率走平');
+      }
+      return parts.join(' · ') || '—';
+    };
+
     const tradeSuggestions = computed(() => {
       const equity = simMetrics.value.equity || 0;
       if (equity <= 0) return [];
-      const band = Math.max(0, Number(simConfig.value.rebalanceBandPct || 0)) / 100;
-      const pData = policyData.value || {};
+      const band = 0.03;
+      const sm = stageMap.value || {};
+      const syms = Object.keys(sm).filter(s => sm[s].stage);
+      if (!syms.length) return [];
 
-      const strengthWeight = { '强': 1.0, '中': 0.5, '弱': 0.25 };
-      const activeSet = [];
-      Object.entries(pData).forEach(([sym, p]) => {
-        const act = p.action;
-        if (['ENTER', 'BUILD', 'HOLD', 'TOPUP'].includes(act)) {
-          activeSet.push({ sym, strength: p.signal_strength || '中', priceFactor: p.price_factor || 1.0 });
-        }
-      });
-      if (!activeSet.length) return [];
-
-      let totalW = 0;
-      activeSet.forEach(a => { totalW += (strengthWeight[a.strength] || 0.5) * a.priceFactor; });
-      if (totalW <= 0) return [];
-
-      const baselineWeight = 1.0 / activeSet.length;
-
+      const budgetPer = equity / syms.length;
       const suggestions = [];
-      activeSet.forEach(({ sym, strength, priceFactor }) => {
-        const sw = strengthWeight[strength] || 0.5;
-        let targetWeight = baselineWeight * sw * priceFactor / totalW;
-        const p = pData[sym];
-        const positionLevel = Number(p?.position_level || 0);
-        targetWeight = targetWeight * positionLevel;
-        const curVal = getPositionValue(sym);
+
+      syms.forEach(sym => {
+        const s = sm[sym];
+        const cheapPrice = s.close || 0;
+        if (!cheapPrice) return;
+        const targetPct = STAGE_TARGET[s.stage] || 0.50;
+        const targetVal = budgetPer * targetPct;
+        const targetShares = Math.floor(targetVal / cheapPrice / 100) * 100;
+        const pos = simState.value.positions?.[sym] || {};
+        const curShares = Math.max(0, Number(pos.shares || 0));
+        const curVal = curShares * cheapPrice;
         const curW = equity > 0 ? curVal / equity : 0;
-        const delta = targetWeight - curW;
+        const delta = targetPct / syms.length - curW;
         if (Math.abs(delta) < band) return;
 
         const action = delta > 0 ? 'BUY' : 'SELL';
@@ -976,23 +1093,30 @@ const app = createApp({
         if (action === 'BUY') notional = Math.min(notional, Math.max(0, Number(simState.value.cash || 0)));
         if (action === 'SELL') notional = Math.min(notional, curVal);
         if (notional <= 0) return;
+        const tradeShares = Math.floor(notional / cheapPrice / 100) * 100;
+        if (tradeShares <= 0) return;
 
-        const cat = etfCategoryMap[sym] || '未分类';
-        const reason = (pData[sym] && pData[sym].reason) ? pData[sym].reason : '策略信号';
+        const stopPrice = fmtStopPrice(s.stage, cheapPrice, curShares > 0 ? Number(pos.avgPrice || 0) : 0);
 
         suggestions.push({
           symbol: sym,
-          category: cat,
+          category: etfCategoryMap[sym] || '未分类',
           action,
-          targetWeight,
-          currentWeight: curW,
-          deltaWeight: delta,
+          tradeShares,
+          tradePrice: cheapPrice,
+          targetPct,
+          curShares,
+          curVal,
+          stopPrice,
           notional: Math.round(notional),
-          reason
+          reason: `${s.stage_icon} ${s.stage} → ${(targetPct*100).toFixed(0)}%仓位 · ${stageTriggers(s)}`
         });
       });
 
-      suggestions.sort((a, b) => Math.abs(b.deltaWeight) - Math.abs(a.deltaWeight));
+      suggestions.sort((a, b) => Math.abs(b.notional) - Math.abs(a.notional));
+      if (window.TradeAllocator) {
+        TradeAllocator.applySectorCap(suggestions, equity);
+      }
       return suggestions;
     });
 
@@ -1002,69 +1126,69 @@ const app = createApp({
       return m;
     });
 
-    const getTrendStateLabel = (sym) => {
-      const p = (policyData.value || {})[sym];
-      if (!p) return '—';
-      const s = p.trend_state || '—';
-      if (s === 'COOLING') return `冷却(${p.cooldown_left || '?'}天)`;
-      if (s === 'BUILDING') return '筑底中';
-      if (s === 'IN') return `持仓 ${(p.position_level||0)*100}%`;
-      return '空仓';
-    };
-
-    const getTriggerType = (sym) => {
-      const p = (policyData.value || {})[sym];
-      const a = p && p.action;
-      if (a === 'BUILD') return '筑底试探';
-      if (a === 'ENTER') return '趋势确认';
-      if (a === 'TOPUP') return '补仓';
-      if (a === 'CUT') return '动能减弱';
-      if (a === 'EXIT') return p.reason && p.reason.includes('过热') ? '过热清仓' : '趋势破坏';
-      if (a === 'STOP_WARN') return '止损预警';
-      if (a === 'STOP_EXIT') return '止损清仓';
-      if (a === 'HOLD') return '持有';
-      return '—';
+    const stageInfo = (sym) => {
+      return (stageMap.value || {})[sym] || {};
     };
 
     const tradeTableRows = computed(() => {
       const equity = simMetrics.value.equity || 0;
-      const pData = policyData.value || {};
+      const execMap = tradeExecutedToday.value || {};
       return (etfSymbols || []).map((sym) => {
-        const p = pData[sym] || {};
+        const s = stageInfo(sym);
         const sugg = tradeSuggestionMap.value?.[sym] || null;
-        const val = getPositionValue(sym);
-        const w = equity > 0 ? val / equity : 0;
-        const action = sugg ? (sugg.action === 'BUY' ? '买入' : '卖出') : '不动';
-        const targetWeight = sugg ? sugg.targetWeight : 0;
-        const amt = sugg ? Number(suggestionOverrides.value?.[sym] ?? sugg.notional) : 0;
-        const selectable = !!sugg;
-        const item = (etfLifecycleItems.value || []).find(i => i.symbol === sym);
-        const momentum = item?.动能 || '';
-        const reason = sugg ? sugg.reason : (p.reason || (momentum ? `趋势信号：${momentum}` : '等待策略信号'));
+        const stage = s.stage || '—';
+        const price = s.close || 0;
+        const pos = simState.value.positions?.[sym] || {};
+        const curShares = Math.max(0, Number(pos.shares || 0));
+        const curVal = curShares * price;
+        const curW = equity > 0 ? curVal / equity : 0;
+        const avgPrice = Number(pos.avgPrice || 0);
+
+        const targetPct = STAGE_TARGET[stage] || 0.50;
+        const targetShares = price > 0 ? Math.floor(budgetPer() * targetPct / price / 100) * 100 : 0;
+
+        const executed = execMap[sym];
+        const selectable = !!sugg && !executed;
+        const action = executed ? '已执行' : (sugg ? (sugg.action === 'BUY' ? '买入' : '卖出') : '不动');
+        const execLabel = executed ? ('✓ ' + executed.shares + '股@' + executed.price.toFixed(3)) : '';
+
+        const stopPrice = sugg ? sugg.stopPrice : fmtStopPrice(stage, price, avgPrice);
+
         return {
           symbol: sym,
           name: symbolNames[sym] || sym,
           category: etfCategoryMap[sym] || '未分类',
-          trendState: getTrendStateLabel(sym),
-          triggerType: getTriggerType(sym),
-          positionLevel: p.position_level != null ? Math.round(p.position_level * 100) + '%' : '0%',
-          signalStrength: p.signal_strength || '—',
-          stopWarn: p.stop_warn_line || '—',
-          stopExec: p.stop_exec_line || '—',
-          currentWeight: w,
-          targetWeight,
+          _stage: stage,
+          stage_icon: s.stage_icon || '',
+          triggerDetail: stageTriggers(s),
+          curShares,
+          curVal,
+          curWeight: curW,
+          targetPct,
+          targetShares,
+          targetVal: targetShares * price,
           action,
+          tradeShares: sugg ? sugg.tradeShares : 0,
+          tradePrice: sugg ? sugg.tradePrice : price,
+          tradeNotional: sugg ? sugg.notional : 0,
+          stopPrice,
           selectable,
-          amount: amt,
-          reason
+          executed,
+          execLabel,
+          reason: sugg ? sugg.reason : (stage !== '—' ? `${s.stage_icon} ${stage}` : '等待阶段数据')
         };
       }).sort((a, b) => {
-        const stateOrder = { '持仓': 0, '筑底中': 1, '冷却': 2, '空仓': 3, '—': 4 };
-        const aState = a.trendState.startsWith('持仓') ? '持仓' : a.trendState.startsWith('冷却') ? '冷却' : a.trendState;
-        const bState = b.trendState.startsWith('持仓') ? '持仓' : b.trendState.startsWith('冷却') ? '冷却' : b.trendState;
-        return (stateOrder[aState] || 9) - (stateOrder[bState] || 9);
+        const stageOrder = { '主升': 0, '启动': 1, '震荡': 2, '下跌': 3, '防守': 4, '—': 5 };
+        return (stageOrder[a._stage] || 9) - (stageOrder[b._stage] || 9);
       });
     });
+
+    function budgetPer() {
+      const equity = simMetrics.value.equity || 0;
+      const sm = stageMap.value || {};
+      const syms = Object.keys(sm).filter(s => sm[s].stage);
+      return syms.length ? equity / syms.length : 0;
+    }
 
     watch(tradeSuggestions, (items) => {
       const next = { ...suggestionOverrides.value };
@@ -1221,6 +1345,7 @@ const app = createApp({
       }
 
       const selectedMap = { ...selectedSuggestions.value };
+      const execMap = { ...tradeExecutedToday.value };
       for (const it of items) {
         const r = applySimTradeExact({ symbol: it.symbol, side: it.side, shares: it.shares, price: it.price, reason: it.reason });
         if (!r.ok) {
@@ -1228,7 +1353,9 @@ const app = createApp({
           return;
         }
         if (selectedMap[it.symbol]) selectedMap[it.symbol] = false;
+        execMap[it.symbol] = { shares: it.shares, price: it.price, ts: Date.now() };
       }
+      tradeExecutedToday.value = execMap;
       selectedSuggestions.value = selectedMap;
       closeTradeConfirm();
     };
@@ -1287,8 +1414,8 @@ const app = createApp({
 
     const saveSimLocal = () => {
       localStorage.setItem('sim_initial_cash', String(simConfig.value.initialCash || 0));
-      localStorage.setItem('sim_rebalance_band_pct', String(simConfig.value.rebalanceBandPct || 0));
-      localStorage.setItem('sim_max_category_pct', String(simConfig.value.maxCategoryPct || 0));
+      localStorage.removeItem('sim_rebalance_band_pct');
+      localStorage.removeItem('sim_max_category_pct');
       localStorage.removeItem('sim_commission_bps');
       localStorage.setItem(SIM_KEY, JSON.stringify({
         config: simConfig.value,
@@ -1304,9 +1431,7 @@ const app = createApp({
         if (parsed?.config) {
           const c = parsed.config || {};
           simConfig.value = {
-            initialCash: Number(c.initialCash ?? simConfig.value.initialCash),
-            rebalanceBandPct: Number(c.rebalanceBandPct ?? simConfig.value.rebalanceBandPct),
-            maxCategoryPct: Number(c.maxCategoryPct ?? simConfig.value.maxCategoryPct)
+            initialCash: Number(c.initialCash ?? simConfig.value.initialCash)
           };
         }
         if (parsed?.state) simState.value = { ...simState.value, ...parsed.state };
@@ -1323,6 +1448,7 @@ const app = createApp({
       const initial = Number(simConfig.value.initialCash) || 0;
       simState.value = { cash: initial, positions: {}, trades: [] };
       suggestionOverrides.value = {};
+      tradeExecutedToday.value = {};
       saveSimLocal();
     };
 
@@ -1485,6 +1611,8 @@ const app = createApp({
           if (data.policy && data.policy.policies) policyData.value = data.policy.policies;
           else if (data.policy && data.policy.day) policyError.value = 'policy empty';
           lastUpdate.value = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+          fetchStageState();
+          window.TradeAllocator?.fetchMarketState();
           
           // Draw Correlation Chart once warmup is ready
           nextTick(() => {
@@ -1964,7 +2092,8 @@ const app = createApp({
     };
 
     const ensureFinanceAuto = async (force = false) => {
-      const key = baziProfile.value?.bazi?.text ? `astro_finance_auto_${baziProfile.value.bazi.text}` : '';
+      const rev = baziPrompts.value?.rev || 'v0';
+      const key = baziProfile.value?.bazi?.text ? `astro_finance_auto_${baziProfile.value.bazi.text}_${rev}` : '';
       if (!force && key) {
         const cached = localStorage.getItem(key) || '';
         if (cached) {
@@ -1973,8 +2102,15 @@ const app = createApp({
         }
       }
       financeLoading.value = true;
-      const sys = '你是A股交易资金管理教练，输出要简洁可执行，不要出现百分比概率，不要使用项目符号符号，只用换行分段。';
-      const user = `请根据以下信息生成“八字财务分析”（3-5行）：\n性别：${userGender.value}\n出生：${userBirth.value}\n出生地：${userPlaceText.value}\n八字：${baziProfile.value?.bazi?.text || ''}`;
+      const p = baziPrompts.value;
+      const du = baziProfile.value?.dayun;
+      const duText = du?.current && du?.currentAgeRange ? `${du.current}（${du.currentAgeRange}）` : (du?.current || '');
+      const sys = p?.finance?.system || '你是A股交易资金管理教练，输出要简洁可执行，不要出现百分比概率，不要使用项目符号符号，只用换行分段。';
+      const user = replaceTemplate(p?.finance?.userTemplate || '请根据以下信息生成"八字财务分析"（3-5行）：\n性别：{{gender}}\n出生：{{birth}}\n出生地：{{place}}\n八字：{{baziText}}', {
+        gender: userGender.value, birth: userBirth.value, place: userPlaceText.value,
+        baziText: baziProfile.value?.bazi?.text || '', dayun: duText,
+        ganzhiYear: baziProfile.value?.bazi?.year || ''
+      });
       const txt = await callChat(sys, user);
       financeAuto.value = txt || financeFallback();
       if (key) localStorage.setItem(key, financeAuto.value);
@@ -1984,7 +2120,8 @@ const app = createApp({
     const ensureDailyRiskAuto = async (force = false) => {
       const day = astroSelectedDay.value || '';
       const b = baziProfile.value?.bazi?.text || '';
-      const key = (day && b) ? `astro_daily_risk_auto_${day}_${b}` : '';
+      const rev = baziPrompts.value?.rev || 'v0';
+      const key = (day && b) ? `astro_daily_risk_auto_${day}_${b}_${rev}` : '';
       if (!force && key) {
         const cached = localStorage.getItem(key) || '';
         if (cached) {
@@ -1993,8 +2130,18 @@ const app = createApp({
         }
       }
       dailyRiskLoading.value = true;
-      const sys = '你是A股交易风控助手，输出要简洁可执行，不要出现百分比概率，不要使用项目符号符号，只用换行分段。';
-      const user = `请结合“当日选中日期”的信息，生成“当日操作风险提示”（3-5行）：\n日期：${day}\n月相：${astroSelectedPhase.value}\n次日大盘倾向：${marketDirectionText('1')}\n性别：${userGender.value}\n出生：${userBirth.value}\n出生地：${userPlaceText.value}\n八字：${b}`;
+      const p2 = baziPrompts.value;
+      const du2 = baziProfile.value?.dayun;
+      const duText2 = du2?.current && du2?.currentAgeRange ? `${du2.current}（${du2.currentAgeRange}）` : (du2?.current || '');
+      const sys = p2?.dailyRisk?.system || '你是A股交易风控助手，输出要简洁可执行，不要出现百分比概率，不要使用项目符号符号，只用换行分段。';
+      const user = replaceTemplate(p2?.dailyRisk?.userTemplate || '请结合“当日选中日期”的信息，生成“当日操作风险提示”（3-5行）：\n日期：{{day}}\n月相：{{phaseText}}\n次日大盘倾向：{{marketBias}}\n性别：{{gender}}\n出生：{{birth}}\n八字：{{baziText}}', {
+        day, phaseText: astroSelectedPhase.value, marketBias: marketDirectionText('1'),
+        gender: userGender.value, birth: userBirth.value, baziText: b, dayun: duText2,
+        ganzhiYear: baziProfile.value?.bazi?.year || '',
+        ganzhiMonth: astroMonthGanzhi.value || '',
+        ganzhiDay: astroSelectedGanzhiDay.value || '',
+        lunarMonth: '', lunarDay: astroSelectedLunarDay.value || ''
+      });
       const txt = await callChat(sys, user);
       dailyRiskAuto.value = txt || dailyRiskFallback();
       if (key) localStorage.setItem(key, dailyRiskAuto.value);
@@ -2515,6 +2662,7 @@ const app = createApp({
     // --- Lifecycle Hooks ---
     onMounted(() => {
       loadChat();
+      loadBaziPrompts();
       loadPlaceGroups();
       refreshOverviewAi();
       refreshEtfAi();
@@ -2686,6 +2834,8 @@ const app = createApp({
       policyConfig,
       policyData,
       policyError,
+      stageMap,
+      sortedStageEntries,
       savePolicyConfig,
       simState,
       simMetrics,
@@ -2695,12 +2845,25 @@ const app = createApp({
       tradeTableRows,
       suggestionOverrides,
       selectedSuggestions,
+      tradeExecutedToday,
       tradeSelectedCount,
       tradeAllSelected,
       toggleTradeSelectAll,
       executeSelectedSuggestions,
       executeSuggestion,
       resetSimAccount,
+      capitalModalOpen,
+      capitalModalValue,
+      openCapitalModal,
+      closeCapitalModal,
+      confirmCapitalModal,
+      posEditOpen,
+      posEditSym,
+      posEditShares,
+      posEditPrice,
+      editPosition,
+      closePosEdit,
+      confirmPosEdit,
       onHoldingsScreenshot,
       holdingsScreenshot,
       holdingsScreenshotUpdatedAt,

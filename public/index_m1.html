@@ -677,6 +677,30 @@
         </div>
 
         <div v-show="activeTab === 'trade'" class="space-y-6">
+
+          <div class="q-panel p-4">
+            <div class="flex items-center gap-3">
+              <span class="text-xs text-q-subtext font-semibold uppercase tracking-widest">五阶段策略</span>
+              <span class="text-xs text-q-subtext" v-if="Object.keys(stageMap).length">
+                {{ Object.keys(stageMap).length }}只ETF · 数据就绪
+              </span>
+              <span class="text-xs text-q-subtext" v-else>加载中...</span>
+            </div>
+            <div class="mt-2 flex flex-wrap gap-3">
+              <span v-for="e in sortedStageEntries" :key="e.sym"
+                class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium border"
+                :class="{
+                  'bg-green-50 border-green-200 text-green-800': e.s.stage === '主升',
+                  'bg-yellow-50 border-yellow-200 text-yellow-800': e.s.stage === '启动',
+                  'bg-blue-50 border-blue-200 text-blue-800': e.s.stage === '震荡',
+                  'bg-orange-50 border-orange-200 text-orange-800': e.s.stage === '下跌',
+                  'bg-red-50 border-red-200 text-red-800': e.s.stage === '防守',
+                }">
+                {{ e.s.stage_icon }} {{ e.s.name }}: {{ e.s.stage }}
+              </span>
+            </div>
+          </div>
+
           <div class="q-panel p-5">
             <div class="flex items-start justify-between gap-4">
               <div>
@@ -686,8 +710,11 @@
               <div class="text-xs text-gray-400 font-mono">local</div>
             </div>
             <div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div class="rounded-lg border border-gray-100 bg-gray-50/60 p-4">
-                <div class="text-[11px] text-gray-500">总资金</div>
+              <div class="rounded-lg border border-gray-100 bg-gray-50/60 p-4 relative">
+                <div class="flex items-center justify-between">
+                  <div class="text-[11px] text-gray-500">总资金</div>
+                  <button @click="openCapitalModal()" class="text-gray-400 hover:text-q-primary text-xs" title="设置总资金">✎</button>
+                </div>
                 <div class="mt-1 stat-value text-2xl font-bold text-q-text">{{ fmtCny(simMetrics.equity) }}</div>
                 <div class="mt-1 text-[11px] text-gray-500">浮动收益：<span class="font-mono" :class="simMetrics.pnl >= 0 ? 'text-q-up' : 'text-q-down'">{{ fmtCny(simMetrics.pnl) }}</span></div>
               </div>
@@ -722,72 +749,26 @@
                 </div>
                 <div class="mt-2 text-[11px] text-gray-400">分类仅用于风控与展示，不做因果结论</div>
               </div>
+            </div>
 
-              <div class="rounded-lg border border-gray-100 bg-white p-4 lg:col-span-2">
-                <div class="flex items-start justify-between gap-3">
-                  <div>
-                    <div class="text-[11px] font-semibold text-q-subtext uppercase tracking-widest">模拟账户设置</div>
-                    <div class="mt-1 text-xs text-gray-500">调仓执行前会弹出确认框，可改份额与成交价</div>
-                  </div>
-                  <div class="flex items-center gap-2">
-                    <label class="px-2.5 py-1 rounded border border-gray-200 text-gray-700 hover:bg-gray-50 text-xs cursor-pointer">
-                      上传持仓截图
-                      <input type="file" accept="image/*" class="hidden" @change="onHoldingsScreenshot">
-                    </label>
-                    <button @click="resetSimAccount()" class="px-2.5 py-1 rounded border border-gray-200 text-gray-700 hover:bg-gray-50 text-xs">重置</button>
+            <div class="mt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <div class="text-[11px] font-semibold text-q-subtext uppercase tracking-widest mb-2">风控预警</div>
+                <div v-if="simRiskAlerts.length === 0" class="text-xs text-gray-400 italic">暂无预警</div>
+                <div v-else class="space-y-2">
+                  <div v-for="r in simRiskAlerts" :key="r.key" class="flex items-center justify-between rounded border px-3 py-2 text-xs" :class="r.level === 'high' ? 'border-red-200 bg-red-50' : 'border-yellow-200 bg-yellow-50'">
+                    <div class="font-medium" :class="r.level === 'high' ? 'text-red-700' : 'text-yellow-800'">{{ r.title }}</div>
+                    <div class="font-mono text-gray-600">{{ r.value }}</div>
                   </div>
                 </div>
-
-                <div v-if="holdingsScreenshot" class="mt-2 text-[11px] text-gray-500">
-                  已上传截图（待接入识别导入）
-                </div>
-
-                <div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <div>
-                    <div class="flex items-center justify-between mb-1">
-                      <div class="text-[11px] text-gray-500">初始资金</div>
-                      <span v-if="simInitialMissing" class="text-[10px] font-semibold text-red-600">请填写</span>
-                    </div>
-                    <input v-model.number="simConfig.initialCash" type="number" min="0" class="w-full border border-gray-200 rounded px-2 py-1 text-sm font-mono focus:outline-none focus:border-q-primary" placeholder="100000">
-                  </div>
-                  <div>
-                    <div class="flex items-center justify-between mb-1">
-                      <div class="text-[11px] text-gray-500" title="当目标仓位变化小于该比例时不交易，避免频繁换手">调仓阈值(%)</div>
-                      <span class="text-[10px] text-gray-400" title="当目标仓位变化小于该比例时不交易，避免频繁换手">?</span>
-                    </div>
-                    <input v-model.number="simConfig.rebalanceBandPct" type="number" min="0" class="w-full border border-gray-200 rounded px-2 py-1 text-sm font-mono focus:outline-none focus:border-q-primary" placeholder="5">
-                  </div>
-                  <div>
-                    <div class="flex items-center justify-between mb-1">
-                      <div class="text-[11px] text-gray-500" title="单板块仓位超过该比例会提示风险（只提示，不会自动卖出）">板块上限(%)</div>
-                      <span class="text-[10px] text-gray-400" title="单板块仓位超过该比例会提示风险（只提示，不会自动卖出）">?</span>
-                    </div>
-                    <input v-model.number="simConfig.maxCategoryPct" type="number" min="0" max="100" class="w-full border border-gray-200 rounded px-2 py-1 text-sm font-mono focus:outline-none focus:border-q-primary" placeholder="30">
-                  </div>
-                </div>
-
-                <div v-if="policyError" class="mt-2 text-[10px] text-orange-600">波段策略数据未就绪</div>
-
-                <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <div class="text-[11px] font-semibold text-q-subtext uppercase tracking-widest mb-2">风控预警</div>
-                    <div v-if="simRiskAlerts.length === 0" class="text-xs text-gray-400 italic">暂无预警</div>
-                    <div v-else class="space-y-2">
-                      <div v-for="r in simRiskAlerts" :key="r.key" class="flex items-center justify-between rounded border px-3 py-2 text-xs" :class="r.level === 'high' ? 'border-red-200 bg-red-50' : 'border-yellow-200 bg-yellow-50'">
-                        <div class="font-medium" :class="r.level === 'high' ? 'text-red-700' : 'text-yellow-800'">{{ r.title }}</div>
-                        <div class="font-mono text-gray-600">{{ r.value }}</div>
-                      </div>
-                    </div>
-                  </div>
-                  <div>
-                    <div class="text-[11px] font-semibold text-q-subtext uppercase tracking-widest mb-2">板块仓位</div>
-                    <div v-if="simCategoryExposureList.length === 0" class="text-xs text-gray-400 italic">暂无持仓</div>
-                    <div v-else class="space-y-2">
-                      <div v-for="c in simCategoryExposureList" :key="c.category" class="flex items-center justify-between rounded border px-3 py-2 text-xs" :class="(c.pct * 100) > simConfig.maxCategoryPct ? 'border-red-200 bg-red-50' : 'border-gray-100 bg-gray-50/40'">
-                        <div class="font-medium text-gray-700">{{ c.category }}</div>
-                        <div class="font-mono text-gray-600">{{ (c.pct * 100).toFixed(1) }}%</div>
-                      </div>
-                    </div>
+              </div>
+              <div>
+                <div class="text-[11px] font-semibold text-q-subtext uppercase tracking-widest mb-2">板块仓位</div>
+                <div v-if="simCategoryExposureList.length === 0" class="text-xs text-gray-400 italic">暂无持仓</div>
+                <div v-else class="space-y-2">
+                  <div v-for="c in simCategoryExposureList" :key="c.category" class="flex items-center justify-between rounded border px-3 py-2 text-xs border-gray-100 bg-gray-50/40">
+                    <div class="font-medium text-gray-700">{{ c.category }}</div>
+                    <div class="font-mono text-gray-600">{{ (c.pct * 100).toFixed(1) }}%</div>
                   </div>
                 </div>
               </div>
@@ -816,17 +797,13 @@
                 <thead>
                   <tr class="text-gray-500 border-b border-gray-100 text-[11px]">
                     <th class="text-left py-2 pr-2 font-medium w-8">选</th>
-                    <th class="text-left py-2 pr-2 font-medium">ETF</th>
-                    <th class="text-left py-2 pr-2 font-medium">板块</th>
-                    <th class="text-left py-2 pr-2 font-medium">趋势状态</th>
-                    <th class="text-left py-2 pr-2 font-medium">触发</th>
-                    <th class="text-center py-2 px-1 font-medium">信号</th>
-                    <th class="text-right py-2 pr-2 font-medium">止损</th>
-                    <th class="text-right py-2 pr-2 font-medium">现仓</th>
-                    <th class="text-right py-2 pr-2 font-medium">目标</th>
-                    <th class="text-left py-2 pr-2 font-medium">建议</th>
-                    <th class="text-right py-2 pr-2 font-medium w-28">金额(元)</th>
-                    <th class="text-right py-2 pr-0 font-medium w-16">操作</th>
+                    <th class="text-left py-2 pr-2 font-medium w-36">ETF</th>
+                    <th class="text-left py-2 pr-2 font-medium w-44">阶段 · 原因</th>
+                    <th class="text-right py-2 pr-2 font-medium w-28">现持仓</th>
+                    <th class="text-right py-2 pr-2 font-medium w-28">目标仓位</th>
+                    <th class="text-left py-2 pr-2 font-medium w-44">建议操作</th>
+                    <th class="text-right py-2 pr-2 font-medium w-20">止损价</th>
+                    <th class="text-right py-2 pr-0 font-medium w-24">执行</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -835,35 +812,52 @@
                       <input type="checkbox" class="accent-blue-600" v-model="selectedSuggestions[r.symbol]" :disabled="!r.selectable">
                     </td>
                     <td class="py-2 pr-3">
-                      <div class="text-gray-800 font-semibold">{{ r.name }}</div>
-                      <div class="text-[11px] text-gray-500 line-clamp-1" :title="r.reason">{{ r.reason }}</div>
+                      <div class="text-gray-800 font-semibold text-xs">{{ r.name }}</div>
+                      <div class="text-[10px] text-gray-400">{{ r.category }}</div>
                     </td>
-                    <td class="py-2 pr-2 text-gray-700">{{ r.category }}</td>
-                    <td class="py-2 pr-2 text-xs" :class="r.trendState.includes('持仓') || r.trendState === '筑底中' ? 'text-green-700 font-medium' : (r.trendState.includes('冷却') ? 'text-red-600 font-medium' : 'text-gray-500')">
-                      {{ r.trendState }}
+                    <td class="py-2 pr-2">
+                      <div class="text-xs font-medium" :class="{
+                        'text-green-700': r._stage === '主升',
+                        'text-yellow-600': r._stage === '启动',
+                        'text-blue-600': r._stage === '震荡',
+                        'text-orange-500': r._stage === '下跌',
+                        'text-red-600': r._stage === '防守',
+                      }">{{ r.stage_icon }} {{ r._stage }}</div>
+                      <div class="text-[10px] text-gray-500 mt-0.5">{{ r.triggerDetail }}</div>
                     </td>
-                    <td class="py-2 pr-2 text-[10px] text-gray-600">{{ r.triggerType || '—' }}</td>
-                    <td class="py-2 px-1 text-center text-xs" :class="r.signalStrength === '强' ? 'text-green-700 font-medium' : (r.signalStrength === '中' ? 'text-yellow-600 font-medium' : (r.signalStrength === '弱' ? 'text-orange-600' : 'text-gray-400'))">
-                      {{ r.signalStrength }}
+                    <td class="py-2 pr-2 text-right text-xs">
+                      <div v-if="r.curShares > 0" class="text-gray-700 font-mono">{{ r.curShares }}股</div>
+                      <div v-if="r.curShares > 0" class="text-[10px] text-gray-500 font-mono">¥{{ fmtCny(r.curVal) }}</div>
+                      <div v-else class="text-gray-400 text-[11px]">空仓</div>
                     </td>
-                    <td class="py-2 pr-2 text-right text-[10px] font-mono text-gray-500">
-                      <span v-if="r.stopWarn && r.stopWarn !== '—'">{{ r.stopWarn }}% / {{ r.stopExec }}%</span>
-                      <span v-else>—</span>
+                    <td class="py-2 pr-2 text-right text-xs">
+                      <div v-if="r.targetPct > 0" class="text-gray-700 font-mono">{{ r.targetShares }}股</div>
+                      <div v-if="r.targetPct > 0" class="text-[10px] text-gray-500 font-mono">¥{{ fmtCny(r.targetVal) }}</div>
+                      <div v-if="r.targetPct > 0" class="text-[10px] text-gray-400">({{ (r.targetPct * 100).toFixed(0) }}%仓位)</div>
+                      <div v-else class="text-gray-400 text-[11px]">—</div>
                     </td>
-                    <td class="py-2 pr-2 text-right font-mono text-gray-700">{{ (r.currentWeight * 100).toFixed(1) }}%</td>
-                    <td class="py-2 pr-2 text-right font-mono text-gray-700">{{ (r.targetWeight * 100).toFixed(1) }}%</td>
-                    <td class="py-2 pr-3 text-xs font-medium" :class="r.action === '买入' ? 'text-green-700' : (r.action === '卖出' ? 'text-red-600' : 'text-gray-400')">
-                      {{ r.action }}
+                    <td class="py-2 pr-3 text-xs">
+                      <div v-if="r.executed" class="text-gray-400 text-[11px]">{{ r.execLabel }}</div>
+                      <div v-else-if="r.selectable" class="font-medium" :class="r.action === '买入' ? 'text-green-700' : 'text-red-600'">
+                        <div>{{ r.action }} {{ r.tradeShares }}股@{{ r.tradePrice }}</div>
+                        <div class="text-[10px] text-gray-500 font-mono">¥{{ fmtCny(r.tradeNotional) }}</div>
+                      </div>
+                      <div v-else-if="r.action === '不动'" class="text-gray-400 text-[11px]">不动</div>
+                      <div v-else class="text-gray-400 text-[11px]">—</div>
                     </td>
-                    <td class="py-2 pr-3 text-right">
-                      <input v-if="r.selectable" v-model.number="suggestionOverrides[r.symbol]" type="number" min="0"
-                             class="w-36 border rounded px-2 py-1 text-sm font-mono focus:outline-none focus:border-q-primary"
-                             :class="(suggestionOverrides[r.symbol] == null || suggestionOverrides[r.symbol] <= 0) ? 'border-red-300 bg-red-50' : 'border-gray-200'"
-                             placeholder="请填写" />
-                      <span v-else class="text-gray-400">—</span>
+                    <td class="py-2 pr-2 text-right text-xs">
+                      <span v-if="r.stopPrice && r.stopPrice !== '—'" class="font-mono text-gray-600">{{ r.stopPrice }}</span>
+                      <span v-else class="text-gray-300">—</span>
                     </td>
                     <td class="py-2 pr-0 text-right">
-                      <button @click="executeSuggestion(r.symbol)" class="px-3 py-1.5 rounded bg-q-primary text-white text-xs font-semibold hover:bg-blue-600 disabled:opacity-50" :disabled="!r.selectable">执行</button>
+                      <button v-if="r.executed"
+                        class="px-2 py-1 rounded bg-gray-100 text-gray-400 text-[11px] cursor-default"
+                        disabled>{{ r.execLabel }}</button>
+                      <button v-else-if="r.selectable"
+                        @click="executeSuggestion(r.symbol)"
+                        class="px-3 py-1.5 rounded bg-q-primary text-white text-xs font-semibold hover:bg-blue-600 disabled:opacity-50"
+                        :disabled="!r.selectable">执行</button>
+                      <span v-else class="text-gray-300 text-[11px]">—</span>
                     </td>
                   </tr>
                 </tbody>
@@ -886,7 +880,15 @@
             <div v-show="tradeBottomTab === 'positions'">
               <div class="flex items-center justify-between mb-3">
                 <div class="text-xs text-gray-500">持仓数：<span class="font-mono text-gray-700">{{ simPositionsList.length }}</span></div>
+                <div class="flex items-center gap-2">
+                  <label class="px-2.5 py-1 rounded border border-gray-200 text-gray-700 hover:bg-gray-50 text-[11px] cursor-pointer">
+                    上传持仓截图
+                    <input type="file" accept="image/*" class="hidden" @change="onHoldingsScreenshot">
+                  </label>
+                  <button @click="resetSimAccount()" class="px-2.5 py-1 rounded border border-gray-200 text-gray-700 hover:bg-gray-50 text-[11px]">重置</button>
+                </div>
               </div>
+              <div v-if="holdingsScreenshot" class="mb-2 text-[10px] text-gray-500">已上传截图</div>
               <div v-if="simPositionsList.length === 0" class="text-xs text-gray-400 italic">暂无持仓</div>
               <div v-else class="overflow-x-auto">
                 <table class="min-w-full text-xs">
@@ -898,6 +900,7 @@
                       <th class="text-right py-2 pr-3 font-medium">现价</th>
                       <th class="text-right py-2 pr-3 font-medium">市值</th>
                       <th class="text-right py-2 pr-3 font-medium">收益</th>
+                      <th class="text-right py-2 pr-0 font-medium w-14">操作</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -908,6 +911,9 @@
                       <td class="py-2 pr-3 text-right font-mono">{{ p.lastPrice ? p.lastPrice.toFixed(3) : '-' }}</td>
                       <td class="py-2 pr-3 text-right font-mono">{{ fmtCny(p.value) }}</td>
                       <td class="py-2 pr-3 text-right font-mono" :class="p.pnl >= 0 ? 'text-q-up' : 'text-q-down'">{{ fmtCny(p.pnl) }}</td>
+                      <td class="py-2 pr-0 text-right">
+                        <button @click="editPosition(p.symbol)" class="text-[10px] text-gray-500 hover:text-q-primary underline">修改</button>
+                      </td>
                     </tr>
                   </tbody>
                 </table>
@@ -998,6 +1004,52 @@
           </div>
         </div>
 
+          <div v-if="capitalModalOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <div class="w-full max-w-sm bg-white rounded-xl border border-gray-200 shadow-xl overflow-hidden">
+              <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                <div>
+                  <div class="text-sm font-bold text-q-text">设置总资金</div>
+                  <div class="mt-1 text-xs text-gray-500">修改后剩余现金自动调整</div>
+                </div>
+                <button @click="closeCapitalModal()" class="px-2.5 py-1 rounded border border-gray-200 text-gray-700 hover:bg-gray-50 text-xs">关闭</button>
+              </div>
+              <div class="p-5">
+                <div class="text-xs text-gray-500 mb-1">当前：现金 ¥{{ fmtCny(simState.cash) }} + 持仓 ¥{{ fmtCny(simMetrics.positionsValue) }}</div>
+                <input v-model.number="capitalModalValue" type="number" min="0" class="w-full border border-gray-200 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:border-q-primary" placeholder="100000">
+                <div class="mt-4 flex items-center justify-end gap-2">
+                  <button @click="closeCapitalModal()" class="px-3 py-2 rounded border border-gray-200 text-gray-700 hover:bg-gray-50 text-xs font-semibold">取消</button>
+                  <button @click="confirmCapitalModal()" class="px-4 py-2 rounded bg-q-primary text-white text-xs font-semibold hover:bg-blue-600">确认</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="posEditOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <div class="w-full max-w-sm bg-white rounded-xl border border-gray-200 shadow-xl overflow-hidden">
+              <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                <div>
+                  <div class="text-sm font-bold text-q-text">修改持仓：{{ symbolNames[posEditSym] || posEditSym }}</div>
+                  <div class="mt-1 text-xs text-gray-500">修改后自动更新持仓均价与市值</div>
+                </div>
+                <button @click="closePosEdit()" class="px-2.5 py-1 rounded border border-gray-200 text-gray-700 hover:bg-gray-50 text-xs">关闭</button>
+              </div>
+              <div class="p-5">
+                <div class="mb-3">
+                  <div class="text-[11px] text-gray-500 mb-1">份额（100的整数倍）</div>
+                  <input v-model.number="posEditShares" type="number" min="0" step="100" class="w-full border border-gray-200 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:border-q-primary">
+                </div>
+                <div class="mb-3">
+                  <div class="text-[11px] text-gray-500 mb-1">均价</div>
+                  <input v-model.number="posEditPrice" type="number" min="0" step="0.001" class="w-full border border-gray-200 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:border-q-primary">
+                </div>
+                <div class="mt-4 flex items-center justify-end gap-2">
+                  <button @click="closePosEdit()" class="px-3 py-2 rounded border border-gray-200 text-gray-700 hover:bg-gray-50 text-xs font-semibold">取消</button>
+                  <button @click="confirmPosEdit()" class="px-4 py-2 rounded bg-q-primary text-white text-xs font-semibold hover:bg-blue-600">确认</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
         <div v-show="activeTab === 'astro'" class="space-y-6">
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div class="q-panel p-5 overflow-hidden">
@@ -1058,7 +1110,10 @@
                   <div v-else-if="baziError" class="text-[11px] text-q-down">{{ baziError }}</div>
                 </div>
                 <div class="mt-2 min-h-[2.25rem] flex items-center text-sm font-mono text-gray-800">
-                  {{ baziProfile?.bazi?.text || (baziSubmitted ? '—' : '点击提交生成') }}
+                  {{ baziProfile?.bazi?.text || (baziSubmitted ? '\u2014' : '\u70b9\u51fb\u63d0\u4ea4\u751f\u6210') }}
+                </div>
+                <div v-if="baziProfile?.dayun?.current" class="mt-1 text-[11px] text-gray-500 font-mono">
+                  当前大运：{{ baziProfile.dayun.current }}（{{ baziProfile.dayun.currentAgeRange }}） · 起运 {{ baziProfile.dayun.startAge }} 岁
                 </div>
                 <div v-if="baziProfile?.trueSolar?.enabled && baziProfile?.trueSolar?.applied && baziProfile?.trueSolar?.birthTrueSolar" class="mt-1 text-[11px] text-gray-500 font-mono">
                   真太阳时：{{ baziProfile.trueSolar.birthTrueSolar }}（偏移 {{ (baziProfile.trueSolar.offsetMinutes || 0).toFixed(1) }} 分）
@@ -1365,6 +1420,7 @@
 
   </div>
 
-  <script src="./ui_m1.js?v=20260602_8"></script>
+  <script src="./trade_allocator.js?v=20260612_1"></script>
+  <script src="./ui_m1.js?v=20260612_1"></script>
 </body>
 </html>
