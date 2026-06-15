@@ -772,11 +772,18 @@ function archiveSnapshot(payload) {
   fs.appendFile(file, JSON.stringify(row) + '\n', () => {});
 }
 
-function minuteFilePath(day, code) {
-  const d = day.replace(/-/g, '');
-  const dir = path.join(__dirname, '..', 'data');
+function structuredMinuteFilePath(day, code) {
+  const category = minuteCodeCategory(code);
+  const sym = minuteCodeMap(code) || code;
+  const dir = path.join(__dirname, '..', 'data', category, 'minute', sym);
   fs.mkdirSync(dir, { recursive: true });
-  return path.join(dir, `minute-${d}-${code}.jsonl`);
+  return path.join(dir, `${day}.jsonl`);
+}
+
+function minuteCodeCategory(code) {
+  if (['sse','szi','gem','star','hs300','csi2000','avg'].includes(code)) return 'index';
+  if (['bank','broker','insure','gov','t','tl'].includes(code)) return 'sector';
+  return 'etf';
 }
 
 function runtimeMinuteFilePath(day, code) {
@@ -1808,19 +1815,7 @@ function readMinuteFile(file) {
   return { arr, lastTime };
 }
 
-function prevCloseFromMinuteFile(day, code) {
-  if (!day || !code) return null;
-  const pickLast = (arr) => {
-    if (!arr || !arr.length) return null;
-    const last = arr[arr.length - 1];
-    return pickNum(toNumber(last?.close), toNumber(last?.open));
-  };
-  const main = readMinuteFile(minuteFilePath(day, code)).arr;
-  const runtime = readMinuteFile(runtimeMinuteFilePath(day, code)).arr;
-  const merged = mergeMinuteSeries(main, runtime);
-  const out = pickLast(merged);
-  return isNum(out) ? out : null;
-}
+
 
 function mergeMinuteSeries(...seriesList) {
   const map = new Map();
@@ -2275,7 +2270,7 @@ function writeMinuteFile(file, data) {
 }
 
 async function loadMinuteSeries(day, code, secid) {
-  const dataFile = minuteFilePath(day, code);
+  const dataFile = structuredMinuteFilePath(day, code);
   const runtimeFile = runtimeMinuteFilePath(day, code);
   const dataArr = readMinuteFile(dataFile).arr;
   let runtimeArr = readMinuteFile(runtimeFile).arr;
@@ -2292,29 +2287,12 @@ async function loadMinuteSeries(day, code, secid) {
     const latestRuntime = findLatestRuntimeMinuteFile(code);
     if (latestRuntime) series = readMinuteFile(latestRuntime).arr;
   }
-  if (!series.length) {
-    const latestFile = findLatestMinuteFile(code);
-    if (latestFile) series = readMinuteFile(latestFile).arr;
-  }
   return series;
 }
 
-function findLatestMinuteFile(code) {
-  const dir = path.join(__dirname, '..', 'data');
-  if (!fs.existsSync(dir)) return null;
-  const files = fs.readdirSync(dir).filter(f => f.startsWith('minute-') && f.endsWith(`-${code}.jsonl`));
-  if (!files.length) return null;
-  files.sort();
-  return path.join(dir, files[files.length - 1]);
-}
 
-function dayFromMinuteFile(file) {
-  const base = path.basename(file);
-  const m = base.match(/minute-(\d{8})-/);
-  if (!m) return null;
-  const d = m[1];
-  return `${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}`;
-}
+
+
 
 function minuteCodeMap(code) {
   const map = {
@@ -3133,7 +3111,6 @@ module.exports.cache = cache;
 module.exports.cacheJsonPath = cacheJsonPath;
 module.exports.callBailian = callBailian;
 module.exports.dateDiffDays = dateDiffDays;
-module.exports.dayFromMinuteFile = dayFromMinuteFile;
 module.exports.deriveFromSeries = deriveFromSeries;
 module.exports.ensureAiText = ensureAiText;
 module.exports.ensureAshareFile = ensureAshareFile;
@@ -3153,7 +3130,6 @@ module.exports.fetchSnapshot = fetchSnapshot;
 module.exports.fetchTencentDaily = fetchTencentDaily;
 module.exports.findLatestCacheFile = findLatestCacheFile;
 module.exports.findLatestCacheFileOnOrBefore = findLatestCacheFileOnOrBefore;
-module.exports.findLatestMinuteFile = findLatestMinuteFile;
 module.exports.findLatestRotationSnapshot = findLatestRotationSnapshot;
 module.exports.findLatestRuntimeMinuteFile = findLatestRuntimeMinuteFile;
 module.exports.findLatestSectorHistoryCache = findLatestSectorHistoryCache;
@@ -3197,8 +3173,10 @@ module.exports.mergeBond = mergeBond;
 module.exports.mergeDailyVolume = mergeDailyVolume;
 module.exports.mergeMinuteSeries = mergeMinuteSeries;
 module.exports.minuteCodeMap = minuteCodeMap;
+module.exports.structuredMinuteFilePath = structuredMinuteFilePath;
+module.exports.minuteCodeCategory = minuteCodeCategory;
+
 module.exports.minuteEmMap = minuteEmMap;
-module.exports.minuteFilePath = minuteFilePath;
 module.exports.minuteKey = minuteKey;
 module.exports.minuteKeyBeijing = minuteKeyBeijing;
 module.exports.minuteToNumber = minuteToNumber;
@@ -3225,7 +3203,6 @@ module.exports.pickMinutePct = pickMinutePct;
 module.exports.pickNum = pickNum;
 module.exports.pickPrevCloseFromDaily = pickPrevCloseFromDaily;
 module.exports.postJson = postJson;
-module.exports.prevCloseFromMinuteFile = prevCloseFromMinuteFile;
 module.exports.readArchiveVolumeSeries = readArchiveVolumeSeries;
 module.exports.readBody = readBody;
 module.exports.readBreadthCache = readBreadthCache;
