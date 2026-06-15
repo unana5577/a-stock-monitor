@@ -19,6 +19,41 @@ from stage_detector import (
 )
 
 DEFAULT_SYMBOLS = ["sh515880", "sh512480", "sh563530", "sh516510", "sh562500"]
+
+
+def load_symbols_from_proxy():
+    """从 sector-proxy.json 读取全部 ETF 代码和名称"""
+    proxy_path = os.path.join(ROOT, "data", "sector-proxy.json")
+    if not os.path.exists(proxy_path):
+        return DEFAULT_SYMBOLS, SYMBOL_NAMES
+
+    try:
+        with open(proxy_path) as f:
+            cfg = json.load(f)
+        variants = cfg.get("variants", {})
+        etf_map = variants.get("etf", {})
+        meta = cfg.get("etf_meta", {})
+
+        if not etf_map:
+            return DEFAULT_SYMBOLS, SYMBOL_NAMES
+
+        symbols = []
+        names = {}
+        for name, code in etf_map.items():
+            m = meta.get(name, {})
+            if not m.get("hidden"):
+                symbols.append(code)
+                names[code] = name
+
+        if not symbols:
+            return DEFAULT_SYMBOLS, SYMBOL_NAMES
+
+        return symbols, names
+    except Exception:
+        return DEFAULT_SYMBOLS, SYMBOL_NAMES
+
+
+DYNAMIC_SYMBOLS, DYNAMIC_NAMES = load_symbols_from_proxy()
 SYMBOL_NAMES = {
     "sh515880": "通信ETF", "sh512480": "半导体ETF",
     "sh563530": "商业航天ETF", "sh516510": "云计算ETF",
@@ -85,7 +120,7 @@ def compute_snapshot(symbol: str, target_day: str) -> dict:
 
     return {
         "symbol": symbol,
-        "name": SYMBOL_NAMES.get(symbol, symbol),
+        "name": DYNAMIC_NAMES.get(symbol) or SYMBOL_NAMES.get(symbol, symbol),
         "date": row["date"],
         "close": round(row["close"], 4),
         "open": round(row.get("open", 0), 4),
@@ -113,7 +148,7 @@ def main():
     if args.symbols:
         symbols = [s.strip() for s in args.symbols.split(",") if s.strip()]
     else:
-        symbols = DEFAULT_SYMBOLS
+        symbols = DYNAMIC_SYMBOLS
 
     if args.day == "today":
         from datetime import datetime, timezone, timedelta

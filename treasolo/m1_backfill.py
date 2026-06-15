@@ -3,7 +3,7 @@ import argparse
 import json
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Optional
 
 import akshare as ak
 
@@ -130,7 +130,7 @@ def fetch_etf_incremental(symbol: str, last_date: str) -> list[dict]:
         })
     return records
 
-def run_one(symbol: str, write: bool, missing_window_days: int, expect_end: str | None, apply_fix: bool = False) -> int:
+def run_one(symbol: str, write: bool, missing_window_days: int, expect_end: Optional[str], apply_fix: bool = False) -> int:
     is_index = symbol in INDEX_SYMBOLS
     is_etf = symbol in ETF_SYMBOLS
     

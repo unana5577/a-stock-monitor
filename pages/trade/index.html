@@ -147,7 +147,10 @@
         <div class="text-[11px] font-semibold text-q-subtext uppercase tracking-widest">关注ETF全列表</div>
         <div class="mt-1 text-xs text-gray-500">勾选后批量执行；单行执行会先弹出确认框</div>
       </div>
-      <div class="text-xs text-gray-400 font-mono">建议数：{{ tradeSuggestions.length }} · 已勾选：{{ tradeSelectedCount }}</div>
+      <div class="flex items-center gap-2">
+        <button @click="toggleManage()" class="px-2.5 py-1 rounded border border-gray-200 text-gray-600 hover:bg-gray-50 text-[11px]">管理</button>
+        <div class="text-xs text-gray-400 font-mono">建议数：{{ tradeSuggestions.length }} · 已勾选：{{ tradeSelectedCount }}</div>
+      </div>
     </div>
 
     <div class="flex items-center justify-between mb-3">
@@ -244,14 +247,19 @@
       <div class="flex items-center justify-between mb-3">
         <div class="text-xs text-gray-500">持仓数：<span class="font-mono text-gray-700">{{ simPositionsList.length }}</span></div>
         <div class="flex items-center gap-2">
+          <button @click="addPosition()" class="px-2.5 py-1 rounded border border-q-primary text-q-primary hover:bg-blue-50 text-[11px] font-medium">＋ 添加</button>
           <label class="px-2.5 py-1 rounded border border-gray-200 text-gray-700 hover:bg-gray-50 text-[11px] cursor-pointer">
-            上传持仓截图
+            上传截图
             <input type="file" accept="image/*" class="hidden" @change="onHoldingsScreenshot">
           </label>
           <button @click="resetSimAccount()" class="px-2.5 py-1 rounded border border-gray-200 text-gray-700 hover:bg-gray-50 text-[11px]">重置</button>
         </div>
       </div>
-      <div v-if="holdingsScreenshot" class="mb-2 text-[10px] text-gray-500">已上传截图</div>
+      <div v-if="holdingsScreenshot" class="mb-2">
+        <img :src="holdingsScreenshot" class="w-20 h-auto rounded border border-gray-200 opacity-80" alt="持仓截图">
+        <span v-if="ocrLoading" class="text-[10px] text-blue-600 ml-2">识别中...</span>
+        <span v-else-if="ocrError" class="text-[10px] text-orange-500 ml-2">{{ ocrError }}</span>
+      </div>
       <div v-if="simPositionsList.length===0" class="text-xs text-gray-400 italic">暂无持仓</div>
       <div v-else class="overflow-x-auto">
         <table class="min-w-full text-xs">
@@ -391,12 +399,21 @@
     <div class="w-full max-w-sm bg-white rounded-xl border border-gray-200 shadow-xl overflow-hidden">
       <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
         <div>
-          <div class="text-sm font-bold text-q-text">修改持仓：{{ symbolNames[posEditSym]||posEditSym }}</div>
-          <div class="mt-1 text-xs text-gray-500">修改后自动更新持仓均价与市值</div>
+          <div class="text-sm font-bold text-q-text">{{ posEditIsAdd ? '添加持仓' : ('修改持仓：'+ (symbolNames[posEditSym]||posEditSym)) }}</div>
+          <div class="mt-1 text-xs text-gray-500">{{ posEditIsAdd ? '选择ETF并填写份额与均价' : '修改后自动更新持仓均价与市值' }}</div>
         </div>
         <button @click="closePosEdit()" class="px-2.5 py-1 rounded border border-gray-200 text-gray-700 hover:bg-gray-50 text-xs">关闭</button>
       </div>
       <div class="p-5">
+        <div class="mb-3" v-if="posEditIsAdd">
+          <div class="text-[11px] text-gray-500 mb-1">ETF</div>
+          <select v-model="posEditSym" class="w-full border border-gray-200 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:border-q-primary">
+            <option value="" disabled>请选择名称</option>
+            <option v-for="(name, code) in symbolNames" :key="code" :value="code">{{ name }} ({{ code }})</option>
+          </select>
+          <div class="text-[11px] text-gray-400 my-2 text-center">— 或直接输入代码 —</div>
+          <input v-model="posEditCode" type="text" placeholder="sh512480 / 512480" class="w-full border border-gray-200 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:border-q-primary" @input="onPosEditCodeInput">
+        </div>
         <div class="mb-3">
           <div class="text-[11px] text-gray-500 mb-1">份额（100的整数倍）</div>
           <input v-model.number="posEditShares" type="number" min="0" step="100" class="w-full border border-gray-200 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:border-q-primary">
@@ -407,7 +424,71 @@
         </div>
         <div class="mt-4 flex items-center justify-end gap-2">
           <button @click="closePosEdit()" class="px-3 py-2 rounded border border-gray-200 text-gray-700 hover:bg-gray-50 text-xs font-semibold">取消</button>
-          <button @click="confirmPosEdit()" class="px-4 py-2 rounded bg-q-primary text-white text-xs font-semibold hover:bg-blue-600">确认</button>
+          <button @click="confirmPosEdit()" class="px-4 py-2 rounded bg-q-primary text-white text-xs font-semibold hover:bg-blue-600" :disabled="posEditIsAdd && !posEditSym && !posEditCode">{{ posEditIsAdd ? '添加' : '确认' }}</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- OCR识别结果弹窗 -->
+  <div v-if="ocrResultsOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+    <div class="w-full max-w-md bg-white rounded-xl border border-gray-200 shadow-xl overflow-hidden">
+      <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+        <div>
+          <div class="text-sm font-bold text-q-text">识别到 {{ ocrResults.length }} 个持仓</div>
+          <div class="mt-1 text-xs text-gray-500">确认无误后导入，有误可手动修改</div>
+        </div>
+        <button @click="closeOcrResults()" class="px-2.5 py-1 rounded border border-gray-200 text-gray-700 hover:bg-gray-50 text-xs">关闭</button>
+      </div>
+      <div class="p-5">
+        <table class="min-w-full text-xs mb-4">
+          <thead>
+            <tr class="text-gray-500 border-b border-gray-100">
+              <th class="text-left py-2 pr-3 font-medium">ETF</th>
+              <th class="text-right py-2 pr-3 font-medium">份额</th>
+              <th class="text-right py-2 pr-3 font-medium">成本价</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(p,i) in ocrResults" :key="p.name" class="border-b border-gray-50">
+              <td class="py-2 pr-3 text-gray-800 font-medium">{{ p.name }}</td>
+              <td class="py-2 pr-3 text-right font-mono">{{ p.shares }}</td>
+              <td class="py-2 pr-3 text-right font-mono">{{ p.avgPrice != null ? p.avgPrice.toFixed(3) : '—' }}</td>
+            </tr>
+          </tbody>
+        </table>
+        <div v-if="ocrRawTexts.length" class="text-[10px] text-gray-400 mt-2 p-2 bg-gray-50 rounded overflow-hidden" style="max-height:60px" :title="ocrRawTexts.join(', ')">
+          OCR: {{ ocrRawTexts.slice(0,15).join(', ') }}
+        </div>
+        <div class="flex items-center justify-end gap-2">
+          <button @click="closeOcrResults()" class="px-3 py-2 rounded border border-gray-200 text-gray-700 hover:bg-gray-50 text-xs font-semibold">取消</button>
+          <button @click="importOcrPositions()" class="px-4 py-2 rounded bg-q-primary text-white text-xs font-semibold hover:bg-blue-600">一键导入</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ETF 展示管理弹窗 -->
+  <div v-if="manageOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+    <div class="w-full max-w-sm bg-white rounded-xl border border-gray-200 shadow-xl overflow-hidden">
+      <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+        <div>
+          <div class="text-sm font-bold text-q-text">管理展示ETF</div>
+          <div class="mt-1 text-xs text-gray-500">取消勾选的ETF将从列表隐藏，不影响后端数据</div>
+        </div>
+        <button @click="toggleManage()" class="px-2.5 py-1 rounded border border-gray-200 text-gray-700 hover:bg-gray-50 text-xs">关闭</button>
+      </div>
+      <div class="p-5">
+        <div class="space-y-2 max-h-80 overflow-y-auto">
+          <label v-for="(name, code) in symbolNames" :key="code"
+            class="flex items-center gap-3 px-3 py-2 rounded border border-gray-100 hover:bg-gray-50 cursor-pointer">
+            <input type="checkbox" :checked="isEtfVisible(code)" @change="toggleEtfHidden(code)" class="accent-blue-600">
+            <span class="text-xs font-medium text-gray-800">{{ name }}</span>
+            <span class="text-[10px] text-gray-400 font-mono ml-auto">{{ code }}</span>
+          </label>
+        </div>
+        <div class="mt-4 text-[10px] text-gray-400">
+          显示 {{ Object.keys(symbolNames).filter(isEtfVisible).length }} / {{ Object.keys(symbolNames).length }} 只
         </div>
       </div>
     </div>
@@ -415,6 +496,6 @@
 
 </div>
 
-<script src="./ui.js?v=20260612_2"></script>
+<script src="./ui.js?v=20260615_2"></script>
 </body>
 </html>

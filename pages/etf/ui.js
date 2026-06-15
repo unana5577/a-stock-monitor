@@ -16,7 +16,7 @@ createApp({
     const etfAiUpdatedAt = ref('');
     const etfAiLoading = ref(false);
 
-    const etfSymbols = ['sh512400', 'sh512480', 'sh515120', 'sh515880', 'sh516010', 'sh516160', 'sh516510', 'sh562500', 'sh563530'];
+    const etfSymbols = ref(['sh512400', 'sh512480', 'sh515120', 'sh515880', 'sh516010', 'sh516160', 'sh516510', 'sh562500', 'sh563530']);
     const symbolNames = {
       'sh512400': '有色金属ETF', 'sh512480': '半导体ETF', 'sh515120': '创新药ETF',
       'sh515880': '通信ETF', 'sh516010': '游戏ETF', 'sh516160': '新能源ETF',
@@ -36,6 +36,12 @@ createApp({
     const currentPrices = ref({});
     const minuteDataCache = ref({});
     const chartInstances = {};
+    const hiddenSymbols = reactive({});
+    const backfillOpen = ref(false);
+    const backfillStatus = reactive({});
+    const backfillToast = reactive({ show: false, name: '', code: '', status: 'requesting' });
+
+    const visibleEtfSymbols = computed(() => etfSymbols.value.filter(s => !hiddenSymbols[s]));
 
     const parseAiSections = (txt) => {
       if (!txt) return [];
@@ -92,7 +98,7 @@ createApp({
 
     const intradayItems = computed(() => {
       const items = intradaySnapshotItems.value || [];
-      return items.filter(item => item.symbol && etfSymbols.includes(item.symbol));
+      return items.filter(item => item.symbol && visibleEtfSymbols.value.includes(item.symbol));
     });
 
     const getIntradayItem = (symbol) => {
@@ -102,7 +108,7 @@ createApp({
 
     const etfLifecycleItems = computed(() => {
       const items = lifecycleItems.value || [];
-      return items.filter(item => item.symbol && etfSymbols.includes(item.symbol));
+      return items.filter(item => item.symbol && visibleEtfSymbols.value.includes(item.symbol));
     });
 
     const getClose = (rec) => {
@@ -171,7 +177,7 @@ createApp({
     });
 
     const sortedEtfCycleSymbols = computed(() => {
-      const syms = [...etfSymbols];
+      const syms = [...visibleEtfSymbols.value];
       syms.sort((a, b) => {
         const ha = warmupHistory.value[a];
         const hb = warmupHistory.value[b];
@@ -223,7 +229,7 @@ createApp({
       if (!el) return;
       if (!chartInstances['correlation']) chartInstances['correlation'] = echarts.init(el);
       const chart = chartInstances['correlation'];
-      const symbolsToDraw = etfSymbols;
+      const symbolsToDraw = visibleEtfSymbols.value;
       const labelToSym = {};
       symbolsToDraw.forEach(sym => { labelToSym[symbolNames[sym] || sym] = sym; });
       const seriesData = [];
@@ -283,8 +289,22 @@ createApp({
       } catch (err) { console.error('Failed to fetch overview:', err); }
     };
 
+    const getTotalAmount = (pts) => {
+      if (!pts || pts.length === 0) return 0;
+      const isIncremental = pts.some(p => p.source === 'tencent_backfill' || p.amountMode === 'incremental');
+      if (!isIncremental && pts.length > 1) {
+        let nonDec = 0;
+        for (let i = 1; i < pts.length; i++) {
+          if ((pts[i].amount || 0) >= (pts[i-1].amount || 0)) nonDec++;
+        }
+        if (nonDec / (pts.length - 1) < 0.9) return pts.reduce((s, p) => s + (p.amount || 0), 0);
+      }
+      if (isIncremental) return pts.reduce((s, p) => s + (p.amount || 0), 0);
+      return pts[pts.length - 1].amount || 0;
+    };
+
     const fetchMinuteData = async () => {
-      const promises = etfSymbols.map(async (sym) => {
+      const promises = visibleEtfSymbols.value.map(async (sym) => {
         try {
           const res = await fetch(`${API_BASE}/api/m1/data/minute?symbol=${sym}`);
           const data = await res.json();
@@ -298,7 +318,7 @@ createApp({
               latestPct = lastPt.pct !== undefined ? lastPt.pct : (pre_close ? ((lastPt.price - pre_close) / pre_close) * 100 : 0);
             }
             minuteDataCache.value[sym] = { pre_close, data: dataPoints || [] };
-            currentPrices.value[sym] = { price: latestPrice, pct: latestPct };
+            currentPrices.value[sym] = { price: latestPrice, pct: latestPct, amount: getTotalAmount(dataPoints || []) };
           }
         } catch (err) { console.error(`Failed to fetch minute data for ${sym}:`, err); }
       });
@@ -327,9 +347,9 @@ createApp({
 
     const buildEtfManagerRows = () => {
       const rows = [];
-      etfSymbols.forEach(code => {
-        const name = (symbolNames[code] || code).replace('ETF', '');
-        rows.push({ name, code, category: etfCategoryMap[code] || '科技', sub_category: etfSubCategoryMap[code] || '硬件' });
+      etfSymbols.value.forEach(code => {
+        const name = symbolNames[code] || code;
+        rows.push({ name, code, category: etfCategoryMap[code] || '科技', sub_category: etfSubCategoryMap[code] || '硬件', hidden: !!hiddenSymbols[code] });
       });
       return rows;
     };
@@ -349,16 +369,30 @@ createApp({
     };
 
     const syncMapsFromApi = (apiEtfs) => {
-      etfSymbols.length = 0;
+      const newSymbols = [];
       Object.keys(symbolNames).forEach(k => delete symbolNames[k]);
       Object.keys(etfCategoryMap).forEach(k => delete etfCategoryMap[k]);
       Object.keys(etfSubCategoryMap).forEach(k => delete etfSubCategoryMap[k]);
+      Object.keys(hiddenSymbols).forEach(k => delete hiddenSymbols[k]);
       Object.entries(apiEtfs).forEach(([name, info]) => {
-        etfSymbols.push(info.code);
-        symbolNames[info.code] = name + 'ETF';
+        newSymbols.push(info.code);
+        symbolNames[info.code] = name;
         etfCategoryMap[info.code] = info.category;
         etfSubCategoryMap[info.code] = info.sub_category;
+        if (info.hidden) hiddenSymbols[info.code] = true;
       });
+      etfSymbols.value = newSymbols;
+    };
+
+    const toggleHidden = async (code) => {
+      const name = symbolNames[code] || code;
+      const meta = { name, code, category: etfCategoryMap[code] || '科技', sub_category: etfSubCategoryMap[code] || '硬件', hidden: !hiddenSymbols[code] };
+      try {
+        await fetch(`${API_BASE}/api/sector/manage`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(meta) });
+        if (hiddenSymbols[code]) delete hiddenSymbols[code]; else hiddenSymbols[code] = true;
+        refreshEtfManagerRows();
+        nextTick(() => { renderCategoryBar(); renderEtfPctBar(); renderCorrelationChart(); });
+      } catch (e) { console.warn('toggleHidden failed', e); }
     };
 
     const fetchEtfConfig = async () => {
@@ -371,6 +405,47 @@ createApp({
           nextTick(() => { renderCategoryBar(); renderEtfPctBar(); });
         }
       } catch (e) { console.warn('ETF配置加载失败，使用硬编码默认值'); }
+    };
+
+    const triggerBackfill = async (code, name) => {
+      backfillStatus[code] = 'requesting';
+      backfillToast.name = name || symbolNames[code] || code;
+      backfillToast.code = code;
+      backfillToast.status = 'requesting';
+      backfillToast.show = true;
+      try {
+        await fetch(`${API_BASE}/api/m1/run`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ script: 'm1_backfill.py', symbol: code, applyFix: true })
+        });
+      } catch (e) { console.warn('回补触发失败', e); }
+      try {
+        await fetch(`${API_BASE}/api/m1/run`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ script: 'm1_minute_fetch_etf.py', symbols: code, force: true })
+        });
+      } catch (e) { console.warn('分时拉取触发失败', e); }
+      setTimeout(async () => {
+        try {
+          const res = await fetch(`${API_BASE}/api/m1/data/minute?symbol=${code}`);
+          const d = await res.json();
+          const minuteOk = d.ok && d.data && d.data.length > 0;
+          backfillStatus[code] = minuteOk ? 'done' : 'failed';
+          backfillToast.status = minuteOk ? 'done' : 'failed';
+        } catch (e) {
+          backfillStatus[code] = 'failed';
+          backfillToast.status = 'failed';
+        }
+        fetchOverview(); fetchMinuteData();
+        setTimeout(() => { backfillToast.show = false; }, 3000);
+      }, 15000);
+    };
+
+    const closeBackfillToast = () => { backfillToast.show = false; };
+
+    const triggerBackfillRow = (code) => {
+      const name = symbolNames[code] || code;
+      triggerBackfill(code, name);
     };
 
     const submitEtfForm = async () => {
@@ -391,12 +466,14 @@ createApp({
           refreshEtfManagerRows();
           nextTick(() => { renderCategoryBar(); renderEtfPctBar(); });
           etfFormOpen.value = false;
+          etfManagerOpen.value = false;
+          triggerBackfill(code, etfForm.name.trim());
         } else { etfForm.error = json?.error || '保存失败'; }
       } catch (e) { etfForm.error = '网络错误'; }
     };
 
     const deleteEtfRow = async (code) => {
-      const name = (symbolNames[code] || code).replace('ETF', '');
+      const name = symbolNames[code] || code;
       if (!confirm(`确认删除 "${name}" 吗？`)) return;
       try {
         const res = await fetch(`${API_BASE}/api/sector/manage?name=${encodeURIComponent(name)}`, { method: 'DELETE' });
@@ -411,32 +488,34 @@ createApp({
 
     const categoryPctData = computed(() => {
       const groups = {};
-      etfSymbols.forEach(code => {
+      visibleEtfSymbols.value.forEach(code => {
         const cat = etfCategoryMap[code] || '其他';
-        const pct = currentPrices.value[code]?.pct;
-        if (!groups[cat]) groups[cat] = { sum: 0, count: 0 };
-        if (pct != null && isFinite(pct)) { groups[cat].sum += pct; groups[cat].count++; }
+        const amt = currentPrices.value[code]?.amount;
+        if (!groups[cat]) groups[cat] = 0;
+        if (amt != null && isFinite(amt) && amt > 0) groups[cat] += amt;
       });
-      const result = {};
-      Object.entries(groups).forEach(([cat, g]) => {
-        result[cat] = g.count > 0 ? +(g.sum / g.count).toFixed(2) : 0;
-      });
-      return result;
+      return groups;
     });
 
     const etfPctBarData = computed(() => {
-      return etfSymbols
+      return visibleEtfSymbols.value
         .map(code => ({
-          name: (symbolNames[code] || code).replace('ETF', ''),
+          name: symbolNames[code] || code,
           code,
-          pct: currentPrices.value[code]?.pct ?? null,
+          amount: currentPrices.value[code]?.amount ?? 0,
           category: etfCategoryMap[code] || '其他'
         }))
-        .filter(d => d.pct != null && isFinite(d.pct))
-        .sort((a, b) => b.pct - a.pct);
+        .filter(d => d.amount > 0)
+        .sort((a, b) => b.amount - a.amount);
     });
 
-    const getBarColor = (v) => v > 0 ? '#EF4444' : v < 0 ? '#10B981' : '#A1A1AA';
+    const fmtAmount = (v) => {
+      if (v >= 1e8) return (v / 1e8).toFixed(2) + '亿';
+      if (v >= 1e4) return (v / 1e4).toFixed(2) + '万';
+      return v.toFixed(0);
+    };
+
+    const getBarColor = (v) => v > 0 ? '#3B82F6' : '#A1A1AA';
 
     const renderCategoryBar = () => {
       const el = document.getElementById('chart-category-bar');
@@ -446,13 +525,13 @@ createApp({
       const data = categoryPctData.value;
       const cats = Object.keys(data);
       const vals = cats.map(c => data[c]);
-      const absMax = Math.max(1, Math.abs(Math.max(...vals.map(Math.abs))) || 1);
+      const maxVal = Math.max(...vals, 1);
       chart.setOption({
-        tooltip: { trigger: 'axis', valueFormatter: (v) => v.toFixed(2) + '%' },
-        grid: { left: 50, right: 20, top: 10, bottom: 30 },
-        xAxis: { type: 'category', data: cats, axisLabel: { fontSize: 13, color: '#52525B', fontWeight: 'bold' }, axisLine: { lineStyle: { color: '#E4E4E7' } } },
-        yAxis: { type: 'value', min: -absMax, max: absMax, axisLabel: { fontSize: 11, color: '#71717A', formatter: '{value}%' }, splitLine: { lineStyle: { type: 'dashed', color: '#E4E4E7' } } },
-        series: [{ type: 'bar', data: vals.map(v => ({ value: v, itemStyle: { color: getBarColor(v), borderRadius: [4, 4, 0, 0] } })), barWidth: Math.max(24, Math.min(40, 320 / cats.length)), label: { show: true, position: 'top', fontSize: 14, fontWeight: 'bold', color: '#18181B', formatter: (p) => (p.value > 0 ? '+' : '') + p.value.toFixed(2) + '%' } }]
+        tooltip: { trigger: 'axis', valueFormatter: (v) => v >= 1e8 ? (v / 1e8).toFixed(2) + '亿' : (v / 1e4).toFixed(2) + '万' },
+        grid: { left: 85, right: 20, top: 30, bottom: 24 },
+        xAxis: { type: 'category', data: cats, axisLabel: { fontSize: 12, color: '#52525B', fontWeight: 'bold' }, axisLine: { lineStyle: { color: '#E4E4E7' } } },
+        yAxis: { type: 'value', max: maxVal * 1.2, axisLabel: { fontSize: 9, color: '#71717A', formatter: (v) => v >= 1e8 ? (v / 1e8).toFixed(1) + '亿' : (v / 1e4).toFixed(0) + '万' }, splitLine: { lineStyle: { type: 'dashed', color: '#E4E4E7' } } },
+        series: [{ type: 'bar', data: vals.map((v, i) => ({ value: v, itemStyle: { color: cats[i] === '科技' ? '#3B82F6' : '#10B981', borderRadius: [4, 4, 0, 0] } })), barWidth: Math.max(16, Math.min(32, 240 / cats.length)), label: { show: true, position: 'top', fontSize: 11, fontWeight: 'bold', color: '#18181B', formatter: (p) => fmtAmount(p.value) } }]
       }, true);
     };
 
@@ -463,15 +542,16 @@ createApp({
       const chart = chartInstances['etfPctBar'];
       const data = etfPctBarData.value;
       const names = data.map(d => d.name);
-      const vals = data.map(d => d.pct);
-      const bw = Math.max(10, Math.min(24, 260 / data.length));
-      const absMax = Math.max(1, Math.abs(Math.max(...vals.map(Math.abs))) || 1);
+      const vals = data.map(d => d.amount);
+      const cats = data.map(d => d.category);
+      const bw = Math.max(6, Math.min(14, 180 / data.length));
+      const maxVal = Math.max(...vals, 1);
       chart.setOption({
-        tooltip: { trigger: 'axis', valueFormatter: (v) => (v > 0 ? '+' : '') + v.toFixed(2) + '%' },
-        grid: { left: 50, right: 20, top: 10, bottom: 50 },
-        xAxis: { type: 'category', data: names, axisLabel: { fontSize: 10, color: '#52525B', rotate: names.length > 8 ? 30 : 0 }, axisLine: { lineStyle: { color: '#E4E4E7' } } },
-        yAxis: { type: 'value', min: -absMax, max: absMax, axisLabel: { fontSize: 11, color: '#71717A', formatter: '{value}%' }, splitLine: { lineStyle: { type: 'dashed', color: '#E4E4E7' } } },
-        series: [{ type: 'bar', data: vals.map(v => ({ value: v, itemStyle: { color: getBarColor(v), borderRadius: [4, 4, 0, 0] } })), barWidth: bw, label: { show: true, position: 'top', fontSize: 10, fontWeight: 'bold', color: '#18181B', formatter: (p) => (p.value > 0 ? '+' : '') + p.value.toFixed(2) + '%' } }]
+        tooltip: { trigger: 'axis', valueFormatter: (v) => v >= 1e8 ? (v / 1e8).toFixed(2) + '亿' : (v / 1e4).toFixed(2) + '万' },
+        grid: { left: 85, right: 20, top: 30, bottom: 50 },
+        xAxis: { type: 'category', data: names, axisLabel: { fontSize: 9, color: '#52525B', rotate: names.length > 8 ? 35 : 0 }, axisLine: { lineStyle: { color: '#E4E4E7' } } },
+        yAxis: { type: 'value', max: maxVal * 1.2, axisLabel: { fontSize: 9, color: '#71717A', formatter: (v) => v >= 1e8 ? (v / 1e8).toFixed(1) + '亿' : (v / 1e4).toFixed(0) + '万' }, splitLine: { lineStyle: { type: 'dashed', color: '#E4E4E7' } } },
+        series: [{ type: 'bar', data: vals.map((v, i) => ({ value: v, itemStyle: { color: cats[i] === '科技' ? '#3B82F6' : '#10B981', borderRadius: [4, 4, 0, 0] } })), barWidth: bw, label: { show: true, position: 'top', fontSize: 10, fontWeight: 'bold', color: '#18181B', formatter: (p) => fmtAmount(p.value) } }]
       }, true);
     };
 
@@ -482,7 +562,7 @@ createApp({
       fetchMinuteData();
       nextTick(() => { renderCategoryBar(); renderEtfPctBar(); });
       window.addEventListener('resize', () => { Object.values(chartInstances).forEach(c => c.resize()); });
-      setInterval(() => { fetchOverview(); fetchMinuteData(); }, 60000);
+      setInterval(() => { fetchOverview(); fetchMinuteData(); nextTick(() => { renderCategoryBar(); renderEtfPctBar(); }); }, 600000);
     });
 
     return {
@@ -494,7 +574,7 @@ createApp({
       getPriceColor, getAdviceTextColor, getIntradayItem,
       renderCorrelationChart, renderCategoryBar, renderEtfPctBar,
       etfManagerOpen, etfManagerRows, etfFormOpen, etfFormMode, etfForm,
-      openEtfForm, submitEtfForm, deleteEtfRow
+      openEtfForm, submitEtfForm, deleteEtfRow, toggleHidden, backfillOpen, backfillStatus, backfillToast, closeBackfillToast, triggerBackfillRow
     };
   }
 }).mount('#app');

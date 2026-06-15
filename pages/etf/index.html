@@ -111,7 +111,7 @@
 
       <!-- 2. 阵营分布 -->
       <div class="q-panel p-5">
-        <div class="text-[11px] font-semibold text-q-subtext uppercase tracking-widest mb-4">涨跌分布 (Pct Breakdown)</div>
+        <div class="text-[11px] font-semibold text-q-subtext uppercase tracking-widest mb-4">成交额分布 (Amount Breakdown)</div>
         <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
           <div style="height: 200px">
             <div id="chart-category-bar" style="width: 100%; height: 100%"></div>
@@ -162,7 +162,7 @@
             </div>
             <div v-for="sym in sortedEtfCycleSymbols" :key="sym" class="flex items-center py-[2px] border-b border-gray-50 group hover:bg-gray-50/50">
               <div class="w-12 shrink-0 text-[11px] text-gray-400">{{ etfCategoryMap[sym] || '未分类' }}</div>
-              <div class="w-24 shrink-0 text-xs font-medium text-q-text truncate pr-2" :title="symbolNames[sym] || sym">{{ (symbolNames[sym] || sym).replace('ETF', '') }}</div>
+              <div class="w-24 shrink-0 text-xs font-medium text-q-text truncate pr-2" :title="symbolNames[sym] || sym">{{ symbolNames[sym] || sym }}</div>
               <div class="flex-1 flex relative h-[18px] ml-4">
                 <div v-for="(cell, i) in getProcessedGrid(sym)" :key="i" class="flex-1 relative flex items-center justify-center border-r border-gray-100 last:border-r-0">
                   <div v-if="cell.isUp" class="absolute h-[14px] bg-[#C7D2FE] z-10 flex items-center justify-center text-[9px] text-indigo-700 font-bold"
@@ -193,7 +193,7 @@
               <div v-for="item in etfLifecycleSell" :key="item.symbol" class="border rounded-lg p-2 hover:shadow-sm transition-all relative overflow-hidden group bg-white">
                 <div class="absolute top-0 left-0 right-0 h-[3px] bg-red-500"></div>
                 <div class="flex items-center justify-between mt-1 mb-2">
-                  <div class="flex items-center gap-2"><div class="text-sm font-semibold text-q-text">{{ (item.ETF名称 || item.name || '').replace('ETF', '') }}</div></div>
+                  <div class="flex items-center gap-2"><div class="text-sm font-semibold text-q-text">{{ (item.ETF名称 || item.名称 || item.name || item.symbol || '') }}</div></div>
                   <div class="flex items-center gap-2"><div v-if="activeLifecycleTab !== 'intraday' || getIntradayItem(item.symbol)?.操作建议" class="text-xs font-bold px-1.5 py-0.5 rounded bg-gray-50 border border-gray-100" :class="activeLifecycleTab === 'intraday' ? getAdviceTextColor(getIntradayItem(item.symbol)?.操作建议) : getAdviceTextColor(item.操作建议)">{{ activeLifecycleTab === 'intraday' ? getIntradayItem(item.symbol)?.操作建议 : (item.操作建议 || '-') }}</div></div>
                 </div>
                 <div class="flex items-center justify-between bg-gray-50/80 rounded px-2 py-1.5 mb-2">
@@ -216,8 +216,8 @@
               <div v-for="item in etfLifecycleHold" :key="item.symbol" class="border rounded-lg p-2 hover:shadow-sm transition-all relative overflow-hidden group bg-white">
                 <div class="absolute top-0 left-0 right-0 h-[3px] bg-green-500"></div>
                 <div class="flex items-center justify-between mt-1 mb-2">
-                  <div class="flex items-center gap-2"><div class="text-sm font-semibold text-q-text">{{ (item.ETF名称 || item.name || '').replace('ETF', '') }}</div></div>
-                  <div class="flex items-center gap-2"><div v-if="activeLifecycleTab !== 'intraday' || getIntradayItem(item.symbol)?.操作建议" class="text-xs font-bold px-1.5 py-0.5 rounded bg-gray-50 border border-gray-100" :class="activeLifecycleTab === 'intraday' ? getAdviceTextColor(getIntradayItem(item.symbol)?.操作建议) : getAdviceTextColor(item.操作建议)">{{ activeLifecycleTab === 'intraday' ? getIntradayItem(item.symbol)?.操作建议 : (item.操作建议 || '-') }}</div></div>
+                  <div class="flex items-center gap-2"><div class="text-sm font-semibold text-q-text">{{ (item.ETF名称 || item.名称 || item.name || item.symbol || '') }}</div></div>
+                <div class="flex items-center gap-2"><div v-if="activeLifecycleTab !== 'intraday' || getIntradayItem(item.symbol)?.操作建议" class="text-xs font-bold px-1.5 py-0.5 rounded bg-gray-50 border border-gray-100" :class="activeLifecycleTab === 'intraday' ? getAdviceTextColor(getIntradayItem(item.symbol)?.操作建议) : getAdviceTextColor(item.操作建议)">{{ activeLifecycleTab === 'intraday' ? getIntradayItem(item.symbol)?.操作建议 : (item.操作建议 || '-') }}</div></div>
                 </div>
                 <div class="flex items-center justify-between bg-gray-50/80 rounded px-2 py-1.5 mb-2">
                   <div class="flex flex-col"><span class="text-[10px] text-gray-400">{{ activeLifecycleTab === 'intraday' ? '涨跌幅' : '当前' }}</span><span class="text-xs font-mono font-medium" :class="activeLifecycleTab === 'intraday' ? getPriceColor(getIntradayItem(item.symbol)?.pct) : 'text-gray-700'"><template v-if="activeLifecycleTab === 'intraday'">{{ getIntradayItem(item.symbol) ? (getIntradayItem(item.symbol).pct > 0 ? '+' : '') + (getIntradayItem(item.symbol).pct?.toFixed(2) || '0.00') + '%' : '-' }}</template><template v-else>{{ item.乖离对比 ? item.乖离对比.split('，')[0].replace('当前偏离 ', '') : '-' }}</template></span></div>
@@ -239,7 +239,7 @@
               <div v-for="item in etfLifecycleWait" :key="item.symbol" class="border rounded-lg p-2 hover:shadow-sm transition-all relative overflow-hidden group bg-white">
                 <div class="absolute top-0 left-0 right-0 h-[3px] bg-yellow-400"></div>
                 <div class="flex items-center justify-between mt-1 mb-2">
-                  <div class="flex items-center gap-2"><div class="text-sm font-semibold text-q-text">{{ (item.ETF名称 || item.name || '').replace('ETF', '') }}</div></div>
+                  <div class="flex items-center gap-2"><div class="text-sm font-semibold text-q-text">{{ (item.名称 || item.name || item.symbol || '') }}</div></div>
                   <div class="flex items-center gap-2"><div v-if="activeLifecycleTab !== 'intraday' || getIntradayItem(item.symbol)?.操作建议" class="text-xs font-bold px-1.5 py-0.5 rounded bg-gray-50 border border-gray-100" :class="activeLifecycleTab === 'intraday' ? getAdviceTextColor(getIntradayItem(item.symbol)?.操作建议) : getAdviceTextColor(item.操作建议)">{{ activeLifecycleTab === 'intraday' ? getIntradayItem(item.symbol)?.操作建议 : (item.操作建议 || '-') }}</div></div>
                 </div>
                 <div class="flex items-center justify-between bg-gray-50/80 rounded px-2 py-1.5 mb-2">
@@ -271,17 +271,43 @@
         <div class="px-5 py-3">
           <div class="flex items-center justify-between mb-3">
             <div class="flex items-center gap-2 text-[11px] text-gray-500">共 <span class="font-mono font-bold text-q-text">{{ etfManagerRows.length }}</span> 只 ETF</div>
-            <button @click="openEtfForm('add')" class="flex items-center gap-1 text-xs px-3 py-1.5 rounded bg-q-primary text-white hover:bg-blue-700 transition-colors"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>新增 ETF</button>
+            <div class="flex items-center gap-2">
+              <button @click="backfillOpen = !backfillOpen" class="flex items-center gap-1 text-xs px-3 py-1.5 rounded border border-gray-200 text-gray-500 hover:text-q-primary hover:border-q-primary transition-colors">回补数据 <span class="text-[10px]">{{ backfillOpen ? '▲' : '▼' }}</span></button>
+              <button @click="openEtfForm('add')" class="flex items-center gap-1 text-xs px-3 py-1.5 rounded bg-q-primary text-white hover:bg-blue-700 transition-colors"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>新增 ETF</button>
+            </div>
+          </div>
+          <div v-if="backfillOpen" class="mb-3 border border-gray-200 rounded-lg overflow-hidden">
+            <table class="w-full text-[11px]">
+              <thead><tr class="bg-gray-50 text-left text-gray-500"><th class="px-3 py-1.5 font-medium">名称</th><th class="px-3 py-1.5 font-medium">代码</th><th class="px-3 py-1.5 font-medium w-16 text-center">操作</th><th class="px-3 py-1.5 font-medium">状态</th></tr></thead>
+              <tbody>
+                <tr v-for="row in etfManagerRows" :key="row.code" class="border-t border-gray-100">
+                  <td class="px-3 py-1.5">{{ row.name }}</td>
+                  <td class="px-3 py-1.5 font-mono text-gray-400">{{ row.code }}</td>
+                  <td class="px-3 py-1.5 text-center">
+                    <button @click="triggerBackfillRow(row.code)" class="px-2 py-0.5 rounded text-[10px] bg-gray-100 hover:bg-q-primary hover:text-white transition-colors">回补</button>
+                  </td>
+                  <td class="px-3 py-1.5">
+                    <span v-if="backfillStatus[row.code] === 'requesting'" class="text-blue-500">请求中...</span>
+                    <span v-else-if="backfillStatus[row.code] === 'done'" class="text-green-500">✓ 完成</span>
+                    <span v-else-if="backfillStatus[row.code] === 'failed'" class="text-red-400">✗ 失败</span>
+                    <span v-else class="text-gray-300">● 空闲</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
           <div class="border border-gray-200 rounded-lg overflow-hidden">
             <table class="w-full text-xs">
-              <thead><tr class="bg-gray-50 text-left text-gray-500"><th class="px-3 py-2 font-medium">名称</th><th class="px-3 py-2 font-medium">代码</th><th class="px-3 py-2 font-medium">阵营</th><th class="px-3 py-2 font-medium">子分类</th><th class="px-3 py-2 font-medium text-right">操作</th></tr></thead>
+              <thead><tr class="bg-gray-50 text-left text-gray-500"><th class="px-3 py-2 font-medium">名称</th><th class="px-3 py-2 font-medium">代码</th><th class="px-3 py-2 font-medium">阵营</th><th class="px-3 py-2 font-medium">子分类</th><th class="px-3 py-2 font-medium w-12 text-center">显示</th><th class="px-3 py-2 font-medium text-right">操作</th></tr></thead>
               <tbody>
                 <tr v-for="row in etfManagerRows" :key="row.code" class="border-t border-gray-100 hover:bg-gray-50/50 transition-colors">
                   <td class="px-3 py-2.5"><span class="font-medium text-q-text">{{ row.name }}</span></td>
                   <td class="px-3 py-2.5 font-mono text-gray-500">{{ row.code }}</td>
                   <td class="px-3 py-2.5"><span class="px-1.5 py-0.5 rounded text-[10px] font-medium" :class="row.category === '科技' ? 'bg-blue-50 text-blue-700' : 'bg-emerald-50 text-emerald-700'">{{ row.category }}</span></td>
                   <td class="px-3 py-2.5 text-gray-400">{{ row.sub_category }}</td>
+                  <td class="px-3 py-2.5 text-center">
+                    <input type="checkbox" :checked="!row.hidden" @change="toggleHidden(row.code)" class="w-3.5 h-3.5 accent-q-primary cursor-pointer">
+                  </td>
                   <td class="px-3 py-2.5 text-right">
                     <button @click="openEtfForm('edit', row)" class="text-gray-400 hover:text-q-primary mr-2" title="编辑"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg></button>
                     <button @click="deleteEtfRow(row.code)" class="text-gray-400 hover:text-red-500" title="删除"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>
@@ -315,6 +341,22 @@
           <button @click="etfFormOpen = false" class="px-4 py-1.5 text-xs rounded border border-gray-200 text-gray-600 hover:bg-gray-50">取消</button>
           <button @click="submitEtfForm()" class="px-4 py-1.5 text-xs rounded bg-q-primary text-white hover:bg-blue-700 transition-colors">保存</button>
         </div>
+      </div>
+    </div>
+
+    <div v-if="backfillToast.show" class="fixed inset-0 z-[70] flex items-center justify-center bg-black/15">
+      <div class="bg-white border border-gray-200 rounded-xl shadow-lg p-5 w-72">
+        <div class="flex items-center justify-between mb-3">
+          <span class="text-sm font-bold text-q-text">{{ backfillToast.name }}</span>
+          <button @click="closeBackfillToast" class="text-gray-300 hover:text-gray-500 text-xs">✕</button>
+        </div>
+        <div class="text-[10px] text-gray-400 mb-3 font-mono">{{ backfillToast.code }}</div>
+        <div v-if="backfillToast.status === 'requesting'" class="flex items-center gap-2">
+          <div class="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden"><div class="h-full bg-q-primary rounded-full animate-pulse" style="width: 60%"></div></div>
+          <span class="text-[10px] text-blue-500">数据接入中...</span>
+        </div>
+        <div v-else-if="backfillToast.status === 'done'" class="text-xs text-green-500 font-medium">✓ 数据回补完成，页面已刷新</div>
+        <div v-else class="text-xs text-red-400 font-medium">✗ 回补失败，请检查代码或稍后重试</div>
       </div>
     </div>
 

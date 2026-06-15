@@ -19,6 +19,7 @@ function serveFile(res, filePath) {
     const ext = path.extname(filePath)
     const data = fs.readFileSync(filePath)
     res.setHeader('Content-Type', MIME[ext] || 'application/octet-stream')
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
     res.end(data)
   } catch {
     res.statusCode = 404
@@ -39,9 +40,9 @@ function proxyToAPI(req, res) {
   proxy.on('error', () => {
     res.statusCode = 502
     res.setHeader('Content-Type', 'application/json; charset=utf-8')
-    res.end(JSON.stringify({ ok: false, error: 'API unreachable (is :8787 running?)' }))
+    res.end(JSON.stringify({ ok: false, error: 'API unreachable (is :8788 running?)' }))
   })
-  proxy.end()
+  req.pipe(proxy)
 }
 
 const server = http.createServer((req, res) => {

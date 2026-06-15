@@ -24,7 +24,8 @@ module.exports = function() {
           etfs[name] = {
             code,
             category: meta.category || '科技',
-            sub_category: meta.sub_category || '硬件'
+            sub_category: meta.sub_category || '硬件',
+            hidden: meta.hidden === true
           };
         });
       }
@@ -38,7 +39,7 @@ module.exports = function() {
       try {
         const raw = await readBody(req);
         const body = raw ? JSON.parse(raw) : {};
-        const { name, code, category, sub_category } = body;
+        const { name, code, category, sub_category, hidden } = body;
 
         if (!name || !code || !category || !sub_category) {
           res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -58,7 +59,7 @@ module.exports = function() {
 
         const existed = cfg.variants.etf[name];
         cfg.variants.etf[name] = code;
-        cfg.etf_meta[name] = { category, sub_category };
+        cfg.etf_meta[name] = { category, sub_category, hidden: hidden === true };
         cfg.updated_at = new Date().toISOString();
 
         fs.writeFileSync(PROXY_FILE, JSON.stringify(cfg, null, 2));
@@ -66,7 +67,7 @@ module.exports = function() {
         const etfs = {};
         Object.entries(cfg.variants.etf).forEach(([n, c]) => {
           const meta = cfg.etf_meta[n] || {};
-          etfs[n] = { code: c, category: meta.category || '科技', sub_category: meta.sub_category || '硬件' };
+          etfs[n] = { code: c, category: meta.category || '科技', sub_category: meta.sub_category || '硬件', hidden: meta.hidden === true };
         });
 
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -97,7 +98,7 @@ module.exports = function() {
       if (cfg.variants && cfg.variants.etf) {
         Object.entries(cfg.variants.etf).forEach(([n, c]) => {
           const meta = (cfg.etf_meta && cfg.etf_meta[n]) || {};
-          etfs[n] = { code: c, category: meta.category || '科技', sub_category: meta.sub_category || '硬件' };
+          etfs[n] = { code: c, category: meta.category || '科技', sub_category: meta.sub_category || '硬件', hidden: meta.hidden === true };
         });
       }
 

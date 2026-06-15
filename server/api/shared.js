@@ -161,6 +161,284 @@ module.exports = function() {
     }
     return true;
   }
+  if (url.pathname.startsWith('/api/minute/')) {
+    const code = url.pathname.split('/').pop();
+
+    // ETF分时数据检测：6位数字，5开头(上交所)或1开头(深交所)
+    const isETF = /^\d{6}$/.test(code) && ['5', '1'].includes(code[0]);
+
+    if (isETF) {
+      // ETF分时数据：优先使用本地文件
+      const etfCode = code[0] === '5' ? `sh${code}` : `sz${code}`;
+
+      // 缓存和返回逻辑（优先本地文件）
+      const targetDay = latestTradingDay();
+      const dataFile = minuteFilePath(targetDay, code);
+      const runtimeFile = runtimeMinuteFilePath(targetDay, code);
+      const { arr: dataArr } = readMinuteFile(dataFile);
+      const runtimeRead = readMinuteFile(runtimeFile);
+      let merged = mergeMinuteSeries(dataArr, runtimeRead.arr);
+
+      // 只有在本地数据不足且在交易时间时，才调用Python接口
+      const marketOpen = isMarketOpenNow();
+      const needRefresh = marketOpen && (!merged.length || merged.length < 50);
+
+      if (needRefresh) {
+        let data = { data: [], prevClose: null };
+        try {
+          const execOpts = getExecOptions();
+          execOpts.timeout = 30000;
+          data = await new Promise((resolve) => {
+            execFile('python3', ['fetch_sector_data.py', 'etf-minute', etfCode], execOpts, (err, stdout, stderr) => {
+              if (err) {
+                console.error(`ETF minute error for ${etfCode}:`, err, stderr);
+                resolve({ data: [], prevClose: null });
+              } else {
+                try {
+                  const parsed = JSON.parse(stdout);
+                  resolve(parsed);
+                } catch (e) {
+                  console.error(`ETF minute parse error for ${etfCode}:`, e);
+                  resolve({ data: [], prevClose: null });
+                }
+              }
+            });
+          });
+
+          if (data.data && data.data.length) {
+            if (!runtimeRead.arr.length || (runtimeRead.arr[0]?.time && data.data[0]?.time && data.data[0].time < runtimeRead.arr[0].time)) {
+              writeMinuteFile(runtimeFile, data.data);
+            } else {
+              appendMinuteFile(runtimeFile, data.data, runtimeRead.lastTime);
+            }
+            merged = mergeMinuteSeries(dataArr, readMinuteFile(runtimeFile).arr);
+          }
+        } catch (e) {
+          console.error(`ETF minute fetch error for ${code}:`, e.message);
+        }
+      }
+
+      merged = merged.filter(p => isTradingMinute(timeToMinuteKey(p?.time)));
+      const todayFiltered = merged.filter(p => p?.time && String(p.time).startsWith(targetDay) && isTradingMinute(timeToMinuteKey(p?.time)));
+      if (todayFiltered.length) merged = todayFiltered;
+
+      // 优先从ETF日线文件获取昨收价
+      let prevClose = null;
+      try {
+        const etfDailyFile = path.join(__dirname, 'data', 'etf_daily', `etf_${code}.jsonl`);
+        if (fs.existsSync(etfDailyFile)) {
+          const content = fs.readFileSync(etfDailyFile, 'utf-8').split('\n').filter(l => l.trim());
+          if (content.length >= 1) {
+            const lastRow = JSON.parse(content[content.length - 1]);
+            if (lastRow.date < targetDay) {
+              prevClose = lastRow.close;
+            }
+          }
+        }
+      } catch (e) {
+        console.error(`Failed to read ETF daily file for ${code}:`, e.message);
+      }
+
+      if (prevClose == null) {
+        const t1 = findPreviousTradingDay(targetDay);
+        const fallback = prevCloseFromMinuteFile(t1, code);
+        if (isNum(fallback)) {
+          prevClose = fallback;
+        }
+      }
+
+      const day = targetDay;
+
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.end(JSON.stringify({ day, data: merged, prevClose }));
+      return true;
+    }
+
+    // 原有板块分时逻辑
+    const mapped = minuteCodeMap(code);
+    const emMapped = minuteEmMap(code);
+    if (!mapped) {
+      res.writeHead(404);
+      res.end('not found');
+      return true;
+    }
+
+    const marketOpen = isMarketOpenNow();
+    let data = { data: [], prevClose: null };
+    try {
+      if (marketOpen) {
+        if (emMapped) {
+          data = await fetchEastmoneyMinute(emMapped);
+        } else {
+          data = await fetchAshareMinute(mapped);
+        }
+        if (emMapped && (!data?.data || !data.data.length)) {
+          const allowAshareFallback = ['sse', 'szi', 'gem', 'star', 'hs300', 'csi2000', 'gov', 't', 'tl'].includes(code);
+          if (allowAshareFallback) {
+            const alt = await fetchAshareMinute(mapped);
+            if (alt?.data && alt.data.length) data = alt;
+          }
+        }
+      }
+    } catch (e) {
+      console.error(`Error fetching minute data for ${code}:`, e.message);
+    }
+
+    let prevClose = data.prevClose || null;
+    if (prevClose == null && emMapped && marketOpen) {
+      try {
+        const snap = await fetchEastmoneySnapshot([emMapped]);
+        prevClose = snap[emMapped]?.prevClose || null;
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    const targetDay = latestTradingDay();
+    let day = targetDay;
+    let sourceDay = targetDay;
+    let dataIncomplete = false;
+    const dataFile = minuteFilePath(targetDay, code);
+    const runtimeFile = runtimeMinuteFilePath(targetDay, code);
+    const { arr: dataArr } = readMinuteFile(dataFile);
+    const runtimeRead = readMinuteFile(runtimeFile);
+    let merged = mergeMinuteSeries(dataArr, runtimeRead.arr);
+    if (data.data && data.data.length) {
+      if (!runtimeRead.arr.length || (runtimeRead.arr[0]?.time && data.data[0]?.time && data.data[0].time < runtimeRead.arr[0].time)) {
+        writeMinuteFile(runtimeFile, data.data);
+      } else {
+        appendMinuteFile(runtimeFile, data.data, runtimeRead.lastTime);
+      }
+      merged = mergeMinuteSeries(dataArr, readMinuteFile(runtimeFile).arr);
+    }
+    merged = merged.filter(p => isTradingMinute(timeToMinuteKey(p?.time)));
+    const todayFiltered = merged.filter(p => p?.time && String(p.time).startsWith(targetDay) && isTradingMinute(timeToMinuteKey(p?.time)));
+    if (todayFiltered.length) {
+      merged = todayFiltered;
+    } else if (!marketOpen) {
+      const latestRuntime = findLatestRuntimeMinuteFile(code);
+      if (latestRuntime) {
+        const { arr: fallbackArr } = readMinuteFile(latestRuntime);
+        if (fallbackArr.length) {
+          merged = fallbackArr;
+          day = dayFromMinuteFile(latestRuntime) || day;
+          sourceDay = day;
+        }
+      }
+      if (!merged.length) {
+        const latestFile = findLatestMinuteFile(code);
+        if (latestFile) {
+          const { arr: fallbackArr } = readMinuteFile(latestFile);
+          if (fallbackArr.length) {
+            merged = fallbackArr;
+            day = dayFromMinuteFile(latestFile) || day;
+            sourceDay = day;
+          }
+        }
+      }
+      if (!merged.length) dataIncomplete = true;
+    }
+    if (merged.length) {
+      const lastTime = String(merged[merged.length - 1]?.time || '');
+      const seriesDay = lastTime.includes(' ') ? lastTime.split(' ')[0] : (lastTime.includes('T') ? lastTime.split('T')[0] : '');
+      if (seriesDay && seriesDay !== targetDay) {
+        dataIncomplete = true;
+        sourceDay = seriesDay;
+        day = seriesDay;
+      }
+    }
+    const last = merged.length ? (merged[merged.length - 1]?.close || merged[merged.length - 1]?.open) : null;
+    if ((code === 't' || code === 'tl') && prevClose != null && merged.length) {
+      const first = pickNum(toNumber(merged[0]?.open), toNumber(merged[0]?.close));
+      if (first != null) {
+        const ratio = first / prevClose;
+        if (!Number.isFinite(ratio) || ratio < 0.9 || ratio > 1.1) prevClose = null;
+      }
+    }
+    if ((code === 't' || code === 'tl') && last != null) {
+      prevClose = normalizeBondPrice(prevClose);
+      if (prevClose != null && prevClose > 500 && last < 200) {
+        prevClose = +((prevClose / 10).toFixed(2));
+      }
+    }
+    if (!merged.length) {
+      const cached = lastGoodMinute.get(code);
+      if (cached?.series?.length && (!marketOpen || cached.day === targetDay || cached.day <= targetDay)) {
+        merged = cached.series;
+        day = cached.day;
+        sourceDay = cached.day || sourceDay;
+        if (cached.day && cached.day !== targetDay) dataIncomplete = true;
+        prevClose = cached.prevClose || prevClose;
+      }
+    } else if (!dataIncomplete) {
+      lastGoodMinute.set(code, { day, series: merged, prevClose });
+    }
+    if (prevClose == null) {
+      const cached = lastGoodMinute.get(code);
+      if (cached?.prevClose != null) prevClose = cached.prevClose;
+    }
+    if (prevClose == null) {
+      const indexMap = { sse: '000001', szi: '399001', gem: '399006', star: '000688' };
+      const idx = indexMap[code];
+      if (idx) {
+        try {
+          const file = path.join(__dirname, 'data', 'index_daily', `index_${idx}.jsonl`);
+          if (fs.existsSync(file)) {
+            const lines = fs.readFileSync(file, 'utf-8').split('\n').filter(Boolean);
+            let pick = null;
+            for (let i = lines.length - 1; i >= 0 && i >= lines.length - 50; i--) {
+              const line = lines[i];
+              if (!line) continue;
+              try {
+                const row = JSON.parse(line);
+                if (row?.date && row.date < targetDay && isNum(row.close)) {
+                  pick = row.close;
+                  break;
+                }
+              } catch (e) {
+                void e;
+              }
+            }
+            if (isNum(pick) && merged.length) {
+              const first = pickNum(toNumber(merged[0]?.open), toNumber(merged[0]?.close));
+              if (first != null) {
+                const ratio = first / pick;
+                if (!Number.isFinite(ratio) || ratio < 0.5 || ratio > 2) pick = null;
+              }
+            }
+            if (isNum(pick)) prevClose = pick;
+          }
+        } catch (e) {
+          void e;
+        }
+      }
+    }
+    if (prevClose == null) {
+      const t1 = findPreviousTradingDay(targetDay);
+      const fallback = prevCloseFromMinuteFile(t1, code);
+      if (isNum(fallback)) prevClose = fallback;
+    }
+    if (prevClose == null) {
+      try {
+        const fetched = await fetchPrevCloseForMinute(code, targetDay);
+        if (isNum(fetched)) prevClose = fetched;
+      } catch (e) {
+        void e;
+      }
+    }
+    merged.sort((a, b) => {
+      const ta = String(a.time || '');
+      const tb = String(b.time || '');
+      const da = ta.includes(' ') ? ta.split(' ')[0] : (ta.includes('T') ? ta.split('T')[0] : day);
+      const db = tb.includes(' ') ? tb.split(' ')[0] : (tb.includes('T') ? tb.split('T')[0] : day);
+      if (da !== db) return da.localeCompare(db);
+      const ma = timeToMinuteKey(ta) || ta;
+      const mb = timeToMinuteKey(tb) || tb;
+      return ma.localeCompare(mb);
+    });
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.end(JSON.stringify({ day, target_day: targetDay, source_day: sourceDay, data_incomplete: dataIncomplete, series: merged, latest: merged[merged.length - 1] || null, prevClose }));
+    return true;
+  }
   if (url.pathname === '/api/market/amount_daily/backfill') {
     const start = url.searchParams.get('start') || '2025-05-19';
     const startDay = start.includes('-') ? start : `${start.slice(0, 4)}-${start.slice(4, 6)}-${start.slice(6, 8)}`;

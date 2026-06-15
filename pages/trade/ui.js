@@ -5,13 +5,13 @@ const STAGE_STOP  = { '主升': 0.90, '震荡': 0.92, '启动': 0.95, '下跌': 
 
 const SIM_KEY = 'm1_sim_account_v1';
 
-const etfSymbols   = ['sh512400','sh512480','sh515120','sh515880','sh516010','sh516160','sh516510','sh562500','sh563530'];
-const symbolNames  = {
+const DEFAULT_ETF_SYMBOLS = ['sh512400','sh512480','sh515120','sh515880','sh516010','sh516160','sh516510','sh562500','sh563530'];
+const DEFAULT_SYMBOL_NAMES = {
   sh512400:'有色金属ETF', sh512480:'半导体ETF', sh515120:'创新药ETF', sh515880:'通信ETF',
   sh516010:'游戏ETF',     sh516160:'新能源ETF', sh516510:'云计算ETF', sh562500:'机器人ETF',
   sh563530:'商业航天ETF'
 };
-const etfCategoryMap = {
+const DEFAULT_ETF_CATEGORY = {
   sh512480:'科技', sh515880:'科技', sh516510:'科技', sh516010:'科技', sh563530:'科技',
   sh562500:'科技', sh515120:'科技', sh512400:'资源', sh516160:'资源'
 };
@@ -76,6 +76,37 @@ createApp({
     const refreshSec = ref(30);
     let timer = null;
 
+    const etfSymbols = ref([...DEFAULT_ETF_SYMBOLS]);
+    const symbolNames = ref({...DEFAULT_SYMBOL_NAMES});
+    const etfCategoryMap = ref({...DEFAULT_ETF_CATEGORY});
+
+    const syncMapsFromApi = (apiEtfs) => {
+      const newSymbols = [];
+      const newNames = {};
+      const newCategory = {};
+      Object.entries(apiEtfs).forEach(([name, info]) => {
+        if (info.hidden) return;
+        newSymbols.push(info.code);
+        newNames[info.code] = name;
+        newCategory[info.code] = info.category;
+      });
+      if (newSymbols.length) {
+        etfSymbols.value = newSymbols;
+        symbolNames.value = newNames;
+        etfCategoryMap.value = newCategory;
+      }
+    };
+
+    const fetchEtfConfig = async () => {
+      try {
+        const res = await fetch('/api/sector/manage');
+        const json = await res.json();
+        if (json && json.ok && json.etfs) {
+          syncMapsFromApi(json.etfs);
+        }
+      } catch (e) { /* 使用默认值 */ }
+    };
+
     async function fetchStageState() {
       try {
         const r = await fetch('/api/m1/stage_state');
@@ -105,10 +136,29 @@ createApp({
 
     const sortedStageEntries = computed(() => {
       const entries = Object.entries(stageMap.value || {});
-      const order = { '主升': 0, '防守': 1, '启动': 2, '下跌': 3, '震荡': 4 };
+      const order = { '主升': 0, '启动': 1, '震荡': 2, '下跌': 3, '防守': 4 };
       entries.sort((a, b) => (order[a[1].stage] || 9) - (order[b[1].stage] || 9));
       return entries.map(([sym, s]) => ({ sym, s }));
     });
+
+    const hiddenEtfs = ref(new Set());
+    try {
+      const saved = JSON.parse(localStorage.getItem('trade_hidden_etfs') || '[]');
+      if (Array.isArray(saved)) hiddenEtfs.value = new Set(saved);
+    } catch (e) { /* ignore */ }
+
+    const manageOpen = ref(false);
+    const toggleManage = () => { manageOpen.value = !manageOpen.value; };
+    const toggleEtfHidden = (code) => {
+      if (hiddenEtfs.value.has(code)) {
+        hiddenEtfs.value.delete(code);
+      } else {
+        hiddenEtfs.value.add(code);
+      }
+      hiddenEtfs.value = new Set(hiddenEtfs.value);
+      localStorage.setItem('trade_hidden_etfs', JSON.stringify(Array.from(hiddenEtfs.value)));
+    };
+    const isEtfVisible = (code) => !hiddenEtfs.value.has(code);
 
     const simConfig = ref({
       initialCash: Number(localStorage.getItem('sim_initial_cash') || 100000)
@@ -145,25 +195,51 @@ createApp({
     };
 
     const posEditOpen = ref(false);
+    const posEditIsAdd = ref(false);
     const posEditSym = ref('');
     const posEditShares = ref(0);
     const posEditPrice = ref(0);
+    const posEditCode = ref('');
+    const onPosEditCodeInput = () => {
+      let raw = posEditCode.value.trim();
+      if (!raw) { posEditSym.value = ''; return; }
+      // 自动补 sh/sz 前缀
+      if (/^\d{6}$/.test(raw)) {
+        raw = raw[0] === '0' || raw[0] === '3' ? 'sz' + raw : 'sh' + raw;
+        posEditCode.value = raw;
+      }
+      if (/^(sh|sz)\d{6}$/i.test(raw)) {
+        posEditSym.value = raw.toLowerCase();
+      }
+    };
+    const addPosition = () => {
+      posEditIsAdd.value = true;
+      posEditSym.value = '';
+      posEditCode.value = '';
+      posEditShares.value = 0;
+      posEditPrice.value = 0;
+      posEditOpen.value = true;
+    };
     const editPosition = (sym) => {
+      posEditIsAdd.value = false;
       const p = simState.value.positions?.[sym];
       posEditSym.value = sym;
+      posEditCode.value = sym;
       posEditShares.value = Number(p?.shares || 0);
       posEditPrice.value = Number(p?.avgPrice || 0);
       posEditOpen.value = true;
     };
     const closePosEdit = () => { posEditOpen.value = false; };
     const confirmPosEdit = () => {
+      const sym = posEditSym.value || posEditCode.value;
+      if (!sym) return;
       const sh = Math.floor(Number(posEditShares.value || 0) / 100) * 100;
       const px = Number(posEditPrice.value || 0);
       if (sh < 0 || !Number.isFinite(px) || px <= 0) return;
       if (sh === 0) {
-        delete simState.value.positions[posEditSym.value];
+        delete simState.value.positions[sym];
       } else {
-        simState.value.positions[posEditSym.value] = { shares: sh, avgPrice: px };
+        simState.value.positions[sym] = { shares: sh, avgPrice: px };
       }
       posEditOpen.value = false;
       saveSimLocal();
@@ -207,7 +283,7 @@ createApp({
       if (equity <= 0) return {};
       const map = {};
       simPositionsList.value.forEach((p) => {
-        const cat = etfCategoryMap[p.symbol] || '未分类';
+        const cat = etfCategoryMap.value[p.symbol] || '未分类';
         map[cat] = (map[cat] || 0) + (p.value || 0);
       });
       Object.keys(map).forEach((k) => { map[k] = map[k] / equity; });
@@ -252,20 +328,25 @@ createApp({
       const syms = Object.keys(sm).filter(s => sm[s].stage);
       if (!syms.length) return [];
 
-      const budgetPer = equity / syms.length;
+      // 只算有目标仓位的 ETF，按目标比例分配
+      const totalTarget = syms.reduce((sum, sym) => sum + (STAGE_TARGET[sm[sym].stage] || 0), 0);
+      const allocDenom = totalTarget > 0 ? totalTarget : syms.length;
+
       const suggestions = [];
 
       syms.forEach(sym => {
         const s = sm[sym];
         const cheapPrice = s.close || 0;
         if (!cheapPrice) return;
-        const targetPct = STAGE_TARGET[s.stage] || 0.50;
-        const targetVal = budgetPer * targetPct;
+        const targetPct = STAGE_TARGET[s.stage] || 0;
+        if (targetPct <= 0) return; // 防守 0% → 不参与建议
+        const targetW = targetPct / allocDenom;
+        const targetVal = targetW * equity;
         const pos = simState.value.positions?.[sym] || {};
         const curShares = Math.max(0, Number(pos.shares || 0));
         const curVal = curShares * cheapPrice;
         const curW = equity > 0 ? curVal / equity : 0;
-        const delta = targetPct / syms.length - curW;
+        const delta = targetW - curW;
         if (Math.abs(delta) < 0.03) return;
 
         const action = delta > 0 ? 'BUY' : 'SELL';
@@ -279,7 +360,7 @@ createApp({
         const stopPrice = fmtStopPrice(s.stage, cheapPrice, curShares > 0 ? Number(pos.avgPrice || 0) : 0);
 
         suggestions.push({
-          symbol: sym, category: etfCategoryMap[sym] || '未分类', action,
+          symbol: sym, category: etfCategoryMap.value[sym] || '未分类', action,
           tradeShares, tradePrice: cheapPrice, targetPct, curShares, curVal,
           stopPrice, notional: Math.round(notional),
           reason: `${s.stage_icon} ${s.stage} → ${(targetPct*100).toFixed(0)}%仓位 · ${stageTriggers(s)}`
@@ -309,7 +390,7 @@ createApp({
     const tradeTableRows = computed(() => {
       const equity = simMetrics.value.equity || 0;
       const execMap = tradeExecutedToday.value || {};
-      return (etfSymbols || []).map((sym) => {
+      return (etfSymbols.value || []).filter(isEtfVisible).map((sym) => {
         const s = stageInfo(sym);
         const sugg = tradeSuggestionMap.value?.[sym] || null;
         const stage = s.stage || '—';
@@ -331,8 +412,8 @@ createApp({
         const stopPrice = sugg ? sugg.stopPrice : fmtStopPrice(stage, price, avgPrice);
 
         return {
-          symbol: sym, name: symbolNames[sym] || sym,
-          category: etfCategoryMap[sym] || '未分类', _stage: stage,
+          symbol: sym, name: symbolNames.value[sym] || sym,
+          category: etfCategoryMap.value[sym] || '未分类', _stage: stage,
           stage_icon: s.stage_icon || '', triggerDetail: stageTriggers(s),
           curShares, curVal, curWeight: curW,
           targetPct, targetShares, targetVal: targetShares * price,
@@ -412,7 +493,7 @@ createApp({
         let shares=0;
         if (s.action==='BUY') shares=calcLotShares({amount:amt,price,lot});
         else if (s.action==='SELL') { const req=calcLotShares({amount:amt,price,lot}); shares=req>0?Math.min(held,req):held; }
-        items.push({symbol,name:symbolNames[symbol]||symbol,side:s.action,price:Number(price||0),shares:Number(shares||0),lot,reason:s.reason||''});
+        items.push({symbol,name:symbolNames.value[symbol]||symbol,side:s.action,price:Number(price||0),shares:Number(shares||0),lot,reason:s.reason||''});
       });
       tradeConfirmItems.value=items; tradeConfirmError.value=''; tradeConfirmOpen.value=true;
     };
@@ -496,18 +577,70 @@ createApp({
     };
 
     const holdingsScreenshot = ref(localStorage.getItem('sim_holdings_screenshot')||'');
+
+    const ocrLoading = ref(false);
+    const ocrResultsOpen = ref(false);
+    const ocrResults = ref([]);
+    const ocrRawTexts = ref([]);
+    const ocrError = ref('');
+
     const onHoldingsScreenshot = async (ev)=>{
       try{
         const file=ev?.target?.files?.[0];
         if(!file) return;
         const reader=new FileReader();
-        reader.onload=()=>{
+        reader.onload=async ()=>{
           const dataUrl=String(reader.result||'');
           holdingsScreenshot.value=dataUrl;
           localStorage.setItem('sim_holdings_screenshot',dataUrl);
+
+          ocrLoading.value = true;
+          ocrError.value = '';
+          try {
+            const r = await fetch('/api/trade/ocr-positions', {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({image: dataUrl})
+            });
+            const j = await r.json();
+            if (j.ok && j.data && j.data.positions && j.data.positions.length > 0) {
+              ocrResults.value = j.data.positions;
+              ocrRawTexts.value = j.data.raw_texts || [];
+              ocrResultsOpen.value = true;
+            } else {
+              const texts = j.data?.raw_texts || [];
+              const detail = texts.length ? ' (检测到: '+texts.slice(0,10).join(', ')+')' : '';
+              ocrError.value = '未识别到持仓数据，请用"＋ 添加"手动录入' + detail;
+            }
+          } catch (e) {
+            ocrError.value = '识别失败：' + (e.message || '网络错误');
+          }
+          ocrLoading.value = false;
         };
         reader.readAsDataURL(file);
       }catch(e){void e;}
+    };
+
+    const closeOcrResults = () => { ocrResultsOpen.value = false; ocrResults.value = []; ocrRawTexts.value = []; };
+
+    const importOcrPositions = () => {
+      if (!ocrResults.value.length) return;
+      const nameToCode = {};
+      Object.entries(symbolNames.value).forEach(([code, name]) => { nameToCode[name] = code; });
+      ocrResults.value.forEach((p) => {
+        const code = nameToCode[p.name];
+        if (!code) return;
+        if (p.shares > 0 && p.avgPrice > 0) {
+          simState.value.positions[code] = { shares: p.shares, avgPrice: p.avgPrice };
+        } else if (p.shares > 0) {
+          const existing = simState.value.positions[code];
+          const avg = existing ? Number(existing.avgPrice || 0) : Number(getLastPrice(code) || 0);
+          simState.value.positions[code] = { shares: p.shares, avgPrice: avg };
+        }
+      });
+      ocrResultsOpen.value = false;
+      ocrResults.value = [];
+      saveSimLocal();
     };
 
     // --- init ---
@@ -521,6 +654,7 @@ createApp({
     };
 
     onMounted(()=>{
+      fetchEtfConfig();
       fetchStageState();
       window.TradeAllocator?.fetchMarketState();
       if(autoRefresh.value) timer=setInterval(fetchStageState,refreshSec.value*1000);
@@ -538,11 +672,14 @@ createApp({
       tradeConfirmOpen, tradeConfirmItems, tradeConfirmError,
       closeTradeConfirm, confirmTradeConfirm,
       capitalModalOpen, capitalModalValue, openCapitalModal, closeCapitalModal, confirmCapitalModal,
-      posEditOpen, posEditSym, posEditShares, posEditPrice,
-      editPosition, closePosEdit, confirmPosEdit,
+      posEditOpen, posEditIsAdd, posEditSym, posEditShares, posEditPrice, posEditCode,
+      editPosition, addPosition, closePosEdit, confirmPosEdit, onPosEditCodeInput,
       resetSimAccount, holdingsScreenshot, onHoldingsScreenshot,
+      ocrLoading, ocrResultsOpen, ocrResults, ocrRawTexts, ocrError,
+      closeOcrResults, importOcrPositions,
       tradeBottomTab,
       symbolNames,
+      hiddenEtfs, manageOpen, toggleManage, toggleEtfHidden, isEtfVisible,
       stageBorderClass, fmtCny
     };
   }
