@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 
 const PORT = process.env.PORT || 8782;
-const API_BASE = 'http://127.0.0.1:8787';
+const API_BASE = process.env.API_TARGET || 'http://127.0.0.1:8787';
 const REAL_DATA_DIR = path.join(__dirname, '..', '..', 'data');
 const USE_DEBUG = true;
 

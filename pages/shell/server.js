@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 
 const PORT = process.env.PORT || 8780;
+const FRAME_PORT_BASE = parseInt(process.env.FRAME_PORT_BASE || '0', 10);
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -24,8 +25,15 @@ const server = http.createServer((req, res) => {
       res.end('Not Found');
       return;
     }
+    let body = data.toString('utf8');
+    if (FRAME_PORT_BASE > 0 && filePath.endsWith('.html')) {
+      body = body.replace(/8781/g, String(FRAME_PORT_BASE));
+      body = body.replace(/8782/g, String(FRAME_PORT_BASE + 1));
+      body = body.replace(/8783/g, String(FRAME_PORT_BASE + 2));
+      body = body.replace(/8784/g, String(FRAME_PORT_BASE + 3));
+    }
     res.writeHead(200, { 'Content-Type': contentType });
-    res.end(data);
+    res.end(body);
   });
 });
 

@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 const PORT = process.env.PORT || 8784;
-const API_BASE = 'http://127.0.0.1:8787';
+const API_BASE = process.env.API_TARGET || 'http://127.0.0.1:8787';
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
