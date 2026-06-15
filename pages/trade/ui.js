@@ -87,19 +87,16 @@ createApp({
       const newSymbols = [];
       const newNames = {};
       const newCategory = {};
-      const newTiers = {};
       Object.entries(apiEtfs).forEach(([name, info]) => {
         if (info.hidden) return;
         newSymbols.push(info.code);
         newNames[info.code] = name;
         newCategory[info.code] = info.category;
-        if (info.entry_tiers) newTiers[info.code] = info.entry_tiers;
       });
       if (newSymbols.length) {
         etfSymbols.value = newSymbols;
         symbolNames.value = newNames;
         etfCategoryMap.value = newCategory;
-        entryTiersMap.value = newTiers;
       }
     };
 
@@ -111,11 +108,22 @@ createApp({
           syncMapsFromApi(json.etfs);
         }
       } catch (e) { /* 使用默认值 */ }
+      fetchEntryTiers();
+    };
+
+    const fetchEntryTiers = async () => {
+      try {
+        const res = await fetch('/api/trade/entry_tiers');
+        const json = await res.json();
+        if (json && json.ok && json.tiers) {
+          entryTiersMap.value = json.tiers;
+        }
+      } catch (e) { /* keep previous */ }
     };
 
     async function fetchStageState() {
       try {
-        const r = await fetch('/api/m1/stage_state');
+        const r = await fetch('/api/trade/stage_snapshot');
         const json = await r.json();
         if (json.ok && json.data) {
           stageMap.value = json.data.stages || {};

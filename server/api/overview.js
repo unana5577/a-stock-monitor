@@ -684,19 +684,9 @@ module.exports = function() {
     return true;
   }
 
-  // ── /api/m1/stage_state — 五阶段策略实时状态 (V3: 优先读快照) ──
+  // ── /api/m1/stage_state — 五阶段策略实时状态 (V2) ──
   if (url.pathname === '/api/m1/stage_state' && req.method === 'GET') {
     try {
-      const snapshotPath = path.resolve(__dirname, '..', 'data', 'stage', 'snapshot.json');
-      if (fs.existsSync(snapshotPath)) {
-        const raw = fs.readFileSync(snapshotPath, 'utf-8');
-        const snapshot = JSON.parse(raw);
-        res.setHeader('Content-Type', 'application/json; charset=utf-8');
-        res.end(JSON.stringify({ ok: true, data: snapshot }));
-        return true;
-      }
-
-      // 降级: execFile
       const day = url.searchParams.get('day') || 'today';
       const syms = url.searchParams.get('symbols') || '';
       const args = ['波段策略/stage_runner.py', '--day', day];
@@ -707,7 +697,7 @@ module.exports = function() {
           res.statusCode = 500;
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
           res.end(JSON.stringify({ ok: false, error: String(stderr || err.message) }));
-          return;
+          return true;
         }
         try {
           const data = JSON.parse(stdout.trim());

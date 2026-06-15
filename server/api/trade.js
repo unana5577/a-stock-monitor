@@ -74,6 +74,71 @@ module.exports = function() {
       }
     }
 
+    // GET /api/trade/entry_tiers — 返回每只ETF的分批挂单价
+    if (url.pathname === '/api/trade/entry_tiers' && req.method === 'GET') {
+      try {
+        const cfg = readSectorProxyConfig();
+        const tiers = {};
+        if (cfg.variants && cfg.variants.etf) {
+          Object.entries(cfg.variants.etf).forEach(([name, code]) => {
+            const meta = (cfg.etf_meta && cfg.etf_meta[name]) || {};
+            if (meta.entry_tiers) {
+              tiers[code] = meta.entry_tiers;
+            }
+          });
+        }
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.end(JSON.stringify({ ok: true, tiers }));
+        return true;
+      } catch (e) {
+        res.statusCode = 500;
+        res.end(JSON.stringify({ ok: false, error: e.message }));
+        return true;
+      }
+    }
+
+    // GET /api/trade/stage_snapshot — 读阶段快照(优先, ~5ms); fallback 到 stage_state
+    if (url.pathname === '/api/trade/stage_snapshot' && req.method === 'GET') {
+      try {
+        const sp = path.resolve(__dirname, '..', 'data', 'stage', 'snapshot.json');
+        if (fs.existsSync(sp)) {
+          const data = JSON.parse(fs.readFileSync(sp, 'utf-8'));
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          res.end(JSON.stringify({ ok: true, data }));
+          return true;
+        }
+
+        // fallback: execFile stage_runner
+        const day = url.searchParams.get('day') || 'today';
+        const syms = url.searchParams.get('symbols') || '';
+        const args = ['波段策略/stage_runner.py', '--day', day];
+        if (syms) args.push('--symbols', syms);
+        execFile('python3', args, {
+          cwd: path.resolve(__dirname, '../..'), timeout: 15000, maxBuffer: 1024 * 1024
+        }, (err, stdout, stderr) => {
+          if (err) {
+            res.statusCode = 500;
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.end(JSON.stringify({ ok: false, error: String(stderr || err.message) }));
+            return;
+          }
+          try {
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.end(JSON.stringify({ ok: true, data: JSON.parse(stdout.trim()) }));
+          } catch (e) {
+            res.statusCode = 500;
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.end(JSON.stringify({ ok: false, error: 'parse error' }));
+          }
+        });
+        return true;
+      } catch (e) {
+        res.statusCode = 500;
+        res.end(JSON.stringify({ ok: false, error: e.message }));
+        return true;
+      }
+    }
+
     return false;
   };
   return handleRoute;
