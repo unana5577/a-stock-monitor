@@ -3,7 +3,7 @@ const fs = require('fs')
 const path = require('path')
 const { execFile } = require('child_process')
 
-const PORT = 8783
+const PORT = process.env.PORT || 8783
 const API_HOST = process.env.API_TARGET || 'http://127.0.0.1:8787'
 const ROOT = path.resolve(__dirname, '../..')
 
