@@ -97,6 +97,9 @@ def compute_snapshot(symbol: str, target_day: str) -> dict:
     row = rows[idx]
     stage, diag = detect_stage(rows, idx)
 
+    recent_stages = [detect_stage(rows, i)[0] for i in range(max(0, idx - 9), idx + 1)]
+    was_uptrend = "主升" in recent_stages
+
     last90 = rows[max(0, idx - 89):idx + 1]
     highs = [r.get("high", r["close"]) for r in last90]
     lows = [r.get("low", r["close"]) for r in last90]
@@ -136,6 +139,7 @@ def compute_snapshot(symbol: str, target_day: str) -> dict:
         "amount_ratio": amount_ratio,
         "high_90d": round(max_high, 4),
         "low_90d": round(min_low, 4),
+        "was_uptrend": was_uptrend,
     }
 
 

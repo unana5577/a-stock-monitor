@@ -123,8 +123,8 @@ def detect_stage(rows: List[dict], idx: int) -> Tuple[str, dict]:
     if c > m20 and m20_slope is not None and m20_slope > 0:
         return STAGE_STARTUP, diag
 
-    # S4: 下跌 — 趋势转弱预警 (close<MA20 且 斜率<0 但 MA20>MA60, 还没死叉)
-    if c < m20 and m20_slope is not None and m20_slope < 0 and m20 > m60:
+    # S4: 下跌 — 趋势明显转弱 (close<MA20 且 斜率<-0.5 但 MA20>MA60, 还没死叉)
+    if c < m20 and m20_slope is not None and m20_slope < -0.5 and m20 > m60:
         return STAGE_DECLINING, diag
 
     # S5: 震荡 — MA20附近横盘 或 斜率近零

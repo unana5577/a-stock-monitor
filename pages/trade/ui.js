@@ -1,6 +1,7 @@
 const { createApp, ref, computed, watch, onMounted, onUnmounted } = Vue;
 
-const STAGE_TARGET = { '主升': 0.80, '震荡': 0.70, '启动': 0.30, '下跌': 0.00, '防守': 0.00 };
+const STAGE_TARGET = { '主升': 0.80, '启动': 0.30, '震荡': 0.00, '下跌': 0.00, '防守': 0.00 };
+const RETRACE_TARGET = { '主升': 0.80, '启动': 0.30, '震荡': 0.20, '下跌': 0.20, '防守': 0.00 };
 const STAGE_STOP  = { '主升': 0.90, '震荡': 0.92, '启动': 0.95, '下跌': 0.92, '防守': 1.0 };
 
 const SIM_KEY = 'm1_sim_account_v1';
@@ -329,7 +330,11 @@ createApp({
       if (!syms.length) return [];
 
       // 只算有目标仓位的 ETF，按目标比例分配
-      const totalTarget = syms.reduce((sum, sym) => sum + (STAGE_TARGET[sm[sym].stage] || 0), 0);
+      const getTarget = (s) => {
+        if (s.was_uptrend) return RETRACE_TARGET[s.stage] || 0;
+        return STAGE_TARGET[s.stage] || 0;
+      };
+      const totalTarget = syms.reduce((sum, sym) => sum + getTarget(sm[sym]), 0);
       const allocDenom = totalTarget > 0 ? totalTarget : syms.length;
 
       const suggestions = [];
@@ -338,8 +343,8 @@ createApp({
         const s = sm[sym];
         const cheapPrice = s.close || 0;
         if (!cheapPrice) return;
-        const targetPct = STAGE_TARGET[s.stage] || 0;
-        if (targetPct <= 0) return; // 防守 0% → 不参与建议
+        const targetPct = getTarget(s);
+        if (targetPct <= 0) return;
         const targetW = targetPct / allocDenom;
         const targetVal = targetW * equity;
         const pos = simState.value.positions?.[sym] || {};
@@ -401,7 +406,8 @@ createApp({
         const curW = equity > 0 ? curVal / equity : 0;
         const avgPrice = Number(pos.avgPrice || 0);
 
-        const targetPct = STAGE_TARGET[stage] || 0.50;
+        const targetMap = s.was_uptrend ? RETRACE_TARGET : STAGE_TARGET;
+        const targetPct = targetMap[stage] || 0;
         const targetShares = price > 0 ? Math.floor(budgetPer() * targetPct / price / 100) * 100 : 0;
 
         const executed = execMap[sym];
@@ -414,7 +420,7 @@ createApp({
         return {
           symbol: sym, name: symbolNames.value[sym] || sym,
           category: etfCategoryMap.value[sym] || '未分类', _stage: stage,
-          stage_icon: s.stage_icon || '', triggerDetail: stageTriggers(s),
+          stage_icon: s.stage_icon || '', triggerDetail: (s.was_uptrend && stage !== '主升' ? '📈主线回调 · ' : '') + stageTriggers(s),
           curShares, curVal, curWeight: curW,
           targetPct, targetShares, targetVal: targetShares * price,
           action, tradeShares: sugg ? sugg.tradeShares : 0,
