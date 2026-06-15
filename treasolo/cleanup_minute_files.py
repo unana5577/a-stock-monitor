@@ -24,19 +24,14 @@ def cleanup_directory(base_dir: Path, keep_days: int, apply: bool) -> tuple[int,
         if not code_dir.is_dir():
             continue
             
-        # 收集所有的 .jsonl 日期文件
         files = list(code_dir.glob("*.jsonl"))
-        
-        # 按文件名（即日期，如 2026-04-17.jsonl）倒序排列
         files.sort(key=lambda f: f.name, reverse=True)
         
-        # 保留前 keep_days 个
         files_to_keep = files[:keep_days]
         files_to_delete = files[keep_days:]
         
         kept_files += len(files_to_keep)
         
-        # 记录保留下来的最老的一天（文件名的前10个字符 YYYY-MM-DD）
         if len(files_to_keep) > 0:
             current_oldest = files_to_keep[-1].name[:10]
             if not oldest_kept_date or current_oldest < oldest_kept_date:
@@ -48,7 +43,6 @@ def cleanup_directory(base_dir: Path, keep_days: int, apply: bool) -> tuple[int,
             print(f"  [{'DELETED' if apply else 'DRY-RUN'}] {f.relative_to(PROJECT_ROOT)}")
             deleted_files += 1
 
-        # 如果目录被清空了，顺手删除空目录
         if apply and not any(code_dir.iterdir()):
             code_dir.rmdir()
             print(f"  [{'DELETED' if apply else 'DRY-RUN'}] Empty directory {code_dir.relative_to(PROJECT_ROOT)}")
@@ -113,6 +107,36 @@ def cleanup_lifecycle_history(keep_days: int, apply: bool) -> int:
     return deleted
 
 
+def cleanup_flat_minute_files(keep_days: int, apply: bool) -> int:
+    """清理 data/ 根目录旧的扁平分钟线文件 `minute-YYYYMMDD-code.jsonl`"""
+    base = PROJECT_ROOT / "data"
+    print(f"\n> 扫描旧版 Flat 分钟线文件: {base.relative_to(PROJECT_ROOT)}")
+    if not base.exists():
+        return 0
+    files = list(base.glob("minute-*.jsonl"))
+    files = [f for f in files if len(f.stem) >= len("minute-20260508") and f.stem.startswith("minute-")]
+    files.sort(key=lambda f: f.name, reverse=True)
+
+    seen_dates: set[str] = set()
+    for f in files:
+        parts = f.stem.split("-")
+        if len(parts) >= 2:
+            seen_dates.add(parts[1])
+
+    allowed_dates = sorted(seen_dates, reverse=True)[:keep_days]
+    deleted = 0
+    for f in files:
+        parts = f.stem.split("-")
+        date_part = parts[1] if len(parts) >= 2 else ""
+        if date_part not in allowed_dates:
+            if apply:
+                f.unlink()
+            print(f"  [{'DELETED' if apply else 'DRY-RUN'}] {f.relative_to(PROJECT_ROOT)}")
+            deleted += 1
+    print(f"  => 完毕。保留了 {len(allowed_dates)} 个日期组，清理了 {deleted} 个文件。保留日期: {', '.join(sorted(allowed_dates))}")
+    return deleted
+
+
 def cleanup_archive_history(keep_days: int, apply: bool) -> int:
     base = PROJECT_ROOT / "data"
     print(f"\n> 扫描 Archive 历史目录: {base.relative_to(PROJECT_ROOT)}")
@@ -139,7 +163,6 @@ def reset_breadth_cache(apply: bool) -> bool:
         return False
         
     if apply:
-        # 可以选择备份，但根据需求，我们直接清空即可
         cache_file.write_text("", encoding="utf-8")
         print(f"  [{'RESET' if apply else 'DRY-RUN'}] {cache_file.relative_to(PROJECT_ROOT)} (File emptied)")
     else:
@@ -152,7 +175,6 @@ def truncate_ai_logs(keep_days: int, apply: bool) -> int:
     import json
     from datetime import datetime, timedelta
     
-    # 计算 N 天前的日期阈值（比如今天减去 keep_days）
     cutoff_date = (datetime.now() - timedelta(days=keep_days)).strftime("%Y-%m-%d")
     
     ai_dir = PROJECT_ROOT / "data" / "market" / "ai"
@@ -176,11 +198,9 @@ def truncate_ai_logs(keep_days: int, apply: bool) -> int:
             for line in lines:
                 try:
                     data = json.loads(line)
-                    # 只要该行的 date 大于或等于 cutoff_date，就保留
                     if data.get("date", "") >= cutoff_date:
                         kept_lines.append(line)
                 except:
-                    # 解析失败的行安全起见保留
                     kept_lines.append(line)
                     
             if len(kept_lines) < len(lines):
@@ -232,8 +252,6 @@ def main() -> int:
     # 4. 清理全市场成交额分时
     market_amount_minute_dir = PROJECT_ROOT / "data" / "market" / "minute" / "amount"
     print(f"\n> 扫描 Market Amount 分时目录: {market_amount_minute_dir.relative_to(PROJECT_ROOT)}")
-    # market amount doesn't have symbol subdirs, files are directly in amount/
-    # So we need a special handling or fake a symbol dir
     if market_amount_minute_dir.exists():
         files = list(market_amount_minute_dir.glob("*.jsonl"))
         files.sort(key=lambda f: f.name, reverse=True)
@@ -264,6 +282,9 @@ def main() -> int:
     total_deleted += cleanup_warmup_history(args.keep_days, args.apply)
     total_deleted += cleanup_lifecycle_history(args.keep_days, args.apply)
     total_deleted += cleanup_archive_history(args.keep_days, args.apply)
+
+    # 8. 清理旧版 Flat 分钟线文件
+    total_deleted += cleanup_flat_minute_files(args.keep_days, args.apply)
 
     print(f"\n🎉 任务结束。共处理 (删除/清空/截断) {total_deleted} 个目标。")
     return 0
