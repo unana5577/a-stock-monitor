@@ -1,6 +1,6 @@
 const { createApp, ref, computed, watch, onMounted, onUnmounted } = Vue;
 
-const STAGE_TARGET = { '主升': 0.80, '震荡': 0.70, '启动': 0.30, '下跌': 0.30, '防守': 0.00 };
+const STAGE_TARGET = { '主升': 0.80, '震荡': 0.70, '启动': 0.30, '下跌': 0.00, '防守': 0.00 };
 const STAGE_STOP  = { '主升': 0.90, '震荡': 0.92, '启动': 0.95, '下跌': 0.92, '防守': 1.0 };
 
 const SIM_KEY = 'm1_sim_account_v1';
