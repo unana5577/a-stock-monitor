@@ -198,7 +198,53 @@ server/
 
 **禁止**：文档散落在 `.trae/documents/` 根目录；旧的不合规文档应在 git commit 后移到对应板块文件夹。
 
-### 四、Git & Agent 行为约束
+### 四、数据管理规范（本地开发与线上隔离）
+
+> 目标：本地 `data/` 和线上 `data/` 命名完全一致，代码无需改路径；数据单向从服务器拉取，绝不从本地推到线上。
+
+#### 1. 本地数据同步（唯一命令，任何人照此执行）
+```bash
+rsync -avz --exclude='runtime/' stock-server:/opt/a-stock-monitor/data/ ./data/
+```
+- 本地 `data/` 就是线上 `data/` 的完整镜像
+- 本地代码读写 `data/` 路径和线上完全相同，无需任何环境变量或路径判断
+
+#### 2. 部署时排除 data/（强制）
+- 部署脚本（rsync 到服务器、Docker build）必须包含 `--exclude 'data/'`
+- 本地 `data/` 永远不覆盖线上 `data/`
+- 线上 `data/` 的唯一写入者是 n8n 工作流（`treasolo/` Python 脚本）
+
+#### 3. Agent 新增文件落盘规范
+
+**所有 Agent 产生的新数据文件，必须遵循线上目录结构，路径从项目根开始：**
+
+| 数据类型 | 路径 | 命名规则 |
+|----------|------|----------|
+| 大盘分钟线 | `data/index/minute/{symbol}/{YYYY-MM-DD}.jsonl` | symbol 用 sh/sz 前缀全码 |
+| 大盘日线 | `data/index/daily/{symbol}/daily.jsonl` | 同上 |
+| ETF 分钟线 | `data/etf/minute/{symbol}/{YYYY-MM-DD}.jsonl` | symbol 用 sh/sz 前缀全码 |
+| ETF 日线 | `data/etf/daily/{symbol}/daily.jsonl` | 同上 |
+| 板块分钟线 | `data/sector/minute/{sector}/{YYYY-MM-DD}.jsonl` | sector 用小写英文 |
+| 市场成交额 | `data/market/minute/amount/{YYYY-MM-DD}.jsonl` | 日期格式 |
+| 涨跌家数 | `data/market/minute/breadth-cache.jsonl` + `data/market/breadth-cache.json` | 固定路径 |
+| AI 输出 | `data/market/ai/{report\|etf_report\|snapshot}.jsonl` | 固定路径 |
+| 板块生命周期 | `data/lifecycle/lifecycle-{YYYY-MM-DD}.json` | 日期格式 |
+| Warmup 缓存 | `data/warmup/warmup-{YYYY-MM-DD}-60.json` + `data/warmup/warmup-60.json` | 日期格式 |
+| Archive 快照 | `data/archive-{YYYYMMDD}.jsonl` | 8位紧凑日期 |
+| Overview 缓存 | `data/overview-history-{YYYYMMDD}.json` | 8位紧凑日期 |
+| 交易日历 | `data/calendar.json` | 固定路径 |
+
+**禁止**：
+- 不得在 `data/` 根目录创建新的扁平文件（如 `data/minute-*.jsonl` 旧格式）
+- 不得在 `data/` 下创建与 n8n 工作流规范不一致的自定义子目录
+- 不得在 Python 脚本或 Node.js 代码中写死 `.env` 里的绝对路径
+
+#### 4. 在线备份目录
+- `online_debug_data/` 下的日期文件夹是线上数据快照，用于紧急回滚
+- **git 不 track 此目录**，不 commit，不 push
+- 只在用户明确要求时，从服务器 rsync 到此目录
+
+### 五、Git & Agent 行为约束
 
 - **Git 执行约束**：本地测试好后，待用户明确确认并发出 "git" 命令时，才允许执行 git 相关操作进行提交与推送，严禁擅自提前 commit 或 push。
 - **Agent 防死循环强制约束**：在处理任务时，如果遇到报错、未找到预期代码或方案不通等情况，**最多只能进行 3 次内部循环重试/排查**。如果 3 次尝试后仍未解决，必须立即中止工具调用，并向用户如实汇报当前的卡点与发现，严禁在后台无限尝试。
