@@ -81,20 +81,25 @@ createApp({
     const symbolNames = ref({...DEFAULT_SYMBOL_NAMES});
     const etfCategoryMap = ref({...DEFAULT_ETF_CATEGORY});
 
+    const entryTiersMap = ref({});
+
     const syncMapsFromApi = (apiEtfs) => {
       const newSymbols = [];
       const newNames = {};
       const newCategory = {};
+      const newTiers = {};
       Object.entries(apiEtfs).forEach(([name, info]) => {
         if (info.hidden) return;
         newSymbols.push(info.code);
         newNames[info.code] = name;
         newCategory[info.code] = info.category;
+        if (info.entry_tiers) newTiers[info.code] = info.entry_tiers;
       });
       if (newSymbols.length) {
         etfSymbols.value = newSymbols;
         symbolNames.value = newNames;
         etfCategoryMap.value = newCategory;
+        entryTiersMap.value = newTiers;
       }
     };
 
@@ -248,6 +253,7 @@ createApp({
 
     const getLastPrice = (sym) => {
       const s = (stageMap.value || {})[sym];
+      if (s && Number.isFinite(s.minute_price) && s.minute_price > 0) return s.minute_price;
       if (s && Number.isFinite(s.close) && s.close > 0) return s.close;
       return null;
     };
@@ -416,6 +422,7 @@ createApp({
         const action = executed ? '已执行' : (sugg ? (sugg.action === 'BUY' ? '买入' : '卖出') : (isDefense ? '回避' : '不动'));
         const execLabel = executed ? ('✓ ' + executed.shares + '股@' + executed.price.toFixed(3)) : '';
         const stopPrice = sugg ? sugg.stopPrice : fmtStopPrice(stage, price, avgPrice);
+        const tiers = entryTiersMap.value[sym] || null;
 
         return {
           symbol: sym, name: symbolNames.value[sym] || sym,
@@ -427,7 +434,8 @@ createApp({
           tradePrice: sugg ? sugg.tradePrice : price,
           tradeNotional: sugg ? sugg.notional : 0,
           stopPrice, selectable, executed, execLabel,
-          reason: sugg ? sugg.reason : (stage !== '—' ? `${s.stage_icon} ${stage}` : '等待阶段数据')
+          reason: sugg ? sugg.reason : (stage !== '—' ? `${s.stage_icon} ${stage}` : '等待阶段数据'),
+          entryTiers: tiers,
         };
       }).sort((a, b) => {
         const order = { '主升': 0, '启动': 1, '震荡': 2, '下跌': 3, '防守': 4, '—': 5 };

@@ -1,9 +1,11 @@
 const http = require('http')
 const fs = require('fs')
 const path = require('path')
+const { execFile } = require('child_process')
 
 const PORT = 8783
 const API_HOST = 'http://127.0.0.1:8787'
+const ROOT = path.resolve(__dirname, '../..')
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -40,7 +42,7 @@ function proxyToAPI(req, res) {
   proxy.on('error', () => {
     res.statusCode = 502
     res.setHeader('Content-Type', 'application/json; charset=utf-8')
-    res.end(JSON.stringify({ ok: false, error: 'API unreachable (is :8788 running?)' }))
+    res.end(JSON.stringify({ ok: false, error: 'API unreachable (is :8787 running?)' }))
   })
   req.pipe(proxy)
 }
@@ -65,4 +67,15 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, () => {
   console.log(`五阶段策略前端 → http://0.0.0.0:${PORT} (API → ${API_HOST})`)
+
+  // 盘中快照定时器(每5分钟): 上线后可改为 n8n 工作流 1-M-Stage-Snapshot
+  const runSnapshot = () => {
+    execFile('python3', ['波段策略/stage_runner.py', '--use-minute', '--output-snapshot'], {
+      cwd: ROOT, timeout: 20000
+    }, (err, stdout, stderr) => {
+      if (err) console.error('[stage-snapshot]', String(stderr || err.message).slice(0, 100))
+    })
+  }
+  runSnapshot()
+  setInterval(runSnapshot, 5 * 60 * 1000)
 })

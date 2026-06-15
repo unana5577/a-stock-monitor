@@ -173,6 +173,7 @@
             <th class="text-right py-2 pr-2 font-medium w-28">现持仓</th>
             <th class="text-right py-2 pr-2 font-medium w-28">目标仓位</th>
             <th class="text-left py-2 pr-2 font-medium w-44">建议操作</th>
+            <th class="text-left py-2 pr-2 font-medium w-44">挂单参考</th>
             <th class="text-right py-2 pr-2 font-medium w-20">止损价</th>
             <th class="text-right py-2 pr-0 font-medium w-24">执行</th>
           </tr>
@@ -213,6 +214,17 @@
               <div v-else-if="r.action==='不动'" class="text-gray-400 text-[11px]">不动</div>
               <div v-else-if="r.action==='回避'" class="text-orange-500 text-[11px] font-medium">回避</div>
               <div v-else class="text-gray-400 text-[11px]">—</div>
+            </td>
+            <td class="py-2 pr-3 text-[11px]">
+              <div v-if="r.entryTiers&&r.entryTiers.length" class="space-y-0.5">
+                <div v-for="t in r.entryTiers" :key="t.label" class="flex items-center gap-1">
+                  <span class="text-gray-400 w-6 text-right">{{ t.pct }}%</span>
+                  <span v-if="t.price" class="font-mono text-gray-700">¥{{ t.price.toFixed(3) }}</span>
+                  <span v-else class="text-gray-400 italic text-[10px]">{{ t.label }}</span>
+                  <span class="text-[9px] text-gray-400">({{ t.label }})</span>
+                </div>
+              </div>
+              <div v-else class="text-gray-300">—</div>
             </td>
             <td class="py-2 pr-2 text-right text-xs">
               <span v-if="r.stopPrice&&r.stopPrice!=='—'" class="font-mono text-gray-600">{{ r.stopPrice }}</span>
@@ -496,6 +508,6 @@
 
 </div>
 
-<script src="./ui.js?v=20260615_3"></script>
+<script src="./ui.js?v=20260615_4"></script>
 </body>
 </html>

@@ -1,13 +1,19 @@
 """
-五阶段策略实时引擎 (V2)
+五阶段策略实时引擎 (V3)
 =======================
-被 server.js 通过 execFile 调用, 计算指定日每只ETF的阶段 + V2校准数据。
-
-用法: python3 波段策略/stage_runner.py [--day YYYY-MM-DD] [--symbols s1,s2,...]
-输出: JSON (stdout)
+用法:
+  python3 波段策略/stage_runner.py [--day YYYY-MM-DD] [--symbols s1,s2,...] [--use-minute] [--output-snapshot]
+  
+  --use-minute: 盘中读取分钟线最新价拼入日线, 输出 minute_price 字段
+  --output-snapshot: 将结果写入 data/stage/snapshot.json (不输出 stdout)
+  
+  典型调用:
+    n8n 定时: python3 ... --use-minute --output-snapshot
+    API 实时: python3 ... --day today (stdout, 不读分钟线)
 """
 import json, os, sys, argparse
-from typing import Dict, List
+from datetime import datetime, timezone, timedelta
+from typing import Dict, List, Optional
 
 DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(DIR)
@@ -82,10 +88,51 @@ def read_daily(symbol: str) -> List[dict]:
     return rows
 
 
-def compute_snapshot(symbol: str, target_day: str) -> dict:
+def read_minute_today(symbol: str, target_day: str) -> List[dict]:
+    path = os.path.join(ROOT, "data", "etf", "minute", symbol, f"{target_day}.jsonl")
+    if not os.path.exists(path):
+        return []
+    rows = []
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rows.append(json.loads(line))
+            except Exception:
+                pass
+    return rows
+
+
+def compute_snapshot(symbol: str, target_day: str, use_minute: bool = False) -> dict:
     rows = read_daily(symbol)
     if not rows:
         return {"symbol": symbol, "error": "no data"}
+
+    minute_price = None
+    minute_pct = None
+    minute_as_of = None
+
+    if use_minute:
+        minute_rows = read_minute_today(symbol, target_day)
+        if minute_rows:
+            latest = minute_rows[-1]
+            minute_price = round(latest.get("price", 0), 4)
+            minute_pct = round(latest.get("pct", 0), 2)
+            minute_as_of = latest.get("asOf", latest.get("time", "")[-8:]) if latest.get("time") else ""
+
+            live_row = {
+                "date": target_day,
+                "close": minute_price,
+                "open": latest.get("open", minute_price),
+                "high": latest.get("high", minute_price),
+                "low": latest.get("low", minute_price),
+                "amount": sum(m.get("amount", 0) or 0 for m in minute_rows),
+                "vol": sum(m.get("vol", 0) or 0 for m in minute_rows),
+                "pct": minute_pct,
+            }
+            rows = rows + [live_row]
 
     days = [r["date"] for r in rows]
     if target_day not in days:
@@ -142,6 +189,9 @@ def compute_snapshot(symbol: str, target_day: str) -> dict:
         "high_90d": round(max_high, 4),
         "low_90d": round(min_low, 4),
         "was_uptrend": is_main_line,
+        "minute_price": minute_price,
+        "minute_pct": minute_pct,
+        "minute_as_of": minute_as_of,
     }
 
 
@@ -149,6 +199,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--day", default="today")
     parser.add_argument("--symbols", default="")
+    parser.add_argument("--use-minute", action="store_true")
+    parser.add_argument("--output-snapshot", action="store_true")
     args = parser.parse_args()
 
     if args.symbols:
@@ -157,7 +209,6 @@ def main():
         symbols = DYNAMIC_SYMBOLS
 
     if args.day == "today":
-        from datetime import datetime, timezone, timedelta
         tz = timezone(timedelta(hours=8))
         target_day = datetime.now(tz).strftime("%Y-%m-%d")
     else:
@@ -165,13 +216,22 @@ def main():
 
     stages = {}
     for sym in symbols:
-        stages[sym] = compute_snapshot(sym, target_day)
+        stages[sym] = compute_snapshot(sym, target_day, use_minute=args.use_minute)
 
     result = {
         "day": target_day,
         "stages": stages,
         "symbol_count": len(symbols),
+        "as_of": datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M:%S"),
     }
+
+    if args.output_snapshot:
+        out_dir = os.path.join(ROOT, "data", "stage")
+        os.makedirs(out_dir, exist_ok=True)
+        out_path = os.path.join(out_dir, "snapshot.json")
+        with open(out_path, "w") as f:
+            json.dump(result, f, ensure_ascii=False)
+        return
 
     print(json.dumps(result, ensure_ascii=False))
 

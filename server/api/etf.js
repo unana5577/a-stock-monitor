@@ -25,7 +25,8 @@ module.exports = function() {
             code,
             category: meta.category || '科技',
             sub_category: meta.sub_category || '硬件',
-            hidden: meta.hidden === true
+            hidden: meta.hidden === true,
+            entry_tiers: meta.entry_tiers || null
           };
         });
       }

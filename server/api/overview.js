@@ -91,7 +91,7 @@ module.exports = function() {
       
       // 如果分时缓存被清空（例如盘后），则尝试读取快照兜底
       if (data.length === 0) {
-        const latest = loadLatestBreadthRecord() || loadBreadthFromArchive(latestTradingDay());
+        const latest = loadLatestBreadthRecord();
         if (latest && typeof latest.upCount === 'number') {
           data.push({
              ok: true,
@@ -684,9 +684,19 @@ module.exports = function() {
     return true;
   }
 
-  // ── /api/m1/stage_state — 五阶段策略实时状态 (V2) ──
+  // ── /api/m1/stage_state — 五阶段策略实时状态 (V3: 优先读快照) ──
   if (url.pathname === '/api/m1/stage_state' && req.method === 'GET') {
     try {
+      const snapshotPath = path.resolve(__dirname, '..', 'data', 'stage', 'snapshot.json');
+      if (fs.existsSync(snapshotPath)) {
+        const raw = fs.readFileSync(snapshotPath, 'utf-8');
+        const snapshot = JSON.parse(raw);
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.end(JSON.stringify({ ok: true, data: snapshot }));
+        return true;
+      }
+
+      // 降级: execFile
       const day = url.searchParams.get('day') || 'today';
       const syms = url.searchParams.get('symbols') || '';
       const args = ['波段策略/stage_runner.py', '--day', day];
@@ -697,7 +707,7 @@ module.exports = function() {
           res.statusCode = 500;
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
           res.end(JSON.stringify({ ok: false, error: String(stderr || err.message) }));
-          return true;
+          return;
         }
         try {
           const data = JSON.parse(stdout.trim());
