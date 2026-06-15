@@ -187,9 +187,9 @@
           </div>
         </div>
         <div v-if="activeLifecycleTab === 'intraday' || activeLifecycleTab === 'after'" class="space-y-8">
-          <div>
+          <div v-if="etfLifecycleSell && etfLifecycleSell.length > 0">
             <div class="flex items-center gap-2 mb-3"><div class="w-1.5 h-4 bg-red-500 rounded-sm"></div><h3 class="text-xs font-bold text-red-700 uppercase tracking-widest">强势 / 高风险 (Sell/Risk)</h3><span class="text-[10px] bg-red-50 text-red-600 px-1.5 rounded-full font-mono">{{ etfLifecycleSell.length }}</span></div>
-            <div v-if="etfLifecycleSell && etfLifecycleSell.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               <div v-for="item in etfLifecycleSell" :key="item.symbol" class="border rounded-lg p-2 hover:shadow-sm transition-all relative overflow-hidden group bg-white">
                 <div class="absolute top-0 left-0 right-0 h-[3px] bg-red-500"></div>
                 <div class="flex items-center justify-between mt-1 mb-2">
@@ -210,9 +210,9 @@
             </div>
             <div v-else class="text-xs text-gray-400 py-1 italic">暂无数据</div>
           </div>
-          <div>
+          <div v-if="etfLifecycleHold && etfLifecycleHold.length > 0">
             <div class="flex items-center gap-2 mb-3"><div class="w-1.5 h-4 bg-green-500 rounded-sm"></div><h3 class="text-xs font-bold text-green-700 uppercase tracking-widest">趋势向上 / 风险可控 (Buy/Hold)</h3><span class="text-[10px] bg-green-50 text-green-600 px-1.5 rounded-full font-mono">{{ etfLifecycleHold.length }}</span></div>
-            <div v-if="etfLifecycleHold && etfLifecycleHold.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               <div v-for="item in etfLifecycleHold" :key="item.symbol" class="border rounded-lg p-2 hover:shadow-sm transition-all relative overflow-hidden group bg-white">
                 <div class="absolute top-0 left-0 right-0 h-[3px] bg-green-500"></div>
                 <div class="flex items-center justify-between mt-1 mb-2">
@@ -233,9 +233,9 @@
             </div>
             <div v-else class="text-xs text-gray-400 py-1 italic">暂无数据</div>
           </div>
-          <div>
+          <div v-if="etfLifecycleWait && etfLifecycleWait.length > 0">
             <div class="flex items-center gap-2 mb-3"><div class="w-1.5 h-4 bg-yellow-400 rounded-sm"></div><h3 class="text-xs font-bold text-yellow-700 uppercase tracking-widest">观望 / 回避 (Wait/Observe)</h3><span class="text-[10px] bg-yellow-50 text-yellow-600 px-1.5 rounded-full font-mono">{{ etfLifecycleWait.length }}</span></div>
-            <div v-if="etfLifecycleWait && etfLifecycleWait.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               <div v-for="item in etfLifecycleWait" :key="item.symbol" class="border rounded-lg p-2 hover:shadow-sm transition-all relative overflow-hidden group bg-white">
                 <div class="absolute top-0 left-0 right-0 h-[3px] bg-yellow-400"></div>
                 <div class="flex items-center justify-between mt-1 mb-2">
