@@ -259,15 +259,50 @@ createApp({
       }
       const ydayAvgData = new Array(240).fill(avgPerMinute);
       const option = {
-        animation: false,
-        grid: { left: 32, right: 12, top: 8, bottom: 48 },
-        xAxis: { type: 'category', data: xAxisData, axisLabel: { rotate: 90, fontSize: 9, interval: 29, color: '#A1A1AA' }, axisTick: { show: false }, axisLine: { show: false } },
-        yAxis: { type: 'value', show: true, splitLine: { lineStyle: { color: '#F4F4F5' } }, axisLabel: { fontSize: 10, formatter: '{value}亿' } },
+        tooltip: {
+          trigger: 'axis',
+          valueFormatter: (val) => val != null ? val.toFixed(2) + '亿' : '-'
+        },
+        grid: { left: 40, right: 10, top: 10, bottom: 20 },
+        xAxis: {
+          type: 'category',
+          data: xAxisData,
+          axisLabel: {
+            color: '#9CA3AF',
+            interval: (index, value) => ['09:30','10:30','11:30','13:00','14:00','15:00'].includes(value)
+          },
+          axisTick: { alignWithLabel: true }
+        },
+        yAxis: {
+          type: 'value',
+          axisLabel: { formatter: '{value}', color: '#9CA3AF' },
+          splitLine: { lineStyle: { type: 'dashed', color: '#F3F4F6' } }
+        },
         series: [
-          { name: '昨日均量', data: ydayAvgData, type: 'line', symbol: 'none', lineStyle: { type: 'dotted', color: '#D4D4D8', width: 1 }, z: 1 },
-          { name: '今日成交额/分钟', data: todayData, type: 'bar', barWidth: '99%', itemStyle: { color: '#2563EB', borderRadius: [1, 1, 0, 0] }, z: 2 }
-        ],
-        legend: { show: false }
+          {
+            name: '今日量能(分钟)',
+            data: todayData,
+            type: 'line',
+            smooth: true,
+            symbol: 'none',
+            connectNulls: true,
+            lineStyle: { color: '#3B82F6', width: 2 },
+            areaStyle: {
+              color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                { offset: 0, color: 'rgba(59, 130, 246, 0.3)' },
+                { offset: 1, color: 'rgba(59, 130, 246, 0.05)' }
+              ])
+            }
+          },
+          {
+            name: '昨日均量',
+            data: ydayAvgData,
+            type: 'line',
+            smooth: false,
+            symbol: 'none',
+            lineStyle: { color: '#9CA3AF', width: 1, type: 'dashed' }
+          }
+        ]
       };
       chart.setOption(option, true);
     };
