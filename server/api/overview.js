@@ -80,7 +80,7 @@ module.exports = function() {
   }
   if (url.pathname === '/api/m1/data/breadth' && req.method === 'GET') {
     try {
-      const breadthPath = path.join(__dirname, 'data/market/minute/breadth-cache.jsonl');
+      const breadthPath = path.join(__dirname, '..', '..', 'data/market/minute/breadth-cache.jsonl');
       let data = [];
       if (fs.existsSync(breadthPath)) {
         const lines = fs.readFileSync(breadthPath, 'utf8').trim().split('\n');
@@ -102,7 +102,7 @@ module.exports = function() {
           });
         } else {
           // fallback to old breadth-cache.json if archive not found
-          const snapPath = path.join(__dirname, 'data/market/breadth-cache.json');
+          const snapPath = path.join(__dirname, '..', '..', 'data/market/breadth-cache.json');
           if (fs.existsSync(snapPath)) {
             try {
               const snap = JSON.parse(fs.readFileSync(snapPath, 'utf8'));
@@ -133,7 +133,7 @@ module.exports = function() {
         return `${year}-${month}-${date}`;
       };
       
-      const dailyPath = path.join(__dirname, 'data/market/daily/amount/daily.jsonl');
+      const dailyPath = path.join(__dirname, '..', '..', 'data/market/daily/amount/daily.jsonl');
       const todayStr = getBeijingDate();
       const minutePath = path.join(__dirname, `data/market/minute/amount/${todayStr}.jsonl`);
       
@@ -225,13 +225,13 @@ module.exports = function() {
         }
       };
       
-      const warmupPath = path.join(__dirname, 'data/warmup/warmup-60.json');
-      const lifecyclePath = path.join(__dirname, 'data/lifecycle/lifecycle.json');
-      const dailyAmountPath = path.join(__dirname, 'data/market/daily/amount/daily.jsonl');
+      const warmupPath = path.join(__dirname, '..', '..', 'data/warmup/warmup-60.json');
+      const lifecyclePath = path.join(__dirname, '..', '..', 'data/lifecycle/lifecycle.json');
+      const dailyAmountPath = path.join(__dirname, '..', '..', 'data/market/daily/amount/daily.jsonl');
       
       const nowBj = getBeijingNow();
       const todayStr = formatDay(nowBj);
-      const intradayDir = path.join(__dirname, 'data', 'lifecycle', 'intraday');
+      const intradayDir = path.join(__dirname, '..', '..', 'data', 'lifecycle', 'intraday');
       const intradayPathToday = path.join(intradayDir, `etf_snapshot_${todayStr}.jsonl`);
 
       let warmup = null;

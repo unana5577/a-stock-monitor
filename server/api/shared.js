@@ -139,7 +139,7 @@ module.exports = function() {
     return true;
   }
   if (url.pathname === '/api/ai/sector-analysis') {
-    const aiReportPath = path.join(__dirname, 'data/market/ai/etf_report.jsonl');
+    const aiReportPath = path.join(__dirname, '..', '..', 'data/market/ai/etf_report.jsonl');
     let reportData = null;
     
     if (fs.existsSync(aiReportPath)) {
@@ -225,7 +225,7 @@ module.exports = function() {
       // 优先从ETF日线文件获取昨收价
       let prevClose = null;
       try {
-        const etfDailyFile = path.join(__dirname, 'data', 'etf_daily', `etf_${code}.jsonl`);
+        const etfDailyFile = path.join(__dirname, '..', '..', 'data', 'etf_daily', `etf_${code}.jsonl`);
         if (fs.existsSync(etfDailyFile)) {
           const content = fs.readFileSync(etfDailyFile, 'utf-8').split('\n').filter(l => l.trim());
           if (content.length >= 1) {
@@ -381,7 +381,7 @@ module.exports = function() {
       const idx = indexMap[code];
       if (idx) {
         try {
-          const file = path.join(__dirname, 'data', 'index_daily', `index_${idx}.jsonl`);
+          const file = path.join(__dirname, '..', '..', 'data', 'index_daily', `index_${idx}.jsonl`);
           if (fs.existsSync(file)) {
             const lines = fs.readFileSync(file, 'utf-8').split('\n').filter(Boolean);
             let pick = null;
@@ -1151,7 +1151,7 @@ module.exports = function() {
     const allowFetch = force || isMarketOpenNow();
     if (!allowFetch) {
       // ✅ 在检查缓存之前先检查warmup文件
-      const warmupFile = path.join(__dirname, 'data', `sector-history-warmup-60.json`);
+      const warmupFile = path.join(__dirname, '..', '..', 'data', `sector-history-warmup-60.json`);
       if (fs.existsSync(warmupFile)) {
         try {
           const txt = fs.readFileSync(warmupFile, 'utf-8');
@@ -1656,7 +1656,7 @@ module.exports = function() {
 
         if (isMarketOpen || !isAfterWarmup) {
           // 盘后模式：使用warmup的日期验证
-          const warmupPath = path.join(__dirname, 'data', 'sector-history-warmup-60.json');
+          const warmupPath = path.join(__dirname, '..', '..', 'data', 'sector-history-warmup-60.json');
           if (fs.existsSync(warmupPath)) {
             try {
               const warmupData = JSON.parse(fs.readFileSync(warmupPath, 'utf-8'));
@@ -1764,7 +1764,7 @@ module.exports = function() {
 
         if (isMarketOpen || !isAfterWarmup) {
           // 盘后模式：使用warmup的日期验证
-          const warmupPath = path.join(__dirname, 'data', 'sector-history-warmup-60.json');
+          const warmupPath = path.join(__dirname, '..', '..', 'data', 'sector-history-warmup-60.json');
           if (fs.existsSync(warmupPath)) {
             try {
               const warmupData = JSON.parse(fs.readFileSync(warmupPath, 'utf-8'));
