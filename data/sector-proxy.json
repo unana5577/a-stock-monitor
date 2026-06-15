@@ -11,8 +11,7 @@
       "有色金属": "sh512400",
       "通讯设备": "sh515880",
       "游戏": "sh516010",
-      "机器人": "sh562500",
-      "半导体设备": "sh562590"
+      "机器人": "sh562500"
     },
     "index": {
       "半导体": "sh000990",
@@ -24,23 +23,91 @@
       "通讯设备": "sh000997"
     }
   },
-  "updated_at": "2026-06-15T07:45:57.760Z",
+  "updated_at": "2026-03-09T14:20:41.271Z",
   "etf_meta": {
     "半导体": {
       "category": "科技",
-      "sub_category": "硬件"
+      "sub_category": "硬件",
+      "entry_tiers": [
+        {
+          "pct": 30,
+          "price": 2.152,
+          "label": "MA20-1%"
+        },
+        {
+          "pct": 50,
+          "price": 2.057,
+          "label": "MA20-5%"
+        },
+        {
+          "pct": 20,
+          "price": null,
+          "label": "反弹确认"
+        }
+      ]
     },
     "通讯设备": {
       "category": "科技",
-      "sub_category": "硬件"
+      "sub_category": "硬件",
+      "entry_tiers": [
+        {
+          "pct": 30,
+          "price": 1.611,
+          "label": "MA20+1%"
+        },
+        {
+          "pct": 50,
+          "price": 1.563,
+          "label": "MA20-2%"
+        },
+        {
+          "pct": 20,
+          "price": null,
+          "label": "反弹确认"
+        }
+      ]
     },
     "云计算": {
       "category": "科技",
-      "sub_category": "软件"
+      "sub_category": "软件",
+      "entry_tiers": [
+        {
+          "pct": 30,
+          "price": 1.78,
+          "label": "MA20+0%"
+        },
+        {
+          "pct": 50,
+          "price": 1.686,
+          "label": "MA20-5%"
+        },
+        {
+          "pct": 20,
+          "price": null,
+          "label": "反弹确认"
+        }
+      ]
     },
     "游戏": {
       "category": "科技",
-      "sub_category": "软件"
+      "sub_category": "软件",
+      "entry_tiers": [
+        {
+          "pct": 30,
+          "price": 1.13,
+          "label": "MA20-1%"
+        },
+        {
+          "pct": 50,
+          "price": 1.082,
+          "label": "MA20-5%"
+        },
+        {
+          "pct": 20,
+          "price": null,
+          "label": "反弹确认"
+        }
+      ]
     },
     "商业航天": {
       "category": "科技",
@@ -48,24 +115,87 @@
     },
     "机器人": {
       "category": "科技",
-      "sub_category": "新质生产力"
+      "sub_category": "新质生产力",
+      "entry_tiers": [
+        {
+          "pct": 30,
+          "price": 1.119,
+          "label": "MA20-3%"
+        },
+        {
+          "pct": 50,
+          "price": 1.073,
+          "label": "MA20-7%"
+        },
+        {
+          "pct": 20,
+          "price": null,
+          "label": "反弹确认"
+        }
+      ]
     },
     "创新药": {
       "category": "科技",
-      "sub_category": "生物科技"
+      "sub_category": "生物科技",
+      "entry_tiers": [
+        {
+          "pct": 30,
+          "price": 0.561,
+          "label": "MA20+0%"
+        },
+        {
+          "pct": 50,
+          "price": 0.533,
+          "label": "MA20-5%"
+        },
+        {
+          "pct": 20,
+          "price": null,
+          "label": "反弹确认"
+        }
+      ]
     },
     "有色金属": {
       "category": "资源",
-      "sub_category": "大宗周期"
+      "sub_category": "大宗周期",
+      "entry_tiers": [
+        {
+          "pct": 30,
+          "price": 1.955,
+          "label": "MA20-1%"
+        },
+        {
+          "pct": 50,
+          "price": 1.87,
+          "label": "MA20-5%"
+        },
+        {
+          "pct": 20,
+          "price": null,
+          "label": "反弹确认"
+        }
+      ]
     },
     "新能源": {
       "category": "资源",
-      "sub_category": "泛能源"
-    },
-    "半导体设备": {
-      "category": "科技",
-      "sub_category": "硬件",
-      "hidden": false
+      "sub_category": "泛能源",
+      "entry_tiers": [
+        {
+          "pct": 30,
+          "price": 3.049,
+          "label": "MA20-0%"
+        },
+        {
+          "pct": 50,
+          "price": 2.902,
+          "label": "MA20-5%"
+        },
+        {
+          "pct": 20,
+          "price": null,
+          "label": "反弹确认"
+        }
+      ]
     }
   }
 }

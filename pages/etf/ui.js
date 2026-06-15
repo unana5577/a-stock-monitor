@@ -425,6 +425,18 @@ createApp({
           body: JSON.stringify({ script: 'm1_minute_fetch_etf.py', symbols: code, force: true })
         });
       } catch (e) { console.warn('分时拉取触发失败', e); }
+      try {
+        await fetch(`${API_BASE}/api/m1/run`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ script: 'm1_warmup.py' })
+        });
+      } catch (e) { console.warn('warmup触发失败', e); }
+      try {
+        await fetch(`${API_BASE}/api/m1/run`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ script: 'm1_lifecycle.py' })
+        });
+      } catch (e) { console.warn('lifecycle触发失败', e); }
       setTimeout(async () => {
         try {
           const res = await fetch(`${API_BASE}/api/m1/data/minute?symbol=${code}`);
@@ -438,7 +450,7 @@ createApp({
         }
         fetchOverview(); fetchMinuteData();
         setTimeout(() => { backfillToast.show = false; }, 3000);
-      }, 15000);
+      }, 35000);
     };
 
     const closeBackfillToast = () => { backfillToast.show = false; };
