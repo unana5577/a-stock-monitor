@@ -1,7 +1,7 @@
 const { createApp, ref, computed, watch, onMounted, onUnmounted } = Vue;
 
 const STAGE_TARGET = { '主升': 0.80, '启动': 0.30, '震荡': 0.00, '下跌': 0.00, '防守': 0.00 };
-const RETRACE_TARGET = { '主升': 0.80, '启动': 0.30, '震荡': 0.20, '下跌': 0.20, '防守': 0.00 };
+const RETRACE_TARGET = { '主升': 0.80, '启动': 0.30, '震荡': 0.00, '下跌': 0.00, '防守': 0.00 };
 const STAGE_STOP  = { '主升': 0.90, '震荡': 0.92, '启动': 0.95, '下跌': 0.92, '防守': 1.0 };
 
 const SIM_KEY = 'm1_sim_account_v1';
@@ -420,7 +420,7 @@ createApp({
         return {
           symbol: sym, name: symbolNames.value[sym] || sym,
           category: etfCategoryMap.value[sym] || '未分类', _stage: stage,
-          stage_icon: s.stage_icon || '', triggerDetail: (s.was_uptrend && stage !== '主升' ? '📈主线回调 · ' : '') + stageTriggers(s),
+          stage_icon: s.stage_icon || '', triggerDetail: (s.was_uptrend && stage === '启动' ? '🔥主线回调 · ' : '') + stageTriggers(s),
           curShares, curVal, curWeight: curW,
           targetPct, targetShares, targetVal: targetShares * price,
           action, tradeShares: sugg ? sugg.tradeShares : 0,

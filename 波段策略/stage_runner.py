@@ -97,8 +97,10 @@ def compute_snapshot(symbol: str, target_day: str) -> dict:
     row = rows[idx]
     stage, diag = detect_stage(rows, idx)
 
-    recent_stages = [detect_stage(rows, i)[0] for i in range(max(0, idx - 9), idx + 1)]
-    was_uptrend = "主升" in recent_stages
+    # 主线判断: 多头排列(MA20>MA60)仍成立 — 不看阶段历史,看趋势结构
+    m20_val = diag.get("ma20")
+    m60_val = diag.get("ma60")
+    is_main_line = (m20_val is not None and m60_val is not None and m20_val > m60_val)
 
     last90 = rows[max(0, idx - 89):idx + 1]
     highs = [r.get("high", r["close"]) for r in last90]
@@ -139,7 +141,7 @@ def compute_snapshot(symbol: str, target_day: str) -> dict:
         "amount_ratio": amount_ratio,
         "high_90d": round(max_high, 4),
         "low_90d": round(min_low, 4),
-        "was_uptrend": was_uptrend,
+        "was_uptrend": is_main_line,
     }
 
 
