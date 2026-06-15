@@ -17,6 +17,25 @@ services:
     volumes:
       - ../data:/app/data
       - ../scripts/legacy:/app/scripts/legacy
+
+  app_v2:
+    build:
+      context: ../
+      dockerfile: deploy_configs/Dockerfile
+    container_name: a-stock-v2
+    restart: unless-stopped
+    ports:
+      - "8788:8788"
+    env_file:
+      - ../.env
+    environment:
+      - TZ=Asia/Shanghai
+      - NODE_ENV=production
+      - PORT=8788
+    command: ["node", "server/server.js"]
+    volumes:
+      - ../data:/app/data
+      - ../scripts/legacy:/app/scripts/legacy
 # n8n 任务调度服务
   n8n:
     image: docker.m.daocloud.io/n8nio/n8n:latest

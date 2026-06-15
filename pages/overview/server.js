@@ -15,10 +15,11 @@ const MIME = {
   '.png': 'image/png',
 };
 
-function proxyApi(req, res) {
+function proxyApi(req, res, retries = 1) {
   const url = new URL(req.url, API_BASE);
   const headers = { ...req.headers };
   delete headers.host;
+  headers['connection'] = 'close';
   const options = {
     hostname: '127.0.0.1',
     port: 8787,
@@ -32,7 +33,11 @@ function proxyApi(req, res) {
     proxyRes.pipe(res);
   });
 
-  proxy.on('error', () => {
+  proxy.on('error', (err) => {
+    if (retries > 0) {
+      proxyApi(req, res, retries - 1);
+      return;
+    }
     res.writeHead(502, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'api proxy unreachable' }));
   });
