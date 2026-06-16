@@ -663,6 +663,9 @@ module.exports = function() {
           if (data.args) args.push(...data.args);
         } else if (data.script === 'm1_etf_ai_reporter.py') {
           args = ['treasolo/m1_etf_ai_reporter.py'];
+        } else if (data.script === 'stage_runner.py') {
+          args = ['波段策略/stage_runner.py', '--use-minute', '--output-snapshot'];
+          if (data.day) args.push('--day', data.day);
         } else {
           res.statusCode = 400;
           return res.end(JSON.stringify({ error: 'unknown script' }));

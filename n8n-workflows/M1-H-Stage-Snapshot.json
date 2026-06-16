@@ -1,0 +1,59 @@
+{
+  "name": "M1-H-Stage-Snapshot",
+  "nodes": [
+    {
+      "id": "trigger",
+      "name": "每5分钟触发",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [0, 0],
+      "parameters": {
+        "rule": {
+          "interval": [
+            { "field": "minutes", "minutesInterval": 5 }
+          ]
+        }
+      }
+    },
+    {
+      "id": "manual",
+      "name": "手动触发",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 200]
+    },
+    {
+      "id": "run-snapshot",
+      "name": "生成阶段快照",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [250, 100],
+      "parameters": {
+        "method": "POST",
+        "url": "http://app:8787/api/m1/run",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"script\": \"stage_runner.py\",\n  \"day\": \"{{ $today.toFormat('yyyy-MM-dd') }}\"\n}",
+        "options": {}
+      }
+    },
+    {
+      "id": "parse",
+      "name": "输出日志",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 100],
+      "parameters": {
+        "jsCode": "return $input.all().map(item => {\n  const ok = item.json.ok;\n  const summary = ok ? 'M1-H ✅ 阶段快照已更新' : `M1-H ❌ ${item.json.stderr}`;\n  return { json: { summary } };\n});"
+      }
+    }
+  ],
+  "connections": {
+    "每5分钟触发": { "main": [ [ { "node": "生成阶段快照", "type": "main", "index": 0 } ] ] },
+    "手动触发": { "main": [ [ { "node": "生成阶段快照", "type": "main", "index": 0 } ] ] },
+    "生成阶段快照": { "main": [ [ { "node": "输出日志", "type": "main", "index": 0 } ] ] }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
