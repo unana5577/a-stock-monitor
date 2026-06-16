@@ -138,20 +138,23 @@
        ============================== -->
   <main class="flex-1 flex flex-col h-full overflow-hidden bg-q-bg">
     <div class="content-area">
-      <iframe id="frame-overview" class="active" src="http://127.0.0.1:8781" allow="clipboard-write"></iframe>
-      <iframe id="frame-etf" src="" data-src="http://127.0.0.1:8782" allow="clipboard-write"></iframe>
-      <iframe id="frame-trade" src="" data-src="http://127.0.0.1:8783" allow="clipboard-write"></iframe>
-      <iframe id="frame-astro" src="" data-src="http://127.0.0.1:8784" allow="clipboard-write"></iframe>
+      <iframe id="frame-overview" class="active" src="" allow="clipboard-write"></iframe>
+      <iframe id="frame-etf" src="" allow="clipboard-write"></iframe>
+      <iframe id="frame-trade" src="" allow="clipboard-write"></iframe>
+      <iframe id="frame-astro" src="" allow="clipboard-write"></iframe>
     </div>
   </main>
 
   <script>
+    const HOST = window.location.hostname;
+    const BASE = window.__FRAME_BASE || 8781;
     const PAGE_SRCS = {
-      overview: 'http://127.0.0.1:8781',
-      etf:      'http://127.0.0.1:8782',
-      trade:    'http://127.0.0.1:8783',
-      astro:    'http://127.0.0.1:8784'
+      overview: 'http://' + HOST + ':' + BASE,
+      etf:      'http://' + HOST + ':' + (BASE + 1),
+      trade:    'http://' + HOST + ':' + (BASE + 2),
+      astro:    'http://' + HOST + ':' + (BASE + 3)
     };
+    document.getElementById('frame-overview').src = PAGE_SRCS.overview;
 
     let active = 'overview';
 

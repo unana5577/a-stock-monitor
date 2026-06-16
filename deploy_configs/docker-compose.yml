@@ -56,6 +56,26 @@ services:
     command: ["sh", "deploy_configs/pages_entrypoint.sh"]
     volumes:
       - ../data:/app/data
+
+  pages_old:
+    build:
+      context: ../
+      dockerfile: deploy_configs/Dockerfile
+    container_name: a-stock-pages-old
+    restart: unless-stopped
+    ports:
+      - "8780:8780"
+      - "8781:8781"
+      - "8782:8782"
+      - "8783:8783"
+    env_file:
+      - ../.env
+    environment:
+      - TZ=Asia/Shanghai
+      - NODE_ENV=production
+    command: ["sh", "deploy_configs/pages_entrypoint_old.sh"]
+    volumes:
+      - ../data:/app/data
 # n8n 任务调度服务
   n8n:
     image: docker.m.daocloud.io/n8nio/n8n:latest

@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 
 const PORT = process.env.PORT || 8780;
-const FRAME_PORT_BASE = parseInt(process.env.FRAME_PORT_BASE || '0', 10);
+const FRAME_PORT_BASE = parseInt(process.env.FRAME_PORT_BASE || '8781', 10);
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -26,11 +26,8 @@ const server = http.createServer((req, res) => {
       return;
     }
     let body = data.toString('utf8');
-    if (FRAME_PORT_BASE > 0 && filePath.endsWith('.html')) {
-      body = body.replace(/8781/g, String(FRAME_PORT_BASE));
-      body = body.replace(/8782/g, String(FRAME_PORT_BASE + 1));
-      body = body.replace(/8783/g, String(FRAME_PORT_BASE + 2));
-      body = body.replace(/8784/g, String(FRAME_PORT_BASE + 3));
+    if (filePath.endsWith('.html')) {
+      body = body.replace('</head>', `<script>window.__FRAME_BASE=${FRAME_PORT_BASE}</script></head>`);
     }
     res.writeHead(200, { 'Content-Type': contentType });
     res.end(body);
@@ -38,5 +35,5 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`Shell page on http://localhost:${PORT}`);
+  console.log(`Shell page on http://localhost:${PORT} (frame_base=${FRAME_PORT_BASE})`);
 });
