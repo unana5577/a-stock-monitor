@@ -4,6 +4,9 @@ const path = require('path');
 
 const PORT = process.env.PORT || 8782;
 const API_BASE = process.env.API_TARGET || 'http://127.0.0.1:8787';
+const API_URL = new URL(API_BASE);
+const API_HOST = API_URL.hostname;
+const API_PORT = parseInt(API_URL.port, 10) || 8787;
 const REAL_DATA_DIR = path.join(__dirname, '..', '..', 'data');
 const USE_DEBUG = true;
 
@@ -62,8 +65,8 @@ function proxyApi(req, res) {
   const headers = { ...req.headers };
   delete headers.host;
   const options = {
-    hostname: '127.0.0.1',
-    port: 8787,
+    hostname: API_HOST,
+    port: API_PORT,
     path: url.pathname + url.search,
     method: req.method,
     headers,
