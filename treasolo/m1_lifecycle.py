@@ -145,6 +145,10 @@ def build_lifecycle():
             )
             # 添加额外的 symbol 标识供前端绑定
             analysis["symbol"] = symbol
+            metrics = analysis.get("指标数据", {})
+            if metrics:
+                analysis["pct"] = round(metrics.get("pct", metrics.get("Pct", 0)), 2)
+                analysis["close"] = round(metrics.get("close", 0), 2)
             results.append(analysis)
         except Exception as e:
             print(f"  ⚠️ 分析 {symbol} 失败: {e}")

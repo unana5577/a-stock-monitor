@@ -6,15 +6,16 @@ const STAGE_STOP  = { '主升': 0.90, '震荡': 0.92, '启动': 0.95, '下跌': 
 
 const SIM_KEY = 'm1_sim_account_v1';
 
-const DEFAULT_ETF_SYMBOLS = ['sh512400','sh512480','sh515120','sh515880','sh516010','sh516160','sh516510','sh562500','sh563530'];
+const DEFAULT_ETF_SYMBOLS = ['sh512400','sh512480','sh515120','sh515880','sh516010','sh516160','sh516510','sh562500','sh563530','sh511130','sh511260'];
 const DEFAULT_SYMBOL_NAMES = {
   sh512400:'有色金属ETF', sh512480:'半导体ETF', sh515120:'创新药ETF', sh515880:'通信ETF',
   sh516010:'游戏ETF',     sh516160:'新能源ETF', sh516510:'云计算ETF', sh562500:'机器人ETF',
-  sh563530:'商业航天ETF'
+  sh563530:'商业航天ETF', sh511130:'30年国债ETF', sh511260:'10年国债ETF'
 };
 const DEFAULT_ETF_CATEGORY = {
   sh512480:'科技', sh515880:'科技', sh516510:'科技', sh516010:'科技', sh563530:'科技',
-  sh562500:'科技', sh515120:'科技', sh512400:'资源', sh516160:'资源'
+  sh562500:'科技', sh515120:'科技', sh512400:'资源', sh516160:'资源',
+  sh511130:'债券', sh511260:'债券'
 };
 
 const fmtCny = (val) => {
