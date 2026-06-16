@@ -52,7 +52,7 @@ module.exports = function() {
         }
       }
       
-      const p = path.join(__dirname, `data/market/ai/report.jsonl`);
+      const p = path.join(__dirname, '..', '..', `data/market/ai/report.jsonl`);
       if (!fs.existsSync(p)) {
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         res.end(JSON.stringify({ ok: false, msg: 'no report found' }));
@@ -471,7 +471,7 @@ module.exports = function() {
         if (data.day) args.push('--day', data.day);
         if (data.steps) args.push('--steps', data.steps);
         
-        execFile('python3', args, { cwd: __dirname, timeout: 60000, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
+        execFile('python3', args, { cwd: path.join(__dirname, '..', '..'), timeout: 60000, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
           const lines = (stdout || '').trim().split('\n');
           const outRaw = lines[lines.length - 1]; // runner's last line is the JSON
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -499,7 +499,7 @@ module.exports = function() {
       res.end(JSON.stringify({ ok: false, error: 'invalid path' }));
       return true;
     }
-    const abs = path.join(__dirname, rel);
+    const abs = path.join(__dirname, '..', '..', rel);
     if (!fs.existsSync(abs)) {
       res.statusCode = 404;
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -527,7 +527,7 @@ module.exports = function() {
       res.end(JSON.stringify({ ok: false, error: 'invalid path' }));
       return true;
     }
-    const abs = path.join(__dirname, rel);
+    const abs = path.join(__dirname, '..', '..', rel);
     if (!fs.existsSync(abs)) {
       res.statusCode = 404;
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -1052,7 +1052,7 @@ module.exports = function() {
 
   if (url.pathname === '/api/sector/proxy') {
     if (req.method === 'GET') {
-      const dir = path.join(__dirname, 'data');
+      const dir = path.join(__dirname, '..', '..', 'data');
       fs.mkdirSync(dir, { recursive: true });
       let json = readJsonFileSafe(PROXY_FILE);
       if (!json || typeof json !== 'object') {
@@ -1091,7 +1091,7 @@ module.exports = function() {
       const raw = await readBody(req);
       let body = {};
       try { body = raw ? JSON.parse(raw) : {}; } catch (e) { body = {}; }
-      const dir = path.join(__dirname, 'data');
+      const dir = path.join(__dirname, '..', '..', 'data');
       fs.mkdirSync(dir, { recursive: true });
       const cur = readJsonFileSafe(PROXY_FILE) || {};
       const next = {
@@ -1119,7 +1119,7 @@ module.exports = function() {
     const raw = await readBody(req);
     let body = {};
     try { body = raw ? JSON.parse(raw) : {}; } catch (e) { body = {}; }
-    const dir = path.join(__dirname, 'data');
+    const dir = path.join(__dirname, '..', '..', 'data');
     fs.mkdirSync(dir, { recursive: true });
     const cur = readJsonFileSafe(PROXY_FILE) || {};
     const force = typeof body.force_etf === 'boolean' ? body.force_etf : true;
@@ -1812,7 +1812,7 @@ module.exports = function() {
 
   if (url.pathname === '/api/sector/lifecycle/frontend') {
     const today = new Date().toISOString().split('T')[0].replace(/-/g, '');
-    const frontendFile = path.join(__dirname, 'logs', `operation_frontend_${today}.json`);
+    const frontendFile = path.join(__dirname, '..', '..', 'logs', `operation_frontend_${today}.json`);
 
     // 尝试读取今天的文件
     if (fs.existsSync(frontendFile)) {
@@ -1823,7 +1823,7 @@ module.exports = function() {
     }
 
     // 如果今天的文件不存在，查找最新的文件
-    const logsDir = path.join(__dirname, 'logs');
+    const logsDir = path.join(__dirname, '..', '..', 'logs');
     if (fs.existsSync(logsDir)) {
       const files = fs.readdirSync(logsDir)
         .filter(f => f.startsWith('operation_frontend_') && f.endsWith('.json'))

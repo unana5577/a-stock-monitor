@@ -135,7 +135,7 @@ module.exports = function() {
       
       const dailyPath = path.join(__dirname, '..', '..', 'data/market/daily/amount/daily.jsonl');
       const todayStr = getBeijingDate();
-      const minutePath = path.join(__dirname, `data/market/minute/amount/${todayStr}.jsonl`);
+      const minutePath = path.join(__dirname, '..', '..', `data/market/minute/amount/${todayStr}.jsonl`);
       
       let dailyData = [];
       let minuteData = [];
@@ -171,7 +171,7 @@ module.exports = function() {
 
       // Read yesterday's intraday minute data for Plan B forecasting
       if (ydayStr) {
-        const ydayMinutePath = path.join(__dirname, `data/market/minute/amount/${ydayStr}.jsonl`);
+        const ydayMinutePath = path.join(__dirname, '..', '..', `data/market/minute/amount/${ydayStr}.jsonl`);
         if (fs.existsSync(ydayMinutePath)) {
           const lines = fs.readFileSync(ydayMinutePath, 'utf8').trim().split('\n');
           minuteYdayData = lines.filter(l => l).map(l => {
@@ -522,12 +522,12 @@ module.exports = function() {
     }
 
     try {
-      let minutePath = path.join(__dirname, `data/index/minute/${symbol}/${day}.jsonl`);
+      let minutePath = path.join(__dirname, '..', '..', `data/index/minute/${symbol}/${day}.jsonl`);
       if (!fs.existsSync(minutePath)) {
-        minutePath = path.join(__dirname, `data/etf/minute/${symbol}/${day}.jsonl`);
+        minutePath = path.join(__dirname, '..', '..', `data/etf/minute/${symbol}/${day}.jsonl`);
       }
       if (!fs.existsSync(minutePath) && ['bank', 'broker', 'insure'].includes(symbol)) {
-        minutePath = path.join(__dirname, `data/sector/minute/${symbol}/${day}.jsonl`);
+        minutePath = path.join(__dirname, '..', '..', `data/sector/minute/${symbol}/${day}.jsonl`);
       }
 
       let data = [];
@@ -543,15 +543,15 @@ module.exports = function() {
       }
 
       // 从 daily 数据中获取严谨的昨收价 (T-1 close)
-      let dailyPath = path.join(__dirname, `data/index/daily/${symbol}/daily.jsonl`);
+      let dailyPath = path.join(__dirname, '..', '..', `data/index/daily/${symbol}/daily.jsonl`);
       if (!fs.existsSync(dailyPath)) {
-        dailyPath = path.join(__dirname, `data/etf/daily/${symbol}/daily.jsonl`);
+        dailyPath = path.join(__dirname, '..', '..', `data/etf/daily/${symbol}/daily.jsonl`);
       }
       if (!fs.existsSync(dailyPath)) {
-        dailyPath = path.join(__dirname, `data/etf/${symbol}/daily.jsonl`);
+        dailyPath = path.join(__dirname, '..', '..', `data/etf/${symbol}/daily.jsonl`);
       }
       if (!fs.existsSync(dailyPath) && ['bank', 'broker', 'insure'].includes(symbol)) {
-        dailyPath = path.join(__dirname, `data/sector/daily/${symbol}/daily.jsonl`);
+        dailyPath = path.join(__dirname, '..', '..', `data/sector/daily/${symbol}/daily.jsonl`);
       }
 
       if (fs.existsSync(dailyPath)) {
