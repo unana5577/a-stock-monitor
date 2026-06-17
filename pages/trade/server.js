@@ -68,7 +68,7 @@ const server = http.createServer((req, res) => {
 server.listen(PORT, () => {
   console.log(`五阶段策略前端 → http://0.0.0.0:${PORT} (API → ${API_HOST})`)
 
-  // 盘中快照定时器(每5分钟): 上线后可改为 n8n 工作流 1-M-Stage-Snapshot
+  // 盘中快照定时器(每5分钟): 上线后可改为 n8n 工作流 M1-H-Stage-Snapshot
   const runSnapshot = () => {
     execFile('python3', ['波段策略/stage_runner.py', '--use-minute', '--output-snapshot'], {
       cwd: ROOT, timeout: 20000

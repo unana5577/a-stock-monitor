@@ -646,6 +646,11 @@ createApp({
 
     const closeOcrResults = () => { ocrResultsOpen.value = false; ocrResults.value = []; ocrRawTexts.value = []; };
 
+    const clearScreenshot = () => {
+      holdingsScreenshot.value = '';
+      localStorage.removeItem('sim_holdings_screenshot');
+    };
+
     const importOcrPositions = () => {
       if (!ocrResults.value.length) return;
       const nameToCode = {};
@@ -699,7 +704,7 @@ createApp({
       editPosition, addPosition, closePosEdit, confirmPosEdit, onPosEditCodeInput,
       resetSimAccount, holdingsScreenshot, onHoldingsScreenshot,
       ocrLoading, ocrResultsOpen, ocrResults, ocrRawTexts, ocrError,
-      closeOcrResults, importOcrPositions,
+      closeOcrResults, clearScreenshot, importOcrPositions,
       tradeBottomTab,
       symbolNames,
       hiddenEtfs, manageOpen, toggleManage, toggleEtfHidden, isEtfVisible,
