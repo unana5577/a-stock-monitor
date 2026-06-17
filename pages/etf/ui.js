@@ -21,19 +21,19 @@ createApp({
       'sh512400': '有色金属ETF', 'sh512480': '半导体ETF', 'sh515120': '创新药ETF',
       'sh515880': '通信ETF', 'sh516010': '游戏ETF', 'sh516160': '新能源ETF',
       'sh516510': '云计算ETF', 'sh562500': '机器人ETF', 'sh563530': '商业航天ETF',
-      'sh511130': '30年国债ETF', 'sh511260': '10年国债ETF'
+      'sh511130': '30年国债ETF', 'sh511260': '10年国债ETF', 'sh562590': '半导体材料设备ETF'
     };
     const etfCategoryMap = {
       'sh512480': '科技', 'sh515880': '科技', 'sh516510': '科技', 'sh516010': '科技',
       'sh563530': '科技', 'sh562500': '科技', 'sh515120': '科技',
       'sh512400': '资源', 'sh516160': '资源',
-      'sh511130': '债券', 'sh511260': '债券'
+      'sh511130': '债券', 'sh511260': '债券', 'sh562590': '科技'
     };
     const etfSubCategoryMap = {
       'sh512480': '硬件', 'sh515880': '硬件', 'sh516510': '软件', 'sh516010': '软件',
       'sh563530': '新质生产力', 'sh562500': '新质生产力', 'sh515120': '生物科技',
       'sh512400': '大宗周期', 'sh516160': '泛能源',
-      'sh511130': '利率债', 'sh511260': '利率债'
+      'sh511130': '利率债', 'sh511260': '利率债', 'sh562590': '硬件'
     };
 
     const currentPrices = ref({});
@@ -111,7 +111,13 @@ createApp({
 
     const etfLifecycleItems = computed(() => {
       const items = lifecycleItems.value || [];
-      return items.filter(item => item.symbol && visibleEtfSymbols.value.includes(item.symbol));
+      return items.filter(item => item.symbol && visibleEtfSymbols.value.includes(item.symbol))
+        .map(item => {
+          if ((!item.ETF名称 || item.ETF名称 === item.symbol) && symbolNames[item.symbol]) {
+            return { ...item, ETF名称: symbolNames[item.symbol] };
+          }
+          return item;
+        });
     });
 
     const getClose = (rec) => {
