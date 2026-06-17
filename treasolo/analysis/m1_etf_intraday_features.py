@@ -118,6 +118,64 @@ def get_amt_value(row: dict[str, Any]) -> float | None:
     return float(v) if v is not None else None
 
 
+def minute_increments(series: list[dict[str, Any]], day: str, end_t: datetime, mode: str) -> list[float]:
+    vals: list[tuple[datetime, float]] = []
+    for row in series:
+        hhmm = str(row.get("asOf") or "")
+        t = parse_hhmm(day, hhmm)
+        if not t or t > end_t:
+            continue
+        v = get_amt_value(row)
+        if v is None:
+            continue
+        vals.append((t, float(v)))
+    vals.sort(key=lambda x: x[0])
+    if not vals:
+        return []
+    if mode != "cum":
+        return [max(0.0, v) for _, v in vals]
+    out: list[float] = []
+    offset = 0.0
+    prev_adj = vals[0][1]
+    prev_cum = None
+    for _, raw in vals:
+        if raw < prev_adj * 0.5:
+            offset += prev_adj
+        adj = raw + offset
+        if adj < prev_adj:
+            adj = prev_adj
+        prev_adj = adj
+        if prev_cum is None:
+            prev_cum = adj
+            continue
+        inc = adj - prev_cum
+        if inc < 0:
+            inc = 0.0
+        out.append(float(inc))
+        prev_cum = adj
+    return out
+
+
+def heat_from_recent60(increments: list[float]) -> tuple[str, float | None]:
+    xs = [float(x) for x in increments if x is not None and x >= 0]
+    if len(xs) < 20:
+        return "平量", None
+    xs = xs[-60:]
+    half = len(xs) // 2
+    if half <= 0 or len(xs) - half <= 0:
+        return "平量", None
+    avg1 = sum(xs[:half]) / float(half)
+    avg2 = sum(xs[half:]) / float(len(xs) - half)
+    if avg1 <= 0:
+        return "平量", None
+    ratio = float(avg2 / avg1)
+    if ratio >= 1.2:
+        return "放量", ratio
+    if ratio <= 0.8:
+        return "缩量", ratio
+    return "平量", ratio
+
+
 def cum_value_upto(series: list[dict[str, Any]], day: str, base_t: datetime, mode: str) -> float:
     vals: list[tuple[datetime, float]] = []
     for row in series:
@@ -309,6 +367,98 @@ def price_zone_label(pct: float, p80: float | None, p10: float | None) -> str:
     return "极端下跌"
 
 
+def day_window_pcts(series: list[dict[str, Any]], day: str, end_hhmm: str) -> list[float]:
+    end_t = parse_hhmm(day, end_hhmm)
+    if not end_t:
+        return []
+    start_t = parse_hhmm(day, "09:30")
+    out: list[float] = []
+    for row in series:
+        hh = str(row.get("asOf") or "")
+        t = parse_hhmm(day, hh)
+        if not t or t < (start_t or t) or t > end_t:
+            continue
+        v = safe_num(row.get("_pct_calc") if "_pct_calc" in row else row.get("pct"))
+        if v is None:
+            continue
+        out.append(float(v))
+    return out
+
+
+def structure_label(series: list[dict[str, Any]], day: str, end_hhmm: str, pct_now: float) -> str:
+    pcts = day_window_pcts(series, day, end_hhmm)
+    if not pcts:
+        return "结构未明"
+    in_band_all = all((-1.0 <= v <= 1.0) for v in pcts)
+    if in_band_all:
+        return "窄幅震荡"
+    mx = max(pcts)
+    mn = min(pcts)
+    if mx > 1.0 and mn < -1.0:
+        last_hi = None
+        last_lo = None
+        for i, v in enumerate(pcts):
+            if v > 1.0:
+                last_hi = i
+            if v < -1.0:
+                last_lo = i
+        if last_hi is not None and last_lo is not None:
+            return "冲高回落" if last_hi > last_lo else "探底回升"
+    if mx > 1.0:
+        return "趋势上行" if pct_now > 1.0 else "冲高回落"
+    if mn < -1.0:
+        return "趋势下行" if pct_now < -1.0 else "探底回升"
+    return "结构未明"
+
+
+def support_judgement(pct_now: float, heat: str, is_persistent: bool) -> tuple[str, str]:
+    if pct_now < 0:
+        if heat == "缩量":
+            if is_persistent:
+                return "抛压有限", "成交清淡，抛压有限。"
+            return "承接待确认", "回落初期，承接力度仍需确认。"
+        if heat == "放量":
+            if pct_now <= -1:
+                return "承接有力", "回落过程中放量换手，承接仍在。"
+            return "分歧加大", "回落过程中放量换手，分歧加大。"
+        if is_persistent:
+            return "承接观察", "回落后横盘运行，需观察承接是否持续。"
+        return "承接待确认", "回落初期，承接力度仍需确认。"
+    return "方向未明", "水面附近运行，等待方向选择。"
+
+
+def intraday_action(structure: str, zone: str, pct_now: float, heat: str, is_persistent: bool) -> str:
+    if zone == "极端下跌":
+        return "回避为主"
+    if zone == "正常下跌":
+        if is_persistent and heat in ("放量", "平量"):
+            return "承接观察"
+        return "谨慎观望"
+    if zone == "强势上涨":
+        if structure == "冲高回落":
+            return "警惕回落"
+        if is_persistent and heat == "放量":
+            return "持有为主"
+        if is_persistent and heat in ("缩量", "平量"):
+            return "谨慎追高"
+        return "追涨需确认"
+    if zone == "正常上涨":
+        if structure == "冲高回落":
+            return "谨慎追高"
+        if is_persistent:
+            return "持有观察"
+        return "观望确认"
+    if zone == "横盘":
+        if structure == "窄幅震荡":
+            return "观望等待"
+        if structure == "冲高回落":
+            return "谨慎追高"
+        if structure == "探底回升":
+            return "观察承接"
+        return "观望等待"
+    return "观望等待"
+
+
 def zone_duration_minutes(series: list[dict[str, Any]], day: str, asof: str, zone: str, p80: float | None, p10: float | None) -> int:
     base = parse_hhmm(day, asof)
     if not base:
@@ -355,35 +505,145 @@ def fund_heat_label(est_ratio: float | None) -> str:
     return "平量"
 
 
+def structure_extremes_hint(series: list[dict[str, Any]], day: str, end_hhmm: str) -> str | None:
+    pcts = day_window_pcts(series, day, end_hhmm)
+    if not pcts:
+        return None
+    mx = max(pcts)
+    mn = min(pcts)
+    if mx > 1.0 and mn < -1.0:
+        return f"日内高点{mx:.2f}%，低点{mn:.2f}%。"
+    if mx > 1.0:
+        return f"日内高点{mx:.2f}%。"
+    if mn < -1.0:
+        return f"日内低点{mn:.2f}%。"
+    return None
+
+
+def structure_meaning(struct: str) -> str:
+    if struct == "窄幅震荡":
+        return "全天围绕水面反复拉锯。"
+    if struct == "冲高回落":
+        return "冲高后回吐，需看回落中是否承接或派发。"
+    if struct == "探底回升":
+        return "下探后收回，需看承接是否持续。"
+    if struct == "趋势上行":
+        return "上行区间运行，趋势延续。"
+    if struct == "趋势下行":
+        return "下行区间运行，弱势延续。"
+    return "分钟数据不足，暂不定性。"
+
+
+def zone_phrase(zone: str) -> str:
+    if zone == "横盘":
+        return "当前仍在横盘区间。"
+    if zone == "正常上涨":
+        return "当前位于正常上涨区间。"
+    if zone == "强势上涨":
+        return "当前位于强势上涨区间。"
+    if zone == "正常下跌":
+        return "当前已回落至正常下跌区间。"
+    if zone == "极端下跌":
+        return "当前处于极端下跌区间，风险偏高。"
+    return ""
+
+
+def heat_phrase(heat: str, is_persistent: bool) -> str:
+    dur = "已持续一小时以上" if is_persistent else ""
+    if heat == "放量":
+        return f"最近一小时成交放大，{dur}。" if dur else "最近一小时成交放大。"
+    if heat == "缩量":
+        return f"最近一小时成交转淡，{dur}。" if dur else "最近一小时成交转淡。"
+    return f"最近一小时成交变化不大，{dur}。" if dur else "最近一小时成交变化不大。"
+
+
+def judge_phrase(judge: str) -> str:
+    if judge == "承接有力":
+        return "回落中有承接。"
+    if judge == "承接观察":
+        return "承接仍在，继续观察持续性。"
+    if judge == "承接待确认":
+        return "承接力度仍需确认。"
+    if judge == "抛压有限":
+        return "抛压不大。"
+    if judge == "流动性丧失":
+        return "成交偏弱，流动性不足。"
+    if judge == "派发风险":
+        return "高位回吐，留意派发。"
+    if judge == "分歧加大":
+        return "放量但推进减弱，分歧加大。"
+    if judge == "多空激战":
+        return "放量拉锯，多空激战。"
+    if judge == "方向未明":
+        return "方向仍未明朗。"
+    if judge == "主升延续":
+        return "趋势延续。"
+    return ""
+
+def pct_at_or_before(series: list[dict[str, Any]], day: str, hhmm: str) -> float | None:
+    row = pick_point_at_or_before(series, day, hhmm)
+    if not row:
+        return None
+    v = safe_num(row.get("_pct_calc") if "_pct_calc" in row else row.get("pct"))
+    return float(v) if v is not None else None
+
+
+def hhmm_shift(day: str, hhmm: str, delta_min: int) -> str | None:
+    base = parse_hhmm(day, hhmm)
+    if not base:
+        return None
+    return (base + timedelta(minutes=delta_min)).strftime("%H:%M")
+
+
+def window_peak_pct(series: list[dict[str, Any]], day: str, start_hhmm: str, end_hhmm: str) -> float | None:
+    start_t = parse_hhmm(day, start_hhmm)
+    end_t = parse_hhmm(day, end_hhmm)
+    if not start_t or not end_t:
+        return None
+    best = None
+    for row in series:
+        hh = str(row.get("asOf") or "")
+        t = parse_hhmm(day, hh)
+        if not t or t < start_t or t > end_t:
+            continue
+        v = safe_num(row.get("_pct_calc") if "_pct_calc" in row else row.get("pct"))
+        if v is None:
+            continue
+        fv = float(v)
+        if best is None or fv > best:
+            best = fv
+    return float(best) if best is not None else None
+
+
 def intraday_judgement(zone: str, is_persistent: bool, heat: str) -> tuple[str, str]:
     if zone == "正常下跌":
         if is_persistent and heat in ("放量", "平量"):
-            return "低位承接有力", "承接有力"
+            return "低位承接有力（震荡洗盘）", "承接有力"
         if is_persistent and heat == "缩量":
-            return "缩量横盘抗跌", "洗盘中继"
-        return "正常回落", "待确认"
+            return "缩量横盘抗跌（洗盘中继）", "洗盘中继"
+        return "正常回落（待确认）", "待确认"
     if zone == "极端下跌":
         if heat == "放量":
-            return "放量破位", "放量破位"
-        return "缩量阴跌", "流动性丧失"
+            return "放量破位（坚决规避）", "放量破位"
+        return "缩量阴跌（流动性丧失）", "流动性丧失"
     if zone == "横盘":
         if is_persistent and heat == "放量":
-            return "放量横盘分歧", "多空激战"
+            return "放量横盘分歧（多空激战）", "多空激战"
         if is_persistent and heat == "缩量":
-            return "缩量窄幅震荡", "方向未明"
+            return "缩量窄幅震荡（方向未明）", "方向未明"
         return "平盘震荡", "震荡"
     if zone == "正常上涨":
         if is_persistent:
-            return "温和上涨", "主升延续"
-        return "盘中拉升", "待确认"
+            return "温和上涨（主升延续）", "主升延续"
+        return "盘中拉升（待确认）", "待确认"
     if zone == "强势上涨":
         if is_persistent and heat == "放量":
-            return "高位放量滞涨", "警惕派发"
+            return "涨速放缓", "分歧加大"
         if is_persistent and heat in ("缩量", "平量"):
-            return "缩量强势逼空", "高位锁仓"
+            return "缩量强势逼空（高位锁仓）", "抛压有限"
         if (not is_persistent) and heat == "放量":
-            return "极值冲高放量", "警惕回落"
-        return "盘中拉升 (待确认)", "待确认"
+            return "极值冲高放量（警惕回落）", "派发风险"
+        return "盘中拉升（待确认）", "待确认"
     return "盘中震荡", "震荡"
 
 
@@ -410,7 +670,7 @@ def intraday_reason_text(zone: str, is_persistent: bool, heat: str) -> str:
         return "上行刚形成，仍需确认。"
     if zone == "强势上涨":
         if is_persistent and heat == "放量":
-            return "高位放量但价格滞涨，兑现压力增大。"
+            return "强势区放量上行，资金推动延续。"
         if is_persistent and heat in ("缩量", "平量"):
             return "高位缩量且价格坚挺，抛压有限。"
         if (not is_persistent) and heat == "放量":
@@ -420,7 +680,7 @@ def intraday_reason_text(zone: str, is_persistent: bool, heat: str) -> str:
  
  
 def build_table(rows: list[dict[str, Any]]) -> str:
-    headers = ["ETF", "池", "pct", "价格空间", "盘中状态", "承接/派发", "资金判断"]
+    headers = ["ETF", "池", "pct", "结构", "操作建议", "资金行为", "归因说明"]
     md = ["| " + " | ".join(headers) + " |", "| " + " | ".join(["---"] * len(headers)) + " |"]
     for r in rows:
         md.append(
@@ -433,7 +693,7 @@ def build_table(rows: list[dict[str, Any]]) -> str:
                     str(r.get("动能") or "-"),
                     str(r.get("操作建议") or "-"),
                     str(r.get("资金行为") or "-"),
-                    str(r.get("热度占比") or "-"),
+                    str(r.get("归因说明") or "-"),
                 ]
             )
             + " |"
@@ -466,8 +726,8 @@ def main() -> int:
     lifecycle_items = lifecycle.get("data") or []
     lifecycle_map = {str(it.get("symbol")): it for it in lifecycle_items if it.get("symbol")}
  
-    base_t = parse_hhmm(day, asof)
-    if not base_t:
+    base_t_arg = parse_hhmm(day, asof)
+    if not base_t_arg:
         print(f"DEBUG: base_t parsing failed for {day} {asof}")
         return 1
 
@@ -484,10 +744,6 @@ def main() -> int:
         prev_close = load_prev_daily_close(symbol, day)
         if prev_close is not None and prev_close > 0:
             for row in series:
-                pct_field = safe_num(row.get("pct"))
-                if pct_field is not None and abs(float(pct_field)) > 1e-9:
-                    row["_pct_calc"] = float(pct_field)
-                    continue
                 px = safe_num(row.get("price"))
                 if px is None:
                     px = safe_num(row.get("close"))
@@ -496,19 +752,33 @@ def main() -> int:
                 base_close = safe_num(row.get("pre_close"))
                 if base_close is None or base_close <= 0:
                     base_close = float(prev_close)
-                row["_pct_calc"] = (float(px) / float(base_close) - 1.0) * 100.0
+                pct_from_price = (float(px) / float(base_close) - 1.0) * 100.0
+
+                pct_field = safe_num(row.get("pct"))
+                pct_field_val = float(pct_field) if pct_field is not None else None
+                if pct_field_val is not None and abs(pct_field_val) > 30:
+                    pct_field_val = None
+
+                chosen = None
+                if pct_field_val is not None and abs(pct_field_val) > 1e-9:
+                    if abs(pct_field_val) <= 0.5 and abs(pct_from_price) >= 0.5:
+                        chosen = pct_from_price
+                    elif abs(pct_field_val - pct_from_price) >= 0.3:
+                        chosen = pct_from_price
+                    else:
+                        chosen = pct_field_val
+                else:
+                    chosen = pct_from_price
+                row["_pct_calc"] = float(chosen)
         cur = pick_point_at_or_before(series, day, asof)
         if not cur:
             continue
  
-        cur_t = parse_hhmm(day, str(cur.get("asOf") or ""))
+        asof_eff = str(cur.get("asOf") or "")
+        cur_t = parse_hhmm(day, asof_eff)
         if not cur_t:
             continue
-        target_t = parse_hhmm(day, asof)
-        if not target_t:
-            continue
-        if (target_t - cur_t).total_seconds() > 10 * 60:
-            continue
+        base_t_sym = cur_t
 
         pct = safe_num(cur.get("_pct_calc") if "_pct_calc" in cur else cur.get("pct"))
         if pct is None:
@@ -517,18 +787,14 @@ def main() -> int:
 
         p80, p10 = load_daily_pct_thresholds(symbol, 120)
         zone = price_zone_label(pct_val, p80, p10)
-        dur = zone_duration_minutes(series, day, asof, zone, p80, p10)
+        dur = zone_duration_minutes(series, day, asof_eff, zone, p80, p10)
         is_persistent = dur >= 60
         time_state = "持久" if is_persistent else "短暂"
-
-        # amount/vol 可能来自：
-        # - 新浪实时：开盘累计
-        # - 盘后回补：每分钟增量
         raw_vals = []
         for row in series:
             hhmm = str(row.get("asOf") or "")
             t = parse_hhmm(day, hhmm)
-            if not t or t > base_t:
+            if not t or t > base_t_sym:
                 continue
             v = get_amt_value(row)
             if v is None:
@@ -537,17 +803,26 @@ def main() -> int:
         mode = infer_cum_mode(raw_vals)
         if mode == "unknown":
             mode = "cum"
-
-        cur_amt = cum_value_upto(series, day, base_t, mode)
-        prev_amt = load_prev_daily_amount(symbol, day)
-        est_ratio = None
-        if prev_amt is not None and prev_amt > 0:
-            elapsed = trading_elapsed_minutes(asof)
-            if elapsed > 0:
-                est_amt = float(cur_amt) / (elapsed / 240.0)
-                est_ratio = est_amt / float(prev_amt)
-        heat = fund_heat_label(est_ratio)
+        incs = minute_increments(series, day, base_t_sym, mode)
+        heat, heat_ratio = heat_from_recent60(incs)
         intraday_status, fund_judge = intraday_judgement(zone, is_persistent, heat)
+        dd = None
+        dd_ratio = None
+        if zone == "强势上涨" and is_persistent and heat == "放量":
+            hhmm_30 = hhmm_shift(day, asof_eff, -30)
+            hhmm_15 = hhmm_shift(day, asof_eff, -15)
+            if hhmm_30 and hhmm_15:
+                pct_30 = pct_at_or_before(series, day, hhmm_30)
+                pct_15 = pct_at_or_before(series, day, hhmm_15)
+                peak = window_peak_pct(series, day, hhmm_30, asof_eff)
+                if pct_30 is not None and pct_15 is not None and peak is not None:
+                    speed1 = (pct_15 - pct_30) / 15.0
+                    speed2 = (pct_val - pct_15) / 15.0
+                    dd = float(max(0.0, peak - pct_val))
+                    dd_ratio = float(dd / peak) if peak != 0 else None
+                    if speed1 > 0 and abs(speed2) <= 0.01 and dd_ratio is not None and dd_ratio >= 0.15:
+                        intraday_status = "涨速放缓"
+                        fund_judge = "分歧加剧"
 
         lci = lifecycle_map.get(symbol) or {}
         pool = "黄"
@@ -561,8 +836,62 @@ def main() -> int:
         except Exception:
             pool = "黄"
 
-        ratio_txt = f"{est_ratio:.2f}" if est_ratio is not None else "-"
-        evidence = intraday_reason_text(zone, is_persistent, heat)
+        struct = structure_label(series, day, asof_eff, pct_val)
+        behavior = f"{time_state}·{heat}"
+        final_label = intraday_status
+        if pct_val < 0:
+            fund_judge, support_text = support_judgement(pct_val, heat, is_persistent)
+            evidence_core = support_text
+        else:
+            evidence_core = intraday_reason_text(zone, is_persistent, heat)
+            is_high = (zone == "强势上涨") or (struct == "冲高回落")
+            if is_high:
+                if "警惕回落" in final_label or struct == "冲高回落":
+                    fund_judge = "派发风险" if heat in ("放量", "平量") else "抛压有限"
+                elif "涨速放缓" in final_label:
+                    fund_judge = "分歧加大"
+                elif "高位锁仓" in final_label:
+                    fund_judge = "抛压有限"
+                else:
+                    if fund_judge == "待确认":
+                        fund_judge = "方向未明"
+            elif zone == "横盘" and is_persistent and heat == "放量":
+                fund_judge = "多空激战"
+            elif zone == "横盘" and is_persistent and heat == "缩量":
+                fund_judge = "方向未明"
+            else:
+                if fund_judge == "待确认":
+                    fund_judge = "方向未明"
+
+        if not fund_judge:
+            fund_judge = "方向未明"
+
+        head_struct = struct if struct else "结构未明"
+        parts: list[str] = []
+
+        def append_part(s: str | None) -> None:
+            ss = (s or "").strip()
+            if not ss:
+                return
+            for i, p in enumerate(parts):
+                if p == ss:
+                    return
+                if ss in p:
+                    return
+                if p in ss:
+                    parts[i] = ss
+                    return
+            parts.append(ss)
+
+        append_part(structure_meaning(head_struct))
+        append_part(structure_extremes_hint(series, day, asof_eff))
+        append_part(heat_phrase(heat, is_persistent))
+        append_part(judge_phrase(fund_judge))
+        append_part(evidence_core)
+
+        evidence = "".join(parts)
+        if intraday_status.startswith("高位放量滞涨") and dd is not None and dd_ratio is not None:
+            evidence = f"滞涨确认：近30分钟高点回撤{dd:.2f}%（{dd_ratio*100:.0f}%）。{evidence}"
  
         rows.append(
             {
@@ -570,12 +899,12 @@ def main() -> int:
                 "symbol": symbol,
                 "category": meta.get("category") or "",
                 "sub_category": sub,
-                "asOf": asof,
+                "asOf": asof_eff,
                 "pct": round(pct_val, 2),
                 "pool": pool,
-                "操作建议": intraday_status,
-                "动能": zone,
-                "资金行为": f"{time_state}·{heat}",
+                "操作建议": final_label,
+                "动能": struct,
+                "资金行为": behavior,
                 "热度占比": fund_judge,
                 "归因说明": evidence,
             }

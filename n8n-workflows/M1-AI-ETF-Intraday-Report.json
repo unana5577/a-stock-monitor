@@ -26,10 +26,10 @@
       "position": [400, 150],
       "parameters": {
         "method": "POST",
-        "url": "http://host.docker.internal:8787/api/m1/run",
+        "url": "http://app:8787/api/m1/run",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "{\n  \"script\": \"m1_etf_intraday_features.py\",\n  \"args\": [\"--persist\"]\n}",
+        "jsonBody": "={\n  \"script\": \"m1_etf_intraday_features.py\",\n  \"args\": [\"--persist\"]\n}",
         "options": {}
       }
     },
@@ -41,10 +41,10 @@
       "position": [600, 150],
       "parameters": {
         "method": "POST",
-        "url": "http://host.docker.internal:8787/api/m1/run",
+        "url": "http://app:8787/api/m1/run",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "{\n  \"script\": \"m1_etf_ai_reporter.py\"\n}",
+        "jsonBody": "={\n  \"script\": \"m1_etf_ai_reporter.py\"\n}",
         "options": {}
       }
     },
