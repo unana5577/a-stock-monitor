@@ -100,7 +100,7 @@ module.exports = function() {
     // GET /api/trade/stage_snapshot — 读阶段快照(优先, ~5ms); fallback 到 stage_state
     if (url.pathname === '/api/trade/stage_snapshot' && req.method === 'GET') {
       try {
-        const sp = path.resolve(__dirname, '..', 'data', 'stage', 'snapshot.json');
+        const sp = path.resolve(__dirname, '..', '..', 'data', 'stage', 'snapshot.json');
         if (fs.existsSync(sp)) {
           const data = JSON.parse(fs.readFileSync(sp, 'utf-8'));
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -137,6 +137,22 @@ module.exports = function() {
         res.end(JSON.stringify({ ok: false, error: e.message }));
         return true;
       }
+    }
+
+    // POST /api/trade/run-stage-snapshot — n8n 工作流 M1-H 调用, 执行 stage_runner --use-minute --output-snapshot
+    if (url.pathname === '/api/trade/run-stage-snapshot' && req.method === 'POST') {
+      const args = ['波段策略/stage_runner.py', '--use-minute', '--output-snapshot'];
+      execFile('python3', args, {
+        cwd: path.resolve(__dirname, '../..'), timeout: 30000, maxBuffer: 1024 * 1024
+      }, (err, stdout, stderr) => {
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.end(JSON.stringify({
+          ok: !err,
+          stdout: (stdout || '').trim().split('\n'),
+          stderr: stderr
+        }));
+      });
+      return true;
     }
 
     return false;
