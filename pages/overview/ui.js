@@ -24,7 +24,7 @@ createApp({
     const overviewAiUpdatedAt = ref('');
     const overviewAiLoading = ref(false);
 
-    const indexSymbols = ['sh000001', 'sz399001', 'sz399006', 'sh000688', 'sh000300', 'sh000852', 'sh511130', 'sh511260', 'bank', 'broker', 'insure'];
+    const indexSymbols = ['sh000001', 'sz399001', 'sz399006', 'sh000688', 'sh000300', 'sh000852', 'sh511130', 'sh511260', 'sh562590', 'bank', 'broker', 'insure'];
     const symbolNames = {
       'sh000001': '上证指数',
       'sz399001': '深证成指',
@@ -34,6 +34,7 @@ createApp({
       'sh000852': '中证1000',
       'sh511130': '30年国债ETF',
       'sh511260': '10年国债ETF',
+      'sh562590': '半导体材料设备ETF',
       'bank': '银行',
       'broker': '证券',
       'insure': '保险'

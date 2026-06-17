@@ -16,7 +16,7 @@ createApp({
     const etfAiUpdatedAt = ref('');
     const etfAiLoading = ref(false);
 
-    const etfSymbols = ref(['sh512400', 'sh512480', 'sh515120', 'sh515880', 'sh516010', 'sh516160', 'sh516510', 'sh562500', 'sh563530', 'sh511130', 'sh511260']);
+    const etfSymbols = ref(['sh512400', 'sh512480', 'sh515120', 'sh515880', 'sh516010', 'sh516160', 'sh516510', 'sh562500', 'sh563530', 'sh511130', 'sh511260', 'sh562590']);
     const symbolNames = {
       'sh512400': '有色金属ETF', 'sh512480': '半导体ETF', 'sh515120': '创新药ETF',
       'sh515880': '通信ETF', 'sh516010': '游戏ETF', 'sh516160': '新能源ETF',
