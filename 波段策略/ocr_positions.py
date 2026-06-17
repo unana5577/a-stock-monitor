@@ -15,7 +15,7 @@ def load_etf_list():
     """从 sector-proxy.json 读取 ETF 名称列表，生成名称匹配数据"""
     proxy_path = os.path.join(ROOT, "data", "sector-proxy.json")
     if not os.path.exists(proxy_path):
-        return _DEFAULT_ETF_NAMES, _DEFAULT_ETF_LIST, _DEFAULT_TOKEN_MAP
+        return _DEFAULT_ETF_NAMES, _DEFAULT_ETF_LIST, _DEFAULT_TOKEN_MAP, {}
 
     try:
         with open(proxy_path) as f:
@@ -25,11 +25,12 @@ def load_etf_list():
         meta = cfg.get("etf_meta", {})
 
         if not etf_map:
-            return _DEFAULT_ETF_NAMES, _DEFAULT_ETF_LIST, _DEFAULT_TOKEN_MAP
+            return _DEFAULT_ETF_NAMES, _DEFAULT_ETF_LIST, _DEFAULT_TOKEN_MAP, {}
 
         etf_list = []
         token_map = {}
-        for name, _code in etf_map.items():
+        name_to_code = {}
+        for name, code in etf_map.items():
             m = meta.get(name, {})
             if m.get("hidden"):
                 continue
@@ -38,18 +39,20 @@ def load_etf_list():
             base = norm_name.replace("ETF", "")
             etf_list.append(base)
             etf_list.append(norm_name)
-            variants = [norm_name, base]
+            name_to_code[norm_name] = code
+            name_to_code[base] = code
+            variants_list = [norm_name, base]
             for i in range(len(base)):
                 for j in range(i + 2, min(i + 5, len(base) + 1)):
                     variants.append(base[i:j])
             token_map[base] = sorted(set(variants), key=len, reverse=True)
 
         if not etf_list:
-            return _DEFAULT_ETF_NAMES, _DEFAULT_ETF_LIST, _DEFAULT_TOKEN_MAP
+            return _DEFAULT_ETF_NAMES, _DEFAULT_ETF_LIST, _DEFAULT_TOKEN_MAP, {}
 
-        return _DEFAULT_ETF_NAMES + etf_list, etf_list, {**_DEFAULT_TOKEN_MAP, **token_map}
+        return _DEFAULT_ETF_NAMES + etf_list, etf_list, {**_DEFAULT_TOKEN_MAP, **token_map}, name_to_code
     except Exception:
-        return _DEFAULT_ETF_NAMES, _DEFAULT_ETF_LIST, _DEFAULT_TOKEN_MAP
+        return _DEFAULT_ETF_NAMES, _DEFAULT_ETF_LIST, _DEFAULT_TOKEN_MAP, {}
 
 
 _DEFAULT_ETF_LIST = [
@@ -73,7 +76,7 @@ _DEFAULT_TOKEN_MAP = {
     "有色金属": ["有色金属", "有色金", "有色"],
 }
 
-ETF_NAMES, _ETF_DISPLAY, TOKEN_MAP = load_etf_list()
+ETF_NAMES, _ETF_DISPLAY, TOKEN_MAP, NAME_TO_CODE = load_etf_list()
 
 
 def normalize_name(raw):
@@ -282,6 +285,9 @@ def parse_positions(items):
         pnl = row_data.get("pnl")
 
         pos = {"name": name}
+        code = NAME_TO_CODE.get(name, NAME_TO_CODE.get(name.replace("ETF",""), ""))
+        if code:
+            pos["code"] = code
         if shares and shares > 0:
             pos["shares"] = int(shares)
 

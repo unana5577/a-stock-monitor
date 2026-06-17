@@ -463,6 +463,7 @@
           <thead>
             <tr class="text-gray-500 border-b border-gray-100">
               <th class="text-left py-2 pr-3 font-medium">ETF</th>
+              <th class="text-left py-2 pr-3 font-medium">代码</th>
               <th class="text-right py-2 pr-3 font-medium">份额</th>
               <th class="text-right py-2 pr-3 font-medium">成本价</th>
             </tr>
@@ -471,8 +472,9 @@
             <tr v-for="(p,i) in ocrResults" :key="p.name" class="border-b border-gray-50">
               <td class="py-2 pr-3">
                 <span class="text-gray-800 font-medium">{{ p.name }}</span>
-                <span v-if="!matchNameToCode?.(p.name)" class="ml-1 text-[9px] text-orange-500">⚠ 未匹配</span>
+                <span v-if="!(p.code || matchNameToCode?.(p.name))" class="ml-1 text-[9px] text-orange-500">⚠ 未匹配</span>
               </td>
+              <td class="py-2 pr-3 text-xs text-gray-500 font-mono">{{ p.code || matchNameToCode?.(p.name) || '—' }}</td>
               <td class="py-2 pr-3 text-right font-mono">{{ p.shares }}</td>
               <td class="py-2 pr-3 text-right font-mono">{{ p.avgPrice != null ? p.avgPrice.toFixed(3) : '—' }}</td>
             </tr>
@@ -534,6 +536,6 @@
 
 </div>
 
-<script src="./ui.js?v=20260617_1"></script>
+<script src="./ui.js?v=20260617_2"></script>
 </body>
 </html>

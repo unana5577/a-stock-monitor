@@ -72,6 +72,22 @@ createApp({
   setup() {
 
     const stageMap = ref({});
+    const livePriceCache = ref({});
+
+    const fetchLivePrices = async () => {
+      const posSyms = Object.keys(simState.value.positions || {});
+      const missing = posSyms.filter(s => !(stageMap.value || {})[s] || !(stageMap.value[s].minute_price));
+      if (!missing.length) return;
+      for (const sym of missing) {
+        try {
+          const r = await fetch(`/api/trade/quote?symbol=${sym}`);
+          const d = await r.json();
+          if (d.ok) {
+            livePriceCache.value = { ...livePriceCache.value, [sym]: { price: d.price, pct: d.pct, name: d.name } };
+          }
+        } catch (e) { /* ignore */ }
+      }
+    };
     const day = ref('--');
     const error = ref('');
     const autoRefresh = ref(true);
@@ -130,6 +146,7 @@ createApp({
           stageMap.value = json.data.stages || {};
           day.value = json.data.day;
           error.value = '';
+          fetchLivePrices();
         } else {
           error.value = json.error || '加载失败';
         }
@@ -330,6 +347,8 @@ createApp({
       const s = (stageMap.value || {})[sym];
       if (s && Number.isFinite(s.minute_price) && s.minute_price > 0) return s.minute_price;
       if (s && Number.isFinite(s.close) && s.close > 0) return s.close;
+      const l = (livePriceCache.value || {})[sym];
+      if (l && Number.isFinite(l.price) && l.price > 0) return l.price;
       return null;
     };
 
@@ -733,8 +752,8 @@ createApp({
       const noEtf = ocrName.replace(/ETF$/i, '');
       found = entries.find(([, n]) => n === noEtf);
       if (found) return found[0];
-      // L3: contained
-      found = entries.find(([, n]) => n.includes(ocrName) || ocrName.includes(n));
+      // L3: contained (use stripped name)
+      found = entries.find(([, n]) => n.includes(noEtf) || noEtf.includes(n));
       if (found) return found[0];
       return null;
     };
@@ -743,7 +762,7 @@ createApp({
       if (!ocrResults.value.length) return;
       const unmapped = [];
       ocrResults.value.forEach((p) => {
-        const code = matchNameToCode(p.name);
+        const code = p.code || matchNameToCode(p.name);
         if (!code) { unmapped.push(p); return; }
         if (p.shares > 0 && p.avgPrice > 0) {
           simState.value.positions[code] = { shares: p.shares, avgPrice: p.avgPrice };
