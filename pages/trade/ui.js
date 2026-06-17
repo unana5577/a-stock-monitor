@@ -1,4 +1,4 @@
-const { createApp, ref, computed, watch, onMounted, onUnmounted } = Vue;
+const { createApp, ref, reactive, computed, watch, onMounted, onUnmounted } = Vue;
 
 const STAGE_TARGET = { '主升': 0.80, '启动': 0.30, '震荡': 0.00, '下跌': 0.00, '防守': 0.00 };
 const RETRACE_TARGET = { '主升': 0.80, '启动': 0.30, '震荡': 0.00, '下跌': 0.00, '防守': 0.00 };
@@ -193,6 +193,56 @@ createApp({
     const tradeConfirmError = ref('');
     const tradeBottomTab = ref('positions');
 
+    const backfillToast = reactive({ show: false, name: '', code: '', status: 'requesting' });
+
+    const triggerBackfillForTrade = async (code, name) => {
+      backfillToast.name = name || code;
+      backfillToast.code = code;
+      backfillToast.status = 'requesting';
+      backfillToast.show = true;
+      const call = async (script, body) => {
+        try {
+          await fetch('/api/m1/run', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+          });
+        } catch (e) { /* ignore */ }
+      };
+      await call('m1_backfill.py', { script: 'm1_backfill.py', symbol: code, applyFix: true });
+      await call('m1_minute_fetch_etf.py', { script: 'm1_minute_fetch_etf.py', symbols: code, force: true });
+      await call('m1_warmup.py', { script: 'm1_warmup.py' });
+      await call('m1_lifecycle.py', { script: 'm1_lifecycle.py' });
+      // 重建快照
+      try {
+        await fetch('/api/trade/run-stage-snapshot', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      } catch (e) { /* ignore */ }
+      setTimeout(async () => {
+        try {
+          const res = await fetch(`/api/m1/data/minute?symbol=${code}`);
+          const d = await res.json();
+          backfillToast.status = (d.ok && d.data && d.data.length > 0) ? 'done' : 'failed';
+        } catch (e) {
+          backfillToast.status = 'failed';
+        }
+        fetchStageState();
+        setTimeout(() => { backfillToast.show = false; }, 3000);
+      }, 35000);
+    };
+
+    const closeBackfillToast = () => { backfillToast.show = false; };
+
+    const registerAndBackfill = async (code, name) => {
+      try {
+        await fetch('/api/sector/manage', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, code, category: '科技', sub_category: '硬件' })
+        });
+      } catch (e) { /* ignore */ }
+      // 重新拉 ETF 配置 + 触发回补
+      await fetchEtfConfig();
+      await triggerBackfillForTrade(code, name);
+    };
+
     const capitalModalOpen = ref(false);
     const capitalModalValue = ref(0);
     const openCapitalModal = () => {
@@ -215,22 +265,33 @@ createApp({
     const posEditShares = ref(0);
     const posEditPrice = ref(0);
     const posEditCode = ref('');
+    const posEditName = ref('');
     const onPosEditCodeInput = () => {
       let raw = posEditCode.value.trim();
-      if (!raw) { posEditSym.value = ''; return; }
+      if (!raw) { posEditSym.value = ''; posEditName.value = ''; return; }
       // 自动补 sh/sz 前缀
       if (/^\d{6}$/.test(raw)) {
         raw = raw[0] === '0' || raw[0] === '3' ? 'sz' + raw : 'sh' + raw;
         posEditCode.value = raw;
       }
       if (/^(sh|sz)\d{6}$/i.test(raw)) {
-        posEditSym.value = raw.toLowerCase();
+        const lc = raw.toLowerCase();
+        posEditSym.value = lc;
+        // 自动从行情接口拉中文名
+        if (!symbolNames.value[lc] && !posEditName.value) {
+          fetch(`/api/trade/quote?symbol=${lc}`).then(r => r.json()).then(d => {
+            if (d.ok && d.name) posEditName.value = d.name;
+          }).catch(() => {});
+        }
+      } else {
+        posEditSym.value = '';
       }
     };
     const addPosition = () => {
       posEditIsAdd.value = true;
       posEditSym.value = '';
       posEditCode.value = '';
+      posEditName.value = '';
       posEditShares.value = 0;
       posEditPrice.value = 0;
       posEditOpen.value = true;
@@ -245,7 +306,7 @@ createApp({
       posEditOpen.value = true;
     };
     const closePosEdit = () => { posEditOpen.value = false; };
-    const confirmPosEdit = () => {
+    const confirmPosEdit = async () => {
       const sym = posEditSym.value || posEditCode.value;
       if (!sym) return;
       const sh = Math.floor(Number(posEditShares.value || 0) / 100) * 100;
@@ -255,6 +316,11 @@ createApp({
         delete simState.value.positions[sym];
       } else {
         simState.value.positions[sym] = { shares: sh, avgPrice: px };
+        // 自动注册未知 ETF 并触发数据回补
+        if (posEditIsAdd.value && !etfSymbols.value.includes(sym)) {
+          const name = symbolNames.value[sym] || posEditName.value || sym;
+          await registerAndBackfill(sym, name);
+        }
       }
       posEditOpen.value = false;
       saveSimLocal();
@@ -606,6 +672,7 @@ createApp({
     const ocrResults = ref([]);
     const ocrRawTexts = ref([]);
     const ocrError = ref('');
+    const ocrUnmapped = ref([]);
 
     const onHoldingsScreenshot = async (ev)=>{
       try{
@@ -651,13 +718,33 @@ createApp({
       localStorage.removeItem('sim_holdings_screenshot');
     };
 
+    const matchNameToCode = (ocrName) => {
+      const names = symbolNames.value || {};
+      const entries = Object.entries(names);
+      // L0: code exact match  "sh515880" === "sh515880"
+      if (/^(sh|sz)\d{6}$/i.test(ocrName)) {
+        const lc = ocrName.toLowerCase();
+        if (names[lc]) return lc;
+      }
+      // L1: exact match
+      let found = entries.find(([, n]) => n === ocrName);
+      if (found) return found[0];
+      // L2: strip trailing "ETF"
+      const noEtf = ocrName.replace(/ETF$/i, '');
+      found = entries.find(([, n]) => n === noEtf);
+      if (found) return found[0];
+      // L3: contained
+      found = entries.find(([, n]) => n.includes(ocrName) || ocrName.includes(n));
+      if (found) return found[0];
+      return null;
+    };
+
     const importOcrPositions = () => {
       if (!ocrResults.value.length) return;
-      const nameToCode = {};
-      Object.entries(symbolNames.value).forEach(([code, name]) => { nameToCode[name] = code; });
+      const unmapped = [];
       ocrResults.value.forEach((p) => {
-        const code = nameToCode[p.name];
-        if (!code) return;
+        const code = matchNameToCode(p.name);
+        if (!code) { unmapped.push(p); return; }
         if (p.shares > 0 && p.avgPrice > 0) {
           simState.value.positions[code] = { shares: p.shares, avgPrice: p.avgPrice };
         } else if (p.shares > 0) {
@@ -666,8 +753,13 @@ createApp({
           simState.value.positions[code] = { shares: p.shares, avgPrice: avg };
         }
       });
-      ocrResultsOpen.value = false;
-      ocrResults.value = [];
+      if (unmapped.length) {
+        ocrUnmapped.value = unmapped;
+        ocrError.value = `${unmapped.length} 个未识别,请在弹窗中选择对应代码`;
+      } else {
+        ocrResultsOpen.value = false;
+        ocrResults.value = [];
+      }
       saveSimLocal();
     };
 
@@ -703,8 +795,9 @@ createApp({
       posEditOpen, posEditIsAdd, posEditSym, posEditShares, posEditPrice, posEditCode,
       editPosition, addPosition, closePosEdit, confirmPosEdit, onPosEditCodeInput,
       resetSimAccount, holdingsScreenshot, onHoldingsScreenshot,
-      ocrLoading, ocrResultsOpen, ocrResults, ocrRawTexts, ocrError,
-      closeOcrResults, clearScreenshot, importOcrPositions,
+      ocrLoading, ocrResultsOpen, ocrResults, ocrRawTexts, ocrError, ocrUnmapped,
+      closeOcrResults, clearScreenshot, importOcrPositions, matchNameToCode,
+      backfillToast, closeBackfillToast, posEditName,
       tradeBottomTab,
       symbolNames,
       hiddenEtfs, manageOpen, toggleManage, toggleEtfHidden, isEtfVisible,

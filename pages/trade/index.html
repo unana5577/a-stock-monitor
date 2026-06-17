@@ -426,6 +426,11 @@
           </select>
           <div class="text-[11px] text-gray-400 my-2 text-center">— 或直接输入代码 —</div>
           <input v-model="posEditCode" type="text" placeholder="sh512480 / 512480" class="w-full border border-gray-200 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:border-q-primary" @input="onPosEditCodeInput">
+          <div v-if="posEditCode && !symbolNames[posEditCode]" class="mt-2">
+            <div class="text-[10px] text-orange-500 mb-1">代码不在现有ETF列表中，将自动注册为新ETF</div>
+            <div class="text-[11px] text-gray-500 mb-1">ETF名称 <span class="text-gray-300 text-[9px]">(自动识别，可修改)</span></div>
+            <input v-model="posEditName" type="text" placeholder="例：新材料ETF" class="w-full border border-gray-200 rounded px-3 py-2 text-sm focus:outline-none focus:border-q-primary">
+          </div>
         </div>
         <div class="mb-3">
           <div class="text-[11px] text-gray-500 mb-1">份额（100的整数倍）</div>
@@ -464,7 +469,10 @@
           </thead>
           <tbody>
             <tr v-for="(p,i) in ocrResults" :key="p.name" class="border-b border-gray-50">
-              <td class="py-2 pr-3 text-gray-800 font-medium">{{ p.name }}</td>
+              <td class="py-2 pr-3">
+                <span class="text-gray-800 font-medium">{{ p.name }}</span>
+                <span v-if="!matchNameToCode?.(p.name)" class="ml-1 text-[9px] text-orange-500">⚠ 未匹配</span>
+              </td>
               <td class="py-2 pr-3 text-right font-mono">{{ p.shares }}</td>
               <td class="py-2 pr-3 text-right font-mono">{{ p.avgPrice != null ? p.avgPrice.toFixed(3) : '—' }}</td>
             </tr>
@@ -507,8 +515,25 @@
     </div>
   </div>
 
+  <!-- 数据回补进度Toast -->
+  <div v-if="backfillToast.show" class="fixed inset-0 z-[70] flex items-center justify-center bg-black/15">
+    <div class="bg-white border border-gray-200 rounded-xl shadow-lg p-5 w-72">
+      <div class="flex items-center justify-between mb-3">
+        <span class="text-sm font-bold text-q-text">{{ backfillToast.name }}</span>
+        <button @click="closeBackfillToast()" class="text-gray-300 hover:text-gray-500 text-xs">✕</button>
+      </div>
+      <div class="text-[10px] text-gray-400 mb-3 font-mono">{{ backfillToast.code }}</div>
+      <div v-if="backfillToast.status === 'requesting'" class="flex items-center gap-2">
+        <div class="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden"><div class="h-full bg-q-primary rounded-full animate-pulse" style="width: 60%"></div></div>
+        <span class="text-[10px] text-blue-500">数据接入中...</span>
+      </div>
+      <div v-else-if="backfillToast.status === 'done'" class="text-xs text-green-500 font-medium">✓ 数据回补完成，页面已刷新</div>
+      <div v-else class="text-xs text-red-400 font-medium">✗ 回补失败，请检查代码或稍后重试</div>
+    </div>
+  </div>
+
 </div>
 
-<script src="./ui.js?v=20260616_1"></script>
+<script src="./ui.js?v=20260617_1"></script>
 </body>
 </html>

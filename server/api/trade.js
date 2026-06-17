@@ -74,6 +74,51 @@ module.exports = function() {
       }
     }
 
+    // GET /api/trade/quote?symbol=sh515880 — 行情接口(腾讯源), 返回 name/price/pct
+    if (url.pathname === '/api/trade/quote' && req.method === 'GET') {
+      const symbol = url.searchParams.get('symbol') || '';
+      if (!/^(sh|sz)\d{6}$/.test(symbol)) {
+        res.statusCode = 400;
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.end(JSON.stringify({ ok: false, error: 'invalid symbol' }));
+        return true;
+      }
+      const tencentUrl = `http://qt.gtimg.cn/q=${symbol}`;
+      execFile('python3', ['-c', `
+import urllib.request, json, sys
+req = urllib.request.Request('${tencentUrl}', headers={'Referer':'https://finance.qq.com'})
+try:
+    resp = urllib.request.urlopen(req, timeout=5)
+    text = resp.read().decode('gbk')
+    parts = text.split('~')
+    if len(parts) >= 10:
+        name = parts[1].strip()
+        price = float(parts[3] or 0)
+        pct = float(parts[32] or 0)
+        print(json.dumps({'ok':True,'symbol':'${symbol}','name':name,'price':price,'pct':pct}))
+    else:
+        print(json.dumps({'ok':False,'error':'no data'}))
+except Exception as e:
+    print(json.dumps({'ok':False,'error':str(e)}))
+      `], { cwd: path.resolve(__dirname, '../..'), timeout: 10000, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
+        if (err) {
+          res.statusCode = 502;
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          res.end(JSON.stringify({ ok: false, error: 'upstream unreachable' }));
+          return;
+        }
+        try {
+          const data = JSON.parse(stdout.trim());
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          res.end(JSON.stringify(data));
+        } catch (e) {
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          res.end(JSON.stringify({ ok: false, error: 'parse error' }));
+        }
+      });
+      return true;
+    }
+
     // GET /api/trade/entry_tiers — 返回每只ETF的分批挂单价
     if (url.pathname === '/api/trade/entry_tiers' && req.method === 'GET') {
       try {
