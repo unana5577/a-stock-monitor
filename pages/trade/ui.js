@@ -211,6 +211,10 @@ createApp({
     const backfillToast = reactive({ show: false, name: '', code: '', status: 'requesting' });
 
     const registerEtfViaApi = async (code) => {
+      backfillToast.name = code;
+      backfillToast.code = code;
+      backfillToast.status = 'requesting';
+      backfillToast.show = true;
       try {
         const res = await fetch('/api/sector/manage', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -220,13 +224,20 @@ createApp({
         if (json && json.ok) {
           await fetchEtfConfig();
           backfillToast.name = symbolNames.value[code] || code;
-          backfillToast.code = code;
           backfillToast.status = 'done';
-          backfillToast.show = true;
-          setTimeout(() => { backfillToast.show = false; }, 3000);
+          // 确保 symbolNames 已更新
+          if (!symbolNames.value[code]) symbolNames.value = { ...symbolNames.value, [code]: backfillToast.name };
+          fetchStageState();
+        } else {
+          backfillToast.status = 'failed';
         }
         return json;
-      } catch (e) { return { ok: false, error: e.message }; }
+      } catch (e) {
+        backfillToast.status = 'failed';
+        return { ok: false, error: e.message };
+      } finally {
+        setTimeout(() => { backfillToast.show = false; }, 4000);
+      }
     };
 
     const closeBackfillToast = () => { backfillToast.show = false; };

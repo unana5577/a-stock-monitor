@@ -489,6 +489,23 @@
     </div>
   </div>
 
+  <!-- 数据回补进度Toast -->
+  <div v-if="backfillToast.show" class="fixed inset-0 z-[70] flex items-center justify-center bg-black/15">
+    <div class="bg-white border border-gray-200 rounded-xl shadow-lg p-5 w-72">
+      <div class="flex items-center justify-between mb-3">
+        <span class="text-sm font-bold text-q-text">{{ backfillToast.name }}</span>
+        <button @click="closeBackfillToast()" class="text-gray-300 hover:text-gray-500 text-xs">✕</button>
+      </div>
+      <div class="text-[10px] text-gray-400 mb-3 font-mono">{{ backfillToast.code }}</div>
+      <div v-if="backfillToast.status === 'requesting'" class="flex items-center gap-2">
+        <div class="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden"><div class="h-full bg-q-primary rounded-full animate-pulse" style="width: 60%"></div></div>
+        <span class="text-[10px] text-blue-500">数据接入中...</span>
+      </div>
+      <div v-else-if="backfillToast.status === 'done'" class="text-xs text-green-500 font-medium">✓ 数据回补完成，页面已刷新</div>
+      <div v-else class="text-xs text-red-400 font-medium">✗ 回补失败，请检查代码或稍后重试</div>
+    </div>
+  </div>
+
 </div>
 
 <script src="./ui.js?v=20260618_1"></script>
