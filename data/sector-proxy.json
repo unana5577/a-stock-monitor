@@ -12,7 +12,9 @@
       "游戏": "sh516010",
       "机器人": "sh562500",
       "通信设备": "sh515880",
-      "科创半导体设备ETF": "sh589020"
+      "30年国债ETF": "sh511130",
+      "10年国债ETF": "sh511260",
+      "半导体材料设备ETF": "sh562590"
     },
     "index": {
       "半导体": "sh000990",
@@ -30,63 +32,27 @@
       "category": "科技",
       "sub_category": "硬件",
       "entry_tiers": [
-        {
-          "pct": 30,
-          "price": 2.152,
-          "label": "MA20-1%"
-        },
-        {
-          "pct": 50,
-          "price": 2.057,
-          "label": "MA20-5%"
-        },
-        {
-          "pct": 20,
-          "price": null,
-          "label": "反弹确认"
-        }
+        { "pct": 30, "price": 2.152, "label": "MA20-1%" },
+        { "pct": 50, "price": 2.057, "label": "MA20-5%" },
+        { "pct": 20, "price": null, "label": "反弹确认" }
       ]
     },
     "云计算": {
       "category": "科技",
       "sub_category": "软件",
       "entry_tiers": [
-        {
-          "pct": 30,
-          "price": 1.78,
-          "label": "MA20+0%"
-        },
-        {
-          "pct": 50,
-          "price": 1.686,
-          "label": "MA20-5%"
-        },
-        {
-          "pct": 20,
-          "price": null,
-          "label": "反弹确认"
-        }
+        { "pct": 30, "price": 1.78, "label": "MA20+0%" },
+        { "pct": 50, "price": 1.686, "label": "MA20-5%" },
+        { "pct": 20, "price": null, "label": "反弹确认" }
       ]
     },
     "游戏": {
       "category": "科技",
       "sub_category": "软件",
       "entry_tiers": [
-        {
-          "pct": 30,
-          "price": 1.13,
-          "label": "MA20-1%"
-        },
-        {
-          "pct": 50,
-          "price": 1.082,
-          "label": "MA20-5%"
-        },
-        {
-          "pct": 20,
-          "price": null,
-          "label": "反弹确认"
-        }
+        { "pct": 30, "price": 1.13, "label": "MA20-1%" },
+        { "pct": 50, "price": 1.082, "label": "MA20-5%" },
+        { "pct": 20, "price": null, "label": "反弹确认" }
       ]
     },
     "商业航天": {
@@ -97,111 +63,58 @@
       "category": "科技",
       "sub_category": "新质生产力",
       "entry_tiers": [
-        {
-          "pct": 30,
-          "price": 1.119,
-          "label": "MA20-3%"
-        },
-        {
-          "pct": 50,
-          "price": 1.073,
-          "label": "MA20-7%"
-        },
-        {
-          "pct": 20,
-          "price": null,
-          "label": "反弹确认"
-        }
+        { "pct": 30, "price": 1.119, "label": "MA20-3%" },
+        { "pct": 50, "price": 1.073, "label": "MA20-7%" },
+        { "pct": 20, "price": null, "label": "反弹确认" }
       ]
     },
     "创新药": {
       "category": "科技",
       "sub_category": "生物科技",
       "entry_tiers": [
-        {
-          "pct": 30,
-          "price": 0.561,
-          "label": "MA20+0%"
-        },
-        {
-          "pct": 50,
-          "price": 0.533,
-          "label": "MA20-5%"
-        },
-        {
-          "pct": 20,
-          "price": null,
-          "label": "反弹确认"
-        }
+        { "pct": 30, "price": 0.561, "label": "MA20+0%" },
+        { "pct": 50, "price": 0.533, "label": "MA20-5%" },
+        { "pct": 20, "price": null, "label": "反弹确认" }
       ]
     },
     "有色金属": {
       "category": "资源",
       "sub_category": "大宗周期",
       "entry_tiers": [
-        {
-          "pct": 30,
-          "price": 1.955,
-          "label": "MA20-1%"
-        },
-        {
-          "pct": 50,
-          "price": 1.87,
-          "label": "MA20-5%"
-        },
-        {
-          "pct": 20,
-          "price": null,
-          "label": "反弹确认"
-        }
+        { "pct": 30, "price": 1.955, "label": "MA20-1%" },
+        { "pct": 50, "price": 1.87, "label": "MA20-5%" },
+        { "pct": 20, "price": null, "label": "反弹确认" }
       ]
     },
     "新能源": {
       "category": "资源",
       "sub_category": "泛能源",
       "entry_tiers": [
-        {
-          "pct": 30,
-          "price": 3.049,
-          "label": "MA20-0%"
-        },
-        {
-          "pct": 50,
-          "price": 2.902,
-          "label": "MA20-5%"
-        },
-        {
-          "pct": 20,
-          "price": null,
-          "label": "反弹确认"
-        }
+        { "pct": 30, "price": 3.049, "label": "MA20-0%" },
+        { "pct": 50, "price": 2.902, "label": "MA20-5%" },
+        { "pct": 20, "price": null, "label": "反弹确认" }
       ]
     },
     "通信设备": {
       "category": "科技",
       "sub_category": "硬件",
       "entry_tiers": [
-        {
-          "pct": 30,
-          "price": 1.611,
-          "label": "MA20+1%"
-        },
-        {
-          "pct": 50,
-          "price": 1.563,
-          "label": "MA20-2%"
-        },
-        {
-          "pct": 20,
-          "price": null,
-          "label": "反弹确认"
-        }
+        { "pct": 30, "price": 1.611, "label": "MA20+1%" },
+        { "pct": 50, "price": 1.563, "label": "MA20-2%" },
+        { "pct": 20, "price": null, "label": "反弹确认" }
       ]
     },
-    "科创半导体设备ETF": {
+    "30年国债ETF": {
+      "category": "债券",
+      "sub_category": "利率债"
+    },
+    "10年国债ETF": {
+      "category": "债券",
+      "sub_category": "利率债"
+    },
+    "半导体材料设备ETF": {
       "category": "科技",
-      "sub_category": "硬件",
-      "hidden": false
+      "sub_category": "硬件"
     }
   }
 }

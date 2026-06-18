@@ -17,19 +17,23 @@ SYMBOL_TO_NAME = {
     "sz399006": "创业板指",
     "sh000688": "科创50",
     "sh000300": "沪深300",
-    "sh000852": "中证1000",
-    "sh511130": "30年国债ETF",
-    "sh511260": "10年国债ETF",
-    "sh512400": "有色金属ETF",  
-    "sh512480": "半导体ETF",
-    "sh515120": "创新药ETF",
-    "sh515880": "通信ETF",
-    "sh516010": "游戏ETF",
-    "sh516160": "新能源ETF",
-    "sh516510": "云计算ETF",
-    "sh562500": "机器人ETF",
-    "sh563530": "商业航天ETF"   # 修正：之前写成了数字经济，实际为商业航天
+    "sh000852": "中证1000"
 }
+
+def load_etf_names_from_proxy():
+    proxy_path = PROJECT_ROOT / "data/sector-proxy.json"
+    if not proxy_path.exists():
+        return SYMBOL_TO_NAME.copy()
+    try:
+        with open(proxy_path, "r", encoding="utf-8") as f:
+            proxy = json.load(f)
+        etf_dict = (proxy.get("variants") or {}).get("etf") or {}
+        result = SYMBOL_TO_NAME.copy()
+        for name, code in etf_dict.items():
+            result[str(code)] = name
+        return result
+    except Exception:
+        return SYMBOL_TO_NAME.copy()
 
 def load_daily_amount_volume(symbol: str) -> dict:
     candidates = [
@@ -71,6 +75,9 @@ def build_lifecycle():
     history = warmup_data.get("history", {})
     day = warmup_data.get("day", "")
     
+    # 从 proxy 加载 ETF 名称
+    symbol_to_name = load_etf_names_from_proxy()
+    
     # 将 history 转换为 DataFrame
     df_map = {}
     for symbol, records in history.items():
@@ -94,7 +101,7 @@ def build_lifecycle():
     benchmark_map = {}
     for sym in benchmark_symbols:
         if sym in df_map:
-            name = SYMBOL_TO_NAME.get(sym, sym)
+            name = symbol_to_name.get(sym, sym)
             benchmark_map[name] = df_map[sym]
             
     # 3. 准备 market_amount_df
@@ -124,7 +131,7 @@ def build_lifecycle():
     results = []
     
     for symbol, df in df_map.items():
-        sector_name = SYMBOL_TO_NAME.get(symbol, symbol)
+        sector_name = symbol_to_name.get(symbol, symbol)
         
         # 动态寻找相关性最高的 benchmark
         # 对于指数自身，benchmark 可以设为上证或深证，也可以设为自身（相关性=1）

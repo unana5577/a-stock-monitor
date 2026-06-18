@@ -394,19 +394,20 @@
       <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
         <div>
           <div class="text-sm font-bold text-q-text">{{ posEditIsAdd ? '添加持仓' : ('修改持仓：'+ (symbolNames[posEditSym]||posEditSym)) }}</div>
-          <div class="mt-1 text-xs text-gray-500">{{ posEditIsAdd ? '选择ETF并填写份额与均价' : '修改后自动更新持仓均价与市值' }}</div>
+          <div class="mt-1 text-xs text-gray-500">{{ posEditIsAdd ? '输入ETF代码并填写份额与均价' : '修改后自动更新持仓均价与市值' }}</div>
         </div>
         <button @click="closePosEdit()" class="px-2.5 py-1 rounded border border-gray-200 text-gray-700 hover:bg-gray-50 text-xs">关闭</button>
       </div>
       <div class="p-5">
         <div class="mb-3" v-if="posEditIsAdd">
-          <div class="text-[11px] text-gray-500 mb-1">ETF</div>
-          <select v-model="posEditSym" class="w-full border border-gray-200 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:border-q-primary">
-            <option value="" disabled>请选择名称</option>
-            <option v-for="(name, code) in symbolNames" :key="code" :value="code">{{ name }} ({{ code }})</option>
-          </select>
-          <div class="text-[11px] text-gray-400 my-2 text-center">— 或直接输入代码 —</div>
-          <input v-model="posEditCode" type="text" placeholder="sh512480 / 512480" class="w-full border border-gray-200 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:border-q-primary" @input="onPosEditCodeInput">
+          <div class="text-[11px] text-gray-500 mb-1">ETF 代码</div>
+          <input v-model="posEditCode" type="text" placeholder="例如：sh512480" class="w-full border border-gray-200 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:border-q-primary" @input="onPosEditCodeInput">
+          <div v-if="posEditSym && symbolNames[posEditSym]" class="mt-1 text-[10px] text-green-600">✓ {{ symbolNames[posEditSym] }}</div>
+          <div v-if="posEditCode && !symbolNames[posEditCode]" class="mt-2">
+            <div class="text-[10px] text-orange-500 mb-1">代码不在现有ETF列表中，将自动注册为新ETF</div>
+            <div class="text-[11px] text-gray-500 mb-1">ETF名称 <span class="text-gray-300 text-[9px]">(自动识别，可修改)</span></div>
+            <input v-model="posEditName" type="text" placeholder="例：新材料ETF" class="w-full border border-gray-200 rounded px-3 py-2 text-sm focus:outline-none focus:border-q-primary">
+          </div>
         </div>
         <div class="mb-3">
           <div class="text-[11px] text-gray-500 mb-1">份额（100的整数倍）</div>
@@ -490,6 +491,6 @@
 
 </div>
 
-<script src="./ui.js?v=20260615_6"></script>
+<script src="./ui.js?v=20260618_1"></script>
 </body>
 </html>

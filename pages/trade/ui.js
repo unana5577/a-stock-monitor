@@ -6,18 +6,6 @@ const STAGE_STOP  = { '主升': 0.90, '震荡': 0.92, '启动': 0.95, '下跌': 
 
 const SIM_KEY = 'm1_sim_account_v1';
 
-const DEFAULT_ETF_SYMBOLS = ['sh512400','sh512480','sh515120','sh515880','sh516010','sh516160','sh516510','sh562500','sh563530','sh511130','sh511260'];
-const DEFAULT_SYMBOL_NAMES = {
-  sh512400:'有色金属ETF', sh512480:'半导体ETF', sh515120:'创新药ETF', sh515880:'通信ETF',
-  sh516010:'游戏ETF',     sh516160:'新能源ETF', sh516510:'云计算ETF', sh562500:'机器人ETF',
-  sh563530:'商业航天ETF', sh511130:'30年国债ETF', sh511260:'10年国债ETF'
-};
-const DEFAULT_ETF_CATEGORY = {
-  sh512480:'科技', sh515880:'科技', sh516510:'科技', sh516010:'科技', sh563530:'科技',
-  sh562500:'科技', sh515120:'科技', sh512400:'资源', sh516160:'资源',
-  sh511130:'债券', sh511260:'债券'
-};
-
 const fmtCny = (val) => {
   const n = Number(val);
   if (!Number.isFinite(n)) return '-';
@@ -94,9 +82,9 @@ createApp({
     const refreshSec = ref(30);
     let timer = null;
 
-    const etfSymbols = ref([...DEFAULT_ETF_SYMBOLS]);
-    const symbolNames = ref({...DEFAULT_SYMBOL_NAMES});
-    const etfCategoryMap = ref({...DEFAULT_ETF_CATEGORY});
+    const etfSymbols = ref([]);
+    const symbolNames = ref({});
+    const etfCategoryMap = ref({});
 
     const entryTiersMap = ref({});
 
@@ -104,11 +92,21 @@ createApp({
       const newSymbols = [];
       const newNames = {};
       const newCategory = {};
-      Object.entries(apiEtfs).forEach(([name, info]) => {
+      Object.entries(apiEtfs).forEach(([key, info]) => {
+        let code, name;
+        if (info && info.code && /^(sh|sz)\d{6}$/i.test(info.code)) {
+          // old format: {name: {code, category, ...}}
+          code = info.code; name = key;
+        } else if (info && info.api_name && /^(sh|sz)\d{6}$/i.test(key)) {
+          // new format: {code: {api_name, category, ...}}
+          code = key; name = info.api_name;
+        } else {
+          return;
+        }
         if (info.hidden) return;
-        newSymbols.push(info.code);
-        newNames[info.code] = name;
-        newCategory[info.code] = info.category;
+        newSymbols.push(code);
+        newNames[code] = name;
+        newCategory[code] = info.category;
       });
       if (newSymbols.length) {
         etfSymbols.value = newSymbols;
@@ -212,53 +210,26 @@ createApp({
 
     const backfillToast = reactive({ show: false, name: '', code: '', status: 'requesting' });
 
-    const triggerBackfillForTrade = async (code, name) => {
-      backfillToast.name = name || code;
-      backfillToast.code = code;
-      backfillToast.status = 'requesting';
-      backfillToast.show = true;
-      const call = async (script, body) => {
-        try {
-          await fetch('/api/m1/run', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body)
-          });
-        } catch (e) { /* ignore */ }
-      };
-      await call('m1_backfill.py', { script: 'm1_backfill.py', symbol: code, applyFix: true });
-      await call('m1_minute_fetch_etf.py', { script: 'm1_minute_fetch_etf.py', symbols: code, force: true });
-      await call('m1_warmup.py', { script: 'm1_warmup.py' });
-      await call('m1_lifecycle.py', { script: 'm1_lifecycle.py' });
-      // 重建快照
+    const registerEtfViaApi = async (code) => {
       try {
-        await fetch('/api/trade/run-stage-snapshot', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-      } catch (e) { /* ignore */ }
-      setTimeout(async () => {
-        try {
-          const res = await fetch(`/api/m1/data/minute?symbol=${code}`);
-          const d = await res.json();
-          backfillToast.status = (d.ok && d.data && d.data.length > 0) ? 'done' : 'failed';
-        } catch (e) {
-          backfillToast.status = 'failed';
+        const res = await fetch('/api/sector/manage', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code, category: '科技', sub_category: '硬件' })
+        });
+        const json = await res.json();
+        if (json && json.ok) {
+          await fetchEtfConfig();
+          backfillToast.name = symbolNames.value[code] || code;
+          backfillToast.code = code;
+          backfillToast.status = 'done';
+          backfillToast.show = true;
+          setTimeout(() => { backfillToast.show = false; }, 3000);
         }
-        fetchStageState();
-        setTimeout(() => { backfillToast.show = false; }, 3000);
-      }, 35000);
+        return json;
+      } catch (e) { return { ok: false, error: e.message }; }
     };
 
     const closeBackfillToast = () => { backfillToast.show = false; };
-
-    const registerAndBackfill = async (code, name) => {
-      try {
-        await fetch('/api/sector/manage', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, code, category: '科技', sub_category: '硬件' })
-        });
-      } catch (e) { /* ignore */ }
-      // 重新拉 ETF 配置 + 触发回补
-      await fetchEtfConfig();
-      await triggerBackfillForTrade(code, name);
-    };
 
     const capitalModalOpen = ref(false);
     const capitalModalValue = ref(0);
@@ -333,10 +304,9 @@ createApp({
         delete simState.value.positions[sym];
       } else {
         simState.value.positions[sym] = { shares: sh, avgPrice: px };
-        // 自动注册未知 ETF 并触发数据回补
+        // 自动注册未知 ETF
         if (posEditIsAdd.value && !etfSymbols.value.includes(sym)) {
-          const name = symbolNames.value[sym] || posEditName.value || sym;
-          await registerAndBackfill(sym, name);
+          await registerEtfViaApi(sym);
         }
       }
       posEditOpen.value = false;
@@ -738,23 +708,11 @@ createApp({
     };
 
     const matchNameToCode = (ocrName) => {
-      const names = symbolNames.value || {};
-      const entries = Object.entries(names);
       // L0: code exact match  "sh515880" === "sh515880"
       if (/^(sh|sz)\d{6}$/i.test(ocrName)) {
         const lc = ocrName.toLowerCase();
-        if (names[lc]) return lc;
+        if ((symbolNames.value || {})[lc]) return lc;
       }
-      // L1: exact match
-      let found = entries.find(([, n]) => n === ocrName);
-      if (found) return found[0];
-      // L2: strip trailing "ETF"
-      const noEtf = ocrName.replace(/ETF$/i, '');
-      found = entries.find(([, n]) => n === noEtf);
-      if (found) return found[0];
-      // L3: contained (use stripped name)
-      found = entries.find(([, n]) => n.includes(noEtf) || noEtf.includes(n));
-      if (found) return found[0];
       return null;
     };
 
