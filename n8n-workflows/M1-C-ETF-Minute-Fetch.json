@@ -42,7 +42,7 @@
       "parameters": {
         "values": {
           "string": [
-            { "name": "symbols", "value": "sh511130,sh511260,sh512400,sh512480,sh515120,sh515880,sh516010,sh516160,sh516510,sh562500,sh563530" }
+            { "name": "symbols", "value": "sh511130,sh511260,sh512400,sh512480,sh515120,sh515880,sh516010,sh516160,sh516510,sh562500,sh562590,sh563530" }
           ],
           "boolean": [
             { "name": "force", "value": false }
@@ -59,7 +59,7 @@
       "parameters": {
         "values": {
           "string": [
-            { "name": "symbols", "value": "sh511130,sh511260,sh512400,sh512480,sh515120,sh515880,sh516010,sh516160,sh516510,sh562500,sh563530" }
+            { "name": "symbols", "value": "sh511130,sh511260,sh512400,sh512480,sh515120,sh515880,sh516010,sh516160,sh516510,sh562500,sh562590,sh563530" }
           ],
           "boolean": [
             { "name": "force", "value": false }
@@ -92,10 +92,10 @@
       "position": [450, 160],
       "parameters": {
         "method": "POST",
-        "url": "http://host.docker.internal:8787/api/m1/run",
+        "url": "http://app:8787/api/m1/run",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"script\": \"m1_minute_fetch_etf.py\",\n  \"day\": \"{{ $today.toFormat('yyyy-MM-dd') }}\",\n  \"symbols\": \"sh511130,sh511260,sh512400,sh512480,sh515120,sh515880,sh516010,sh516160,sh516510,sh562500,sh563530\",\n  \"force\": {{ $json.force ? 'true' : 'false' }}\n}",
+        "jsonBody": "={\n  \"script\": \"m1_minute_fetch_etf.py\",\n  \"day\": \"{{ $today.toFormat('yyyy-MM-dd') }}\",\n  \"symbols\": \"sh511130,sh511260,sh512400,sh512480,sh515120,sh515880,sh516010,sh516160,sh516510,sh562500,sh562590,sh563530\",\n  \"force\": {{ $json.force ? 'true' : 'false' }}\n}",
         "options": {}
       }
     },
@@ -111,7 +111,7 @@
     }
   ],
   "connections": {
-    "30分钟触发": { "main": [ [ { "node": "参数(常规)", "type": "main", "index": 0 } ] ] },
+    "1分钟触发": { "main": [ [ { "node": "参数(常规)", "type": "main", "index": 0 } ] ] },
     "15:00补点触发": { "main": [ [ { "node": "参数(收盘补点)", "type": "main", "index": 0 } ] ] },
     "手动触发": { "main": [ [ { "node": "参数(手动)", "type": "main", "index": 0 } ] ] },
     "参数(常规)": { "main": [ [ { "node": "落盘ETF分时", "type": "main", "index": 0 } ] ] },

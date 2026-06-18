@@ -45,7 +45,7 @@ def append_jsonl(path: Path, record: dict) -> bool:
 
 def main() -> int:
     p = argparse.ArgumentParser()
-    p.add_argument("--symbols", default="sh511130,sh511260,sh512400,sh512480,sh515120,sh515880,sh516010,sh516160,sh516510,sh562500,sh563530")
+    p.add_argument("--symbols", default="sh511130,sh511260,sh512400,sh512480,sh515120,sh515880,sh516010,sh516160,sh516510,sh562500,sh562590,sh563530")
     p.add_argument("--day", default=datetime.now().strftime("%Y-%m-%d"))
     p.add_argument("--force", action="store_true")
     args = p.parse_args()
