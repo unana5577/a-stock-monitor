@@ -400,6 +400,7 @@ createApp({
         fetchOverview();
         fetchMinuteData();
         fetchBreadth();
+        refreshOverviewAi();
       }, 60000);
     });
 

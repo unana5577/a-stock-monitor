@@ -3,7 +3,7 @@
   "nodes": [
     {
       "id": "schedule",
-      "name": "盘中每半小时触发",
+      "name": "盘中每15分钟触发",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.1,
       "position": [200, 150],
@@ -12,7 +12,7 @@
           "interval": [
             {
               "field": "cronExpression",
-              "expression": "0,30 10-14 * * 1-5"
+              "expression": "*/15 9-11,13-14 * * 1-5"
             }
           ]
         }
@@ -26,7 +26,7 @@
       "position": [400, 150],
       "parameters": {
         "method": "POST",
-        "url": "http://host.docker.internal:8787/api/m1/run",
+        "url": "http://app:8787/api/m1/run",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={\n  \"script\": \"m1_ai_aggregator.py\"\n}",
@@ -41,7 +41,7 @@
       "position": [600, 150],
       "parameters": {
         "method": "POST",
-        "url": "http://host.docker.internal:8787/api/m1/run",
+        "url": "http://app:8787/api/m1/run",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={\n  \"script\": \"m1_ai_reporter.py\"\n}",
@@ -60,11 +60,10 @@
     }
   ],
   "connections": {
-    "盘中每半小时触发": { "main": [ [ { "node": "执行数据聚合", "type": "main", "index": 0 } ] ] },
+    "盘中每15分钟触发": { "main": [ [ { "node": "执行数据聚合", "type": "main", "index": 0 } ] ] },
     "执行数据聚合": { "main": [ [ { "node": "调用大模型推理", "type": "main", "index": 0 } ] ] },
     "调用大模型推理": { "main": [ [ { "node": "输出执行结果", "type": "main", "index": 0 } ] ] }
   },
-  "active": false,
   "settings": {
     "executionOrder": "v1"
   }
