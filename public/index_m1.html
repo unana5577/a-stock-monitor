@@ -5,37 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>M1 Quant Dashboard</title>
   
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          colors: {
-            'q-bg': '#F4F4F5',        /* 极浅灰背景，柔和透气 */
-            'q-panel': '#FFFFFF',     /* 纯白面板 */
-            'q-border': '#E4E4E7',    /* 极细边框色 */
-            'q-text': '#18181B',      /* 主标题颜色 */
-            'q-subtext': '#71717A',   /* 副标题/辅助文字 */
-            'q-up': '#EF4444',        /* A股标准红 */
-            'q-down': '#10B981',      /* A股标准绿 */
-            'q-flat': '#A1A1AA',      /* 平盘灰 */
-            'q-primary': '#2563EB',   /* 主题蓝/链接色 */
-            'q-sidebar': '#FFFFFF',   /* 侧边栏纯白 */
-            'q-side-text': '#52525B', /* 侧边栏文字深灰 */
-            'q-side-hover': '#F4F4F5',/* 侧边栏悬浮色极浅灰 */
-            'q-side-active': '#18181B'/* 侧边栏激活文字深黑 */
-          },
-          fontFamily: {
-            mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
-            sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', '"PingFang SC"', '"Segoe UI"', 'Roboto', 'sans-serif'],
-          },
-          boxShadow: {
-            'q': '0 1px 2px 0 rgba(0, 0, 0, 0.05)', /* 极淡阴影 */
-          }
-        }
-      }
-    }
-  </script>
+  
   
   <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
   <!-- <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script> -->
@@ -70,6 +40,7 @@
     
     [v-cloak] { display: none; }
   </style>
+  <link rel=stylesheet href=/tailwind.css>
 </head>
 <body class="h-screen overflow-hidden flex">
 

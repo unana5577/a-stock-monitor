@@ -5,26 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>五阶段策略 · 交易助手</title>
 
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          colors: {
-            'q-bg': '#F4F4F5','q-panel': '#FFFFFF','q-border': '#E4E4E7','q-text': '#18181B',
-            'q-subtext': '#71717A','q-up': '#EF4444','q-down': '#10B981','q-flat': '#A1A1AA',
-            'q-primary': '#2563EB','q-sidebar': '#FFFFFF','q-side-text': '#52525B',
-            'q-side-hover': '#F4F4F5','q-side-active': '#18181B'
-          },
-          fontFamily: {
-            mono: ['"JetBrains Mono"','ui-monospace','SFMono-Regular','Menlo','Monaco','Consolas','monospace'],
-            sans: ['Inter','-apple-system','BlinkMacSystemFont','"PingFang SC"','"Segoe UI"','Roboto','sans-serif'],
-          },
-          boxShadow: { q: '0 1px 2px 0 rgba(0, 0, 0, 0.05)' }
-        }
-      }
-    }
-  </script>
+  
 
   <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
@@ -43,6 +24,7 @@
     .stat-value{font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,monospace}
     [v-cloak]{display:none}
   </style>
+  <link rel=stylesheet href=/tailwind.css>
 </head>
 <body class="min-h-screen">
 
@@ -267,8 +249,7 @@
           <button @click="resetSimAccount()" class="px-2.5 py-1 rounded border border-gray-200 text-gray-700 hover:bg-gray-50 text-[11px]">重置</button>
         </div>
       </div>
-      <div v-if="holdingsScreenshot" class="mb-2 relative inline-block">
-        <button @click="clearScreenshot()" class="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-gray-500 text-white text-[10px] flex items-center justify-center hover:bg-gray-700 leading-none">✕</button>
+      <div v-if="holdingsScreenshot" class="mb-2">
         <img :src="holdingsScreenshot" class="w-20 h-auto rounded border border-gray-200 opacity-80" alt="持仓截图">
         <span v-if="ocrLoading" class="text-[10px] text-blue-600 ml-2">识别中...</span>
         <span v-else-if="ocrError" class="text-[10px] text-orange-500 ml-2">{{ ocrError }}</span>
@@ -426,11 +407,6 @@
           </select>
           <div class="text-[11px] text-gray-400 my-2 text-center">— 或直接输入代码 —</div>
           <input v-model="posEditCode" type="text" placeholder="sh512480 / 512480" class="w-full border border-gray-200 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:border-q-primary" @input="onPosEditCodeInput">
-          <div v-if="posEditCode && !symbolNames[posEditCode]" class="mt-2">
-            <div class="text-[10px] text-orange-500 mb-1">代码不在现有ETF列表中，将自动注册为新ETF</div>
-            <div class="text-[11px] text-gray-500 mb-1">ETF名称 <span class="text-gray-300 text-[9px]">(自动识别，可修改)</span></div>
-            <input v-model="posEditName" type="text" placeholder="例：新材料ETF" class="w-full border border-gray-200 rounded px-3 py-2 text-sm focus:outline-none focus:border-q-primary">
-          </div>
         </div>
         <div class="mb-3">
           <div class="text-[11px] text-gray-500 mb-1">份额（100的整数倍）</div>
@@ -463,18 +439,13 @@
           <thead>
             <tr class="text-gray-500 border-b border-gray-100">
               <th class="text-left py-2 pr-3 font-medium">ETF</th>
-              <th class="text-left py-2 pr-3 font-medium">代码</th>
               <th class="text-right py-2 pr-3 font-medium">份额</th>
               <th class="text-right py-2 pr-3 font-medium">成本价</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="(p,i) in ocrResults" :key="p.name" class="border-b border-gray-50">
-              <td class="py-2 pr-3">
-                <span class="text-gray-800 font-medium">{{ p.name }}</span>
-                <span v-if="!(p.code || matchNameToCode?.(p.name))" class="ml-1 text-[9px] text-orange-500">⚠ 未匹配</span>
-              </td>
-              <td class="py-2 pr-3 text-xs text-gray-500 font-mono">{{ p.code || matchNameToCode?.(p.name) || '—' }}</td>
+              <td class="py-2 pr-3 text-gray-800 font-medium">{{ p.name }}</td>
               <td class="py-2 pr-3 text-right font-mono">{{ p.shares }}</td>
               <td class="py-2 pr-3 text-right font-mono">{{ p.avgPrice != null ? p.avgPrice.toFixed(3) : '—' }}</td>
             </tr>
@@ -517,25 +488,8 @@
     </div>
   </div>
 
-  <!-- 数据回补进度Toast -->
-  <div v-if="backfillToast.show" class="fixed inset-0 z-[70] flex items-center justify-center bg-black/15">
-    <div class="bg-white border border-gray-200 rounded-xl shadow-lg p-5 w-72">
-      <div class="flex items-center justify-between mb-3">
-        <span class="text-sm font-bold text-q-text">{{ backfillToast.name }}</span>
-        <button @click="closeBackfillToast()" class="text-gray-300 hover:text-gray-500 text-xs">✕</button>
-      </div>
-      <div class="text-[10px] text-gray-400 mb-3 font-mono">{{ backfillToast.code }}</div>
-      <div v-if="backfillToast.status === 'requesting'" class="flex items-center gap-2">
-        <div class="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden"><div class="h-full bg-q-primary rounded-full animate-pulse" style="width: 60%"></div></div>
-        <span class="text-[10px] text-blue-500">数据接入中...</span>
-      </div>
-      <div v-else-if="backfillToast.status === 'done'" class="text-xs text-green-500 font-medium">✓ 数据回补完成，页面已刷新</div>
-      <div v-else class="text-xs text-red-400 font-medium">✗ 回补失败，请检查代码或稍后重试</div>
-    </div>
-  </div>
-
 </div>
 
-<script src="./ui.js?v=20260617_2"></script>
+<script src="./ui.js?v=20260615_6"></script>
 </body>
 </html>

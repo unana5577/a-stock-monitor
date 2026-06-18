@@ -4,37 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ETF行情 - M1 Quant</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          colors: {
-            'q-bg': '#F4F4F5',
-            'q-panel': '#FFFFFF',
-            'q-border': '#E4E4E7',
-            'q-text': '#18181B',
-            'q-subtext': '#71717A',
-            'q-up': '#EF4444',
-            'q-down': '#10B981',
-            'q-flat': '#A1A1AA',
-            'q-primary': '#2563EB',
-            'q-sidebar': '#FFFFFF',
-            'q-side-text': '#52525B',
-            'q-side-hover': '#F4F4F5',
-            'q-side-active': '#18181B'
-          },
-          fontFamily: {
-            mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
-            sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', '"PingFang SC"', '"Segoe UI"', 'Roboto', 'sans-serif'],
-          },
-          boxShadow: {
-            'q': '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
-          }
-        }
-      }
-    }
-  </script>
+  
   <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
   <style>
@@ -62,6 +32,7 @@
     }
     [v-cloak] { display: none; }
   </style>
+  <link rel=stylesheet href=/tailwind.css>
 </head>
 <body class="h-screen overflow-hidden">
   <div id="app" v-cloak class="flex flex-col h-full">
