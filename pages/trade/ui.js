@@ -719,11 +719,7 @@ createApp({
     };
 
     const matchNameToCode = (ocrName) => {
-      // L0: code exact match  "sh515880" === "sh515880"
-      if (/^(sh|sz)\d{6}$/i.test(ocrName)) {
-        const lc = ocrName.toLowerCase();
-        if ((symbolNames.value || {})[lc]) return lc;
-      }
+      if (/^(sh|sz)\d{6}$/i.test(ocrName)) return ocrName.toLowerCase();
       return null;
     };
 
