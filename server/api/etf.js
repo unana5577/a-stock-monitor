@@ -57,7 +57,7 @@ function triggerBackfillPipeline(code) {
   return new Promise((resolve) => {
     const scripts = [
       ['treasolo/m1_backfill.py', '--symbol', code, '--missing-window-days', '30', '--apply-fix', '--write', '--expect-start', '2025-05-01'],
-      ['treasolo/m1_minute_fetch_etf.py', '--symbols', code, '--force'],
+      ['treasolo/m1_minute_fetch_etf.py', '--symbols', code, '--force', '--backfill'],
       ['treasolo/m1_warmup.py'],
       ['treasolo/m1_lifecycle.py']
     ];

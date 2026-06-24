@@ -406,8 +406,9 @@
           <div v-if="posEditSym && symbolNames[posEditSym]" class="mt-1 text-[10px] text-green-600">✓ {{ symbolNames[posEditSym] }}</div>
           <div v-if="posEditCode && !symbolNames[posEditCode]" class="mt-2">
             <div class="text-[10px] text-orange-500 mb-1">代码不在现有ETF列表中，将自动注册为新ETF</div>
-            <div class="text-[11px] text-gray-500 mb-1">ETF名称 <span class="text-gray-300 text-[9px]">(自动识别，可修改)</span></div>
-            <input v-model="posEditName" type="text" placeholder="例：新材料ETF" class="w-full border border-gray-200 rounded px-3 py-2 text-sm focus:outline-none focus:border-q-primary">
+            <span v-if="posEditNameLoading" class="text-[10px] text-blue-500">正在获取名称...</span>
+            <span v-else-if="posEditName" class="text-[10px] text-green-600">名称：{{ posEditName }}（自动识别）</span>
+            <span v-else class="text-[10px] text-gray-400">名称将在注册时自动获取</span>
           </div>
         </div>
         <div class="mb-3">
@@ -509,6 +510,6 @@
 
 </div>
 
-<script src="./ui.js?v=20260618_3"></script>
+<script src="./ui.js?v=20260624_1"></script>
 </body>
 </html>

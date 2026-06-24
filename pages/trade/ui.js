@@ -268,9 +268,10 @@ createApp({
     const posEditPrice = ref(0);
     const posEditCode = ref('');
     const posEditName = ref('');
+    const posEditNameLoading = ref(false);
     const onPosEditCodeInput = () => {
       let raw = posEditCode.value.trim();
-      if (!raw) { posEditSym.value = ''; posEditName.value = ''; return; }
+      if (!raw) { posEditSym.value = ''; posEditName.value = ''; posEditNameLoading.value = false; return; }
       // 自动补 sh/sz 前缀
       if (/^\d{6}$/.test(raw)) {
         raw = raw[0] === '0' || raw[0] === '3' ? 'sz' + raw : 'sh' + raw;
@@ -280,13 +281,16 @@ createApp({
         const lc = raw.toLowerCase();
         posEditSym.value = lc;
         // 自动从行情接口拉中文名
-        if (!symbolNames.value[lc] && !posEditName.value) {
+        if (!symbolNames.value[lc]) {
+          posEditNameLoading.value = true;
           fetch(`/api/trade/quote?symbol=${lc}`).then(r => r.json()).then(d => {
             if (d.ok && d.name) {
               posEditName.value = d.name;
               symbolNames.value = { ...symbolNames.value, [lc]: d.name };
             }
-          }).catch(() => {});
+          }).catch(() => {}).finally(() => { posEditNameLoading.value = false; });
+        } else {
+          posEditName.value = symbolNames.value[lc] || lc;
         }
       } else {
         posEditSym.value = '';
@@ -787,7 +791,7 @@ createApp({
       resetSimAccount, holdingsScreenshot, onHoldingsScreenshot,
       ocrLoading, ocrResultsOpen, ocrResults, ocrRawTexts, ocrError, ocrUnmapped,
       closeOcrResults, clearScreenshot, importOcrPositions, matchNameToCode,
-      backfillToast, closeBackfillToast, posEditName,
+      backfillToast, closeBackfillToast, posEditName, posEditNameLoading,
       tradeBottomTab,
       symbolNames,
       hiddenEtfs, manageOpen, toggleManage, toggleEtfHidden, isEtfVisible,

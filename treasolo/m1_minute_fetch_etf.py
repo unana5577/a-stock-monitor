@@ -43,20 +43,104 @@ def append_jsonl(path: Path, record: dict) -> bool:
     return True
 
 
+def fetch_eastmoney_minute(sym: str, day: str) -> list[dict]:
+    import urllib.request, ssl
+    code = sym[2:]
+    market = "1" if sym.startswith("sh") else "0"
+    secid = f"{market}.{code}"
+    url = (
+        f"https://push2.eastmoney.com/api/qt/stock/kline/get"
+        f"?secid={secid}&fields1=f1,f2&fields2=f51,f52,f53,f54,f55,f56,f57"
+        f"&klt=1&fqt=1&end=20500101&lmt=300"
+    )
+    ctx = ssl.create_default_context()
+    ctx.set_ciphers('DEFAULT')
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+        "Referer": "https://quote.eastmoney.com/",
+        "Accept": "*/*"
+    })
+    resp = urllib.request.urlopen(req, timeout=15, context=ctx)
+    data = json.loads(resp.read())
+    klines = (data.get("data") or {}).get("klines") or []
+    records = []
+    pre_close = None
+    for bar in klines:
+        parts = bar.split(",")
+        bar_day = parts[0].split(" ")[0]
+        if bar_day != day:
+            continue
+        bar_time = parts[0].split(" ")[1][:5] if " " in parts[0] else parts[0][-5:]
+        op = float(parts[1])
+        close = float(parts[2])
+        high = float(parts[3])
+        low = float(parts[4])
+        vol = float(parts[5]) * 100
+        amt_raw = float(parts[6]) if len(parts) > 6 and parts[6] else 0
+        amount = amt_raw if amt_raw > 0 else close * vol
+        if pre_close is None:
+            pre_close = op
+        pct = round((close - pre_close) / pre_close * 100, 3) if pre_close and pre_close > 0 else 0
+        records.append({
+            "time": f"{day}T{bar_time}:00",
+            "asOf": bar_time,
+            "price": close,
+            "pct": pct,
+            "amount": round(amount, 2),
+            "vol": int(vol),
+            "open": op,
+            "high": high,
+            "low": low,
+            "pre_close": pre_close,
+        })
+    return records
+
+
 def main() -> int:
     p = argparse.ArgumentParser()
-    p.add_argument("--symbols", default="sh511130,sh511260,sh512400,sh512480,sh515120,sh515880,sh516010,sh516160,sh516510,sh562500,sh562590,sh563530")
+    p.add_argument("--symbols", default="")
     p.add_argument("--day", default=datetime.now().strftime("%Y-%m-%d"))
     p.add_argument("--force", action="store_true")
+    p.add_argument("--backfill", action="store_true")
     args = p.parse_args()
 
     now = datetime.now()
     day = args.day or now.strftime("%Y-%m-%d")
     as_of = now.strftime("%H:%M")
-    
+
+    symbols = [s.strip() for s in str(args.symbols).split(",") if s.strip()]
+
+    if args.backfill and symbols:
+        wrote = []
+        failed = []
+        for sym in symbols:
+            try:
+                records = fetch_eastmoney_minute(sym, day)
+                if not records:
+                    failed.append(sym)
+                    continue
+                out = PROJECT_ROOT / f"data/etf/minute/{sym}/{day}.jsonl"
+                out.parent.mkdir(parents=True, exist_ok=True)
+                with open(out, "w", encoding="utf-8") as f:
+                    for rec in records:
+                        f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+                wrote.append(sym)
+            except Exception:
+                failed.append(sym)
+        print(json.dumps({
+            "ok": True, "day": day, "asOf": as_of,
+            "wrote": wrote, "skipped": failed, "symbols": symbols,
+            "mode": "backfill"
+        }, ensure_ascii=False))
+        return 0
+
     if not args.force and not is_trading_session(now):
         print(json.dumps({"ok": True, "skipped": True, "reason": "not_trading_session", "day": day, "asOf": as_of}))
         return 0
+
+    if not symbols:
+        symbols = ["sh511130,sh511260,sh512400,sh512480,sh515120,sh515880,sh516010,sh516160,sh516510,sh562500,sh562590,sh563530"]
+        symbols = [s.strip() for s in symbols[0].split(",") if s.strip()]
 
     try:
         import akshare as ak
@@ -70,17 +154,16 @@ def main() -> int:
         print(json.dumps({"ok": False, "error": f"fetch_failed: {e}"}))
         return 1
 
-    symbols = [s.strip() for s in str(args.symbols).split(",") if s.strip()]
     wrote = []
     skipped = []
-    
+
     for sym in symbols:
         try:
             row = df[df["代码"] == sym]
             if row.empty:
                 skipped.append(sym)
                 continue
-                
+
             row = row.iloc[0]
             record = {
                 "time": now.isoformat(),
@@ -97,21 +180,23 @@ def main() -> int:
         except Exception:
             skipped.append(sym)
             continue
-            
+
         out = PROJECT_ROOT / f"data/etf/minute/{sym}/{day}.jsonl"
         ok = append_jsonl(out, record)
         if ok:
             wrote.append(sym)
 
     print(json.dumps({
-        "ok": True, 
-        "day": day, 
-        "asOf": as_of, 
-        "wrote": wrote, 
-        "skipped": skipped, 
-        "symbols": symbols
+        "ok": True,
+        "day": day,
+        "asOf": as_of,
+        "wrote": wrote,
+        "skipped": skipped,
+        "symbols": symbols,
+        "mode": "live"
     }, ensure_ascii=False))
     return 0
+
 
 if __name__ == "__main__":
     raise SystemExit(main())

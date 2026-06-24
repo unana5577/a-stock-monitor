@@ -283,8 +283,11 @@ def parse_positions(items):
                     row_data[ctype] = val
 
         name = row_data.get("name")
-        if not name:
+        code_from_ocr = row_data.get("code")
+        if not name and not code_from_ocr:
             continue
+        if not name:
+            name = code_from_ocr
 
         shares = row_data.get("shares")
         avg_price = row_data.get("avgPrice")
@@ -292,7 +295,7 @@ def parse_positions(items):
         pnl = row_data.get("pnl")
 
         pos = {"name": name}
-        code = NAME_TO_CODE.get(name, NAME_TO_CODE.get(name.replace("ETF",""), ""))
+        code = code_from_ocr or NAME_TO_CODE.get(name, NAME_TO_CODE.get(name.replace("ETF",""), ""))
         if code:
             pos["code"] = code
         if shares and shares > 0:
