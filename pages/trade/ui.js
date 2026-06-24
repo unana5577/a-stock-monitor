@@ -147,7 +147,7 @@ createApp({
           stageMap.value = json.data.stages || {};
           day.value = json.data.day;
           error.value = '';
-          fetchLivePrices();
+          await fetchLivePrices();
         } else {
           error.value = json.error || '加载失败';
         }
@@ -337,9 +337,9 @@ createApp({
     const getLastPrice = (sym) => {
       const s = (stageMap.value || {})[sym];
       if (s && Number.isFinite(s.minute_price) && s.minute_price > 0) return s.minute_price;
-      if (s && Number.isFinite(s.close) && s.close > 0) return s.close;
       const l = (livePriceCache.value || {})[sym];
       if (l && Number.isFinite(l.price) && l.price > 0) return l.price;
+      if (s && Number.isFinite(s.close) && s.close > 0) return s.close;
       return null;
     };
 
