@@ -25,20 +25,18 @@ createApp({
     const overviewAiLoading = ref(false);
 
     const indexSymbols = ['sh000001', 'sz399001', 'sz399006', 'sh000688', 'sh000300', 'sh000852', 'sh511130', 'sh511260', 'sh562590', 'bank', 'broker', 'insure'];
-    const symbolNames = {
+    const symbolNames = ref({
       'sh000001': '上证指数',
       'sz399001': '深证成指',
       'sz399006': '创业板指',
       'sh000688': '科创50',
       'sh000300': '沪深300',
       'sh000852': '中证1000',
-      'sh511130': '30年国债ETF',
-      'sh511260': '10年国债ETF',
-      'sh562590': '半导体材料设备ETF',
       'bank': '银行',
       'broker': '证券',
       'insure': '保险'
-    };
+    });
+    const etfSymbolNames = ref({});
 
     const currentPrices = ref({});
     const minuteDataCache = ref({});
@@ -364,7 +362,8 @@ createApp({
     };
 
     const fetchMinuteData = async () => {
-      const allSymbols = [...indexSymbols];
+      const etfCodes = Object.keys(etfSymbolNames.value || {});
+      const allSymbols = [...new Set([...indexSymbols, ...etfCodes])];
       allSymbols.map(async (sym) => {
         try {
           const res = await fetch(`${API_BASE}/api/m1/data/minute?symbol=${sym}`);
@@ -387,7 +386,23 @@ createApp({
       });
     };
 
+    const fetchEtfNames = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/sector/manage`);
+        const json = await res.json();
+        if (json && json.ok && json.etfs) {
+          const names = { ...symbolNames.value };
+          Object.entries(json.etfs).forEach(([code, info]) => {
+            names[code] = info.api_name || code;
+          });
+          symbolNames.value = names;
+          etfSymbolNames.value = names;
+        }
+      } catch (e) { console.warn('ETF名称加载失败'); }
+    };
+
     onMounted(() => {
+      fetchEtfNames();
       refreshOverviewAi();
       fetchOverview();
       fetchMinuteData();

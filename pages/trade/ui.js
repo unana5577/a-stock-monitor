@@ -64,7 +64,7 @@ createApp({
 
     const fetchLivePrices = async () => {
       const posSyms = Object.keys(simState.value.positions || {});
-      const missing = posSyms.filter(s => !(stageMap.value || {})[s] || !(stageMap.value[s].minute_price));
+      const missing = posSyms.filter(s => !(stageMap.value || {})[s]?.minute_price);
       if (!missing.length) return;
       for (const sym of missing) {
         try {
@@ -72,6 +72,9 @@ createApp({
           const d = await r.json();
           if (d.ok) {
             livePriceCache.value = { ...livePriceCache.value, [sym]: { price: d.price, pct: d.pct, name: d.name } };
+            if (d.name && !symbolNames.value[sym]) {
+              symbolNames.value = { ...symbolNames.value, [sym]: d.name };
+            }
           }
         } catch (e) { /* ignore */ }
       }
@@ -97,9 +100,9 @@ createApp({
         if (info && info.code && /^(sh|sz)\d{6}$/i.test(info.code)) {
           // old format: {name: {code, category, ...}}
           code = info.code; name = key;
-        } else if (info && info.api_name && /^(sh|sz)\d{6}$/i.test(key)) {
+        } else if (info && /^(sh|sz)\d{6}$/i.test(key)) {
           // new format: {code: {api_name, category, ...}}
-          code = key; name = info.api_name;
+          code = key; name = info.api_name || key;
         } else {
           return;
         }
@@ -279,7 +282,10 @@ createApp({
         // 自动从行情接口拉中文名
         if (!symbolNames.value[lc] && !posEditName.value) {
           fetch(`/api/trade/quote?symbol=${lc}`).then(r => r.json()).then(d => {
-            if (d.ok && d.name) posEditName.value = d.name;
+            if (d.ok && d.name) {
+              posEditName.value = d.name;
+              symbolNames.value = { ...symbolNames.value, [lc]: d.name };
+            }
           }).catch(() => {});
         }
       } else {

@@ -246,6 +246,13 @@ def parse_positions(items):
             continue
 
         row_data = {}
+        # 优先扫描行内所有文本，识别 6 位纯数字代码
+        for item in row:
+            m = re.match(r'^(\d{6})$', item["text"].strip())
+            if m:
+                code_num = m.group(1)
+                row_data["code"] = f"sh{code_num}" if code_num[0] in '5678' else f"sz{code_num}"
+                break
         expanded = []
         for item in row:
             # 处理合并单元格: "+1,040.00 +6.77%" → 拆成两个独立 cell

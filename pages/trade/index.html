@@ -251,6 +251,7 @@
       </div>
       <div v-if="holdingsScreenshot" class="mb-2">
         <img :src="holdingsScreenshot" class="w-20 h-auto rounded border border-gray-200 opacity-80" alt="持仓截图">
+        <button @click="clearScreenshot()" class="text-[10px] text-red-400 hover:text-red-600 ml-2">✕ 删除截图</button>
         <span v-if="ocrLoading" class="text-[10px] text-blue-600 ml-2">识别中...</span>
         <span v-else-if="ocrError" class="text-[10px] text-orange-500 ml-2">{{ ocrError }}</span>
       </div>
@@ -508,6 +509,6 @@
 
 </div>
 
-<script src="./ui.js?v=20260618_2"></script>
+<script src="./ui.js?v=20260618_3"></script>
 </body>
 </html>

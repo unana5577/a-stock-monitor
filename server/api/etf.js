@@ -54,22 +54,24 @@ except Exception as e:
 }
 
 function triggerBackfillPipeline(code) {
-  const scripts = [
-    ['treasolo/m1_backfill.py', '--symbol', code, '--missing-window-days', '30', '--apply-fix', '--write'],
-    ['treasolo/m1_minute_fetch_etf.py', '--symbols', code, '--force'],
-    ['treasolo/m1_warmup.py'],
-    ['treasolo/m1_lifecycle.py']
-  ];
-  let idx = 0;
-  function next() {
-    if (idx >= scripts.length) return;
-    const args = scripts[idx++];
-    execFile('python3', args, { cwd: path.resolve(__dirname, '../..'), timeout: 120000, maxBuffer: 10 * 1024 * 1024 }, (err) => {
-      if (err) console.error(`[backfill] ${args[0]} failed:`, err.message);
-      setTimeout(next, 2000);
-    });
-  }
-  next();
+  return new Promise((resolve) => {
+    const scripts = [
+      ['treasolo/m1_backfill.py', '--symbol', code, '--missing-window-days', '30', '--apply-fix', '--write', '--expect-start', '2025-05-01'],
+      ['treasolo/m1_minute_fetch_etf.py', '--symbols', code, '--force'],
+      ['treasolo/m1_warmup.py'],
+      ['treasolo/m1_lifecycle.py']
+    ];
+    let idx = 0;
+    function next() {
+      if (idx >= scripts.length) return resolve();
+      const args = scripts[idx++];
+      execFile('python3', args, { cwd: path.resolve(__dirname, '../..'), timeout: 120000, maxBuffer: 10 * 1024 * 1024 }, (err) => {
+        if (err) console.error(`[backfill] ${args[0]} failed:`, err.message);
+        setTimeout(next, 2000);
+      });
+    }
+    next();
+  });
 }
 
 module.exports = function() {
@@ -87,7 +89,7 @@ module.exports = function() {
       try {
         const raw = await readBody(req);
         const body = raw ? JSON.parse(raw) : {};
-        let { code, category, sub_category } = body;
+        let { code, category, sub_category, hidden } = body;
         const isBackfillOnly = url.searchParams.get('action') === 'backfill';
 
         if (!code) {
@@ -102,35 +104,54 @@ module.exports = function() {
         }
 
         if (isBackfillOnly) {
-          triggerBackfillPipeline(code);
+          await triggerBackfillPipeline(code);
           const etfs = readEtfMapFromProxy();
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
           res.end(JSON.stringify({ ok: true, action: 'backfill_triggered', etfs }));
           return true;
         }
 
-        if (!category) category = '科技';
-        if (!sub_category) sub_category = '硬件';
-
         const cfg = readJsonFileSafe(PROXY_FILE) || {};
         if (!cfg.variants) cfg.variants = {};
         if (!cfg.variants.etf) cfg.variants.etf = {};
         if (!cfg.etf_meta) cfg.etf_meta = {};
 
+        let existingName = null;
+        for (const [n, c] of Object.entries(cfg.variants.etf)) {
+          if (c === code) { existingName = n; break; }
+        }
+
+        if (existingName) {
+          const meta = cfg.etf_meta[existingName] || {};
+          if (category) meta.category = category;
+          if (sub_category) meta.sub_category = sub_category;
+          if (typeof hidden === 'boolean') meta.hidden = hidden;
+          cfg.etf_meta[existingName] = meta;
+          cfg.updated_at = new Date().toISOString();
+          fs.writeFileSync(PROXY_FILE, JSON.stringify(cfg, null, 2));
+
+          const etfs = readEtfMapFromProxy();
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          res.end(JSON.stringify({ ok: true, action: 'updated', api_name: existingName, etfs }));
+          return true;
+        }
+
+        if (!category) category = '科技';
+        if (!sub_category) sub_category = '硬件';
+
         const name = await fetchQuoteName(code);
         const displayName = name || code;
-        const existed = cfg.variants.etf[displayName];
 
         cfg.variants.etf[displayName] = code;
         cfg.etf_meta[displayName] = { category, sub_category, hidden: false };
         cfg.updated_at = new Date().toISOString();
         fs.writeFileSync(PROXY_FILE, JSON.stringify(cfg, null, 2));
 
-        triggerBackfillPipeline(code);
+        await triggerBackfillPipeline(code);
 
         const etfs = readEtfMapFromProxy();
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
-        res.end(JSON.stringify({ ok: true, action: existed ? 'updated' : 'created', api_name: displayName, etfs }));
+        res.end(JSON.stringify({ ok: true, action: 'created', api_name: displayName, etfs }));
       } catch (e) {
         console.error('ETF manage POST error:', e.message);
         res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
