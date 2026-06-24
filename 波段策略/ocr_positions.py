@@ -311,7 +311,7 @@ def parse_positions(items):
         if pnl is not None:
             pos["pnl"] = round(pnl, 2)
 
-        if pos.get("shares") or pos.get("avgPrice") or pos.get("marketValue"):
+        if pos.get("shares") or pos.get("avgPrice") or pos.get("marketValue") or pos.get("code"):
             positions.append(pos)
 
     # 如果坐标法没识别到，回退: 按 ETF 名 + 后面数字

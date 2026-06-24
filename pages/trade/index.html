@@ -442,6 +442,7 @@
           <thead>
             <tr class="text-gray-500 border-b border-gray-100">
               <th class="text-left py-2 pr-3 font-medium">ETF</th>
+              <th class="text-left py-2 pr-3 font-medium">代码</th>
               <th class="text-right py-2 pr-3 font-medium">份额</th>
               <th class="text-right py-2 pr-3 font-medium">成本价</th>
             </tr>
@@ -449,6 +450,7 @@
           <tbody>
             <tr v-for="(p,i) in ocrResults" :key="p.name" class="border-b border-gray-50">
               <td class="py-2 pr-3 text-gray-800 font-medium">{{ p.name }}</td>
+              <td class="py-2 pr-3 font-mono text-[10px]" :class="p.code ? 'text-green-600' : 'text-orange-400'">{{ p.code || '—' }}</td>
               <td class="py-2 pr-3 text-right font-mono">{{ p.shares }}</td>
               <td class="py-2 pr-3 text-right font-mono">{{ p.avgPrice != null ? p.avgPrice.toFixed(3) : '—' }}</td>
             </tr>

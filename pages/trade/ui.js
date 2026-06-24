@@ -738,13 +738,15 @@ createApp({
       const unmapped = [];
       ocrResults.value.forEach((p) => {
         const code = p.code || matchNameToCode(p.name);
-        if (!code) { unmapped.push(p); return; }
+        if (!code) { unmapped.push({ ...p, reason: '未匹配到代码' }); return; }
         if (p.shares > 0 && p.avgPrice > 0) {
           simState.value.positions[code] = { shares: p.shares, avgPrice: p.avgPrice };
         } else if (p.shares > 0) {
           const existing = simState.value.positions[code];
           const avg = existing ? Number(existing.avgPrice || 0) : Number(getLastPrice(code) || 0);
           simState.value.positions[code] = { shares: p.shares, avgPrice: avg };
+        } else {
+          simState.value.positions[code] = { shares: p.shares || 0, avgPrice: p.avgPrice || 0 };
         }
       });
       if (unmapped.length) {
