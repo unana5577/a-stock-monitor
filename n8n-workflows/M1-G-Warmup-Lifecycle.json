@@ -6,11 +6,17 @@
       "name": "18:10定时触发",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.1,
-      "position": [0, 0],
+      "position": [
+        0,
+        0
+      ],
       "parameters": {
         "rule": {
           "interval": [
-            { "field": "cronExpression", "expression": "0 16 * * 1-5" }
+            {
+              "field": "cronExpression",
+              "expression": "0 16 * * 1-5"
+            }
           ]
         }
       }
@@ -20,17 +26,23 @@
       "name": "手动触发",
       "type": "n8n-nodes-base.manualTrigger",
       "typeVersion": 1,
-      "position": [0, 200]
+      "position": [
+        0,
+        200
+      ]
     },
     {
       "id": "warmup",
       "name": "生成 Warmup (60天)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
-      "position": [250, 100],
+      "position": [
+        250,
+        100
+      ],
       "parameters": {
         "method": "POST",
-        "url": "http://host.docker.internal:8787/api/m1/run",
+        "url": "http://app:8787/api/m1/run",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={\n  \"script\": \"m1_warmup.py\"\n}",
@@ -42,10 +54,13 @@
       "name": "生成 Lifecycle",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
-      "position": [450, 100],
+      "position": [
+        450,
+        100
+      ],
       "parameters": {
         "method": "POST",
-        "url": "http://host.docker.internal:8787/api/m1/run",
+        "url": "http://app:8787/api/m1/run",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={\n  \"script\": \"m1_lifecycle.py\"\n}",
@@ -57,17 +72,60 @@
       "name": "输出日志",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [650, 100],
+      "position": [
+        650,
+        100
+      ],
       "parameters": {
         "jsCode": "return $input.all().map(item => {\n  let raw = item.json.stdout ? item.json.stdout.join('\\n') : '';\n  let summary = `M1-G-Warmup-Lifecycle ❌ 未知错误`;\n  if (raw.includes('✅ M1-Lifecycle 成功！')) {\n    const match = raw.match(/✅ M1-Lifecycle 成功！(.*)/);\n    if (match) {\n      // Extract ETF advice from stdout if available\n      let adviceSection = '';\n      const adviceMatch = raw.match(/--- 操作说明 ---\\n([\\s\\S]*?)\\n✅/);\n      if (adviceMatch) {\n        adviceSection = '\\n\\n' + adviceMatch[1];\n      }\n      summary = `M1-G ✅\\n${match[1]}${adviceSection}`;\n    }\n  } else if (raw.includes('❌')) {\n    const match = raw.match(/❌ (.*)/);\n    if (match) summary = `M1-G ❌ 失败: ${match[1]}`;\n  }\n  return { json: { summary } };\n});"
       }
     }
   ],
   "connections": {
-    "18:10定时触发": { "main": [ [ { "node": "生成 Warmup (60天)", "type": "main", "index": 0 } ] ] },
-    "手动触发": { "main": [ [ { "node": "生成 Warmup (60天)", "type": "main", "index": 0 } ] ] },
-    "生成 Warmup (60天)": { "main": [ [ { "node": "生成 Lifecycle", "type": "main", "index": 0 } ] ] },
-    "生成 Lifecycle": { "main": [ [ { "node": "输出日志", "type": "main", "index": 0 } ] ] }
+    "18:10定时触发": {
+      "main": [
+        [
+          {
+            "node": "生成 Warmup (60天)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "手动触发": {
+      "main": [
+        [
+          {
+            "node": "生成 Warmup (60天)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "生成 Warmup (60天)": {
+      "main": [
+        [
+          {
+            "node": "生成 Lifecycle",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "生成 Lifecycle": {
+      "main": [
+        [
+          {
+            "node": "输出日志",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
   },
   "settings": {
     "executionOrder": "v1"

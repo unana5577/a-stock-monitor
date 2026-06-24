@@ -6,12 +6,21 @@
       "name": "1分钟触发",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.1,
-      "position": [0, 0],
+      "position": [
+        0,
+        0
+      ],
       "parameters": {
         "rule": {
           "interval": [
-            { "field": "cronExpression", "expression": "* 9-11 * * 1-5" },
-            { "field": "cronExpression", "expression": "* 13-14 * * 1-5" }
+            {
+              "field": "cronExpression",
+              "expression": "* 9-11 * * 1-5"
+            },
+            {
+              "field": "cronExpression",
+              "expression": "* 13-14 * * 1-5"
+            }
           ]
         }
       }
@@ -21,9 +30,19 @@
       "name": "15:00补点触发",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.1,
-      "position": [0, 160],
+      "position": [
+        0,
+        160
+      ],
       "parameters": {
-        "rule": { "interval": [ { "field": "cronExpression", "expression": "0 15 * * 1-5" } ] }
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 15 * * 1-5"
+            }
+          ]
+        }
       }
     },
     {
@@ -31,18 +50,27 @@
       "name": "手动触发",
       "type": "n8n-nodes-base.manualTrigger",
       "typeVersion": 1,
-      "position": [0, 320]
+      "position": [
+        0,
+        320
+      ]
     },
     {
       "id": "params-normal",
       "name": "参数(常规)",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.2,
-      "position": [220, 0],
+      "position": [
+        220,
+        0
+      ],
       "parameters": {
         "values": {
           "boolean": [
-            { "name": "force", "value": false }
+            {
+              "name": "force",
+              "value": false
+            }
           ]
         }
       }
@@ -52,11 +80,17 @@
       "name": "参数(收盘补点)",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.2,
-      "position": [220, 160],
+      "position": [
+        220,
+        160
+      ],
       "parameters": {
         "values": {
           "boolean": [
-            { "name": "force", "value": true }
+            {
+              "name": "force",
+              "value": true
+            }
           ]
         }
       }
@@ -66,11 +100,17 @@
       "name": "参数(手动)",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.2,
-      "position": [220, 320],
+      "position": [
+        220,
+        320
+      ],
       "parameters": {
         "values": {
           "boolean": [
-            { "name": "force", "value": true }
+            {
+              "name": "force",
+              "value": true
+            }
           ]
         }
       }
@@ -80,10 +120,13 @@
       "name": "调用本地脚本",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
-      "position": [450, 160],
+      "position": [
+        450,
+        160
+      ],
       "parameters": {
         "method": "POST",
-        "url": "http://host.docker.internal:8787/api/m1/run",
+        "url": "http://app:8787/api/m1/run",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={\n  \"script\": \"m1_market_amount.py\",\n  \"day\": \"{{ $today.toFormat('yyyy-MM-dd') }}\",\n  \"force\": {{ $json.force ? 'true' : 'false' }}\n}",
@@ -95,20 +138,93 @@
       "name": "输出日志",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [650, 160],
+      "position": [
+        650,
+        160
+      ],
       "parameters": {
         "jsCode": "return $input.all().map(item => {\n  let raw = item.json.stdout ? item.json.stdout.join('\\n') : '';\n  let summary = `M1-Market-Amount ❌ 未知错误`;\n  if (raw.includes('⏭️ 非交易时段')) {\n    summary = `M1-Market-Amount ⏭️ 跳过: 非交易时段`;\n  } else if (raw.includes('✅ 成功！')) {\n    const match = raw.match(/✅ 成功！(.*)/);\n    if (match) {\n      summary = `M1-Market-Amount ✅\\n${match[1]}`;\n    }\n  } else if (raw.includes('❌')) {\n    const match = raw.match(/❌ (.*)/);\n    if (match) summary = `M1-Market-Amount ❌ 失败: ${match[1]}`;\n  }\n  return { json: { summary } };\n});"
       }
     }
   ],
   "connections": {
-    "1分钟触发": { "main": [ [ { "node": "参数(常规)", "type": "main", "index": 0 } ] ] },
-    "15:00补点触发": { "main": [ [ { "node": "参数(收盘补点)", "type": "main", "index": 0 } ] ] },
-    "手动触发": { "main": [ [ { "node": "参数(手动)", "type": "main", "index": 0 } ] ] },
-    "参数(常规)": { "main": [ [ { "node": "调用本地脚本", "type": "main", "index": 0 } ] ] },
-    "参数(收盘补点)": { "main": [ [ { "node": "调用本地脚本", "type": "main", "index": 0 } ] ] },
-    "参数(手动)": { "main": [ [ { "node": "调用本地脚本", "type": "main", "index": 0 } ] ] },
-    "调用本地脚本": { "main": [ [ { "node": "输出日志", "type": "main", "index": 0 } ] ] }
+    "1分钟触发": {
+      "main": [
+        [
+          {
+            "node": "参数(常规)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "15:00补点触发": {
+      "main": [
+        [
+          {
+            "node": "参数(收盘补点)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "手动触发": {
+      "main": [
+        [
+          {
+            "node": "参数(手动)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "参数(常规)": {
+      "main": [
+        [
+          {
+            "node": "调用本地脚本",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "参数(收盘补点)": {
+      "main": [
+        [
+          {
+            "node": "调用本地脚本",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "参数(手动)": {
+      "main": [
+        [
+          {
+            "node": "调用本地脚本",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "调用本地脚本": {
+      "main": [
+        [
+          {
+            "node": "输出日志",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
   },
   "settings": {
     "executionOrder": "v1"

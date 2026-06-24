@@ -6,22 +6,40 @@
       "name": "定时触发",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.1,
-      "position": [0, 0],
-      "parameters": { "rule": { "interval": [ { "field": "cronExpression", "expression": "1 15 * * 1-5" } ] } }
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "1 15 * * 1-5"
+            }
+          ]
+        }
+      }
     },
     {
       "id": "manual",
       "name": "手动触发",
       "type": "n8n-nodes-base.manualTrigger",
       "typeVersion": 1,
-      "position": [0, 200]
+      "position": [
+        0,
+        200
+      ]
     },
     {
       "id": "set-symbols",
       "name": "生成六大指数",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [200, 100],
+      "position": [
+        200,
+        100
+      ],
       "parameters": {
         "jsCode": "const symbols = ['sh000001', 'sz399001', 'sz399006', 'sh000688', 'sh000300', 'sh000852'];\nreturn symbols.map(s => ({ json: { symbol: s } }));"
       }
@@ -31,10 +49,13 @@
       "name": "调用本地 M1-B",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
-      "position": [400, 100],
+      "position": [
+        400,
+        100
+      ],
       "parameters": {
         "method": "POST",
-        "url": "http://host.docker.internal:8787/api/m1/run",
+        "url": "http://app:8787/api/m1/run",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={\n  \"script\": \"m1_minute_to_daily.py\",\n  \"symbol\": \"{{ $json.symbol }}\",\n  \"day\": \"{{ $today.toFormat('yyyy-MM-dd') }}\"\n}",
@@ -46,17 +67,60 @@
       "name": "输出执行结果",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [600, 100],
+      "position": [
+        600,
+        100
+      ],
       "parameters": {
         "jsCode": "return $input.all().map(item => {\n  let raw = item.json.stdout ? item.json.stdout.join('\\n') : '';\n  let summary = `M1-B ❌ 未知错误`;\n  if (raw.includes('成功！合并生成了')) {\n    const match = raw.match(/成功！合并生成了 (.*) 的日线: (.*)/);\n    if (match) {\n      summary = `M1-B ✅ day=${match[1]}\\n合并成功: ${match[2]}`;\n    }\n  } else if (raw.includes('❌')) {\n    const match = raw.match(/❌ (.*)/);\n    if (match) summary = `M1-B ❌ 失败: ${match[1]}`;\n  }\n  return { json: { summary } };\n});"
       }
     }
   ],
   "connections": {
-    "定时触发": { "main": [ [ { "node": "生成六大指数", "type": "main", "index": 0 } ] ] },
-    "手动触发": { "main": [ [ { "node": "生成六大指数", "type": "main", "index": 0 } ] ] },
-    "生成六大指数": { "main": [ [ { "node": "调用本地 M1-B", "type": "main", "index": 0 } ] ] },
-    "调用本地 M1-B": { "main": [ [ { "node": "输出执行结果", "type": "main", "index": 0 } ] ] }
+    "定时触发": {
+      "main": [
+        [
+          {
+            "node": "生成六大指数",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "手动触发": {
+      "main": [
+        [
+          {
+            "node": "生成六大指数",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "生成六大指数": {
+      "main": [
+        [
+          {
+            "node": "调用本地 M1-B",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "调用本地 M1-B": {
+      "main": [
+        [
+          {
+            "node": "输出执行结果",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
   },
   "settings": {
     "executionOrder": "v1"
