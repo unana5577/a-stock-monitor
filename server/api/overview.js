@@ -259,6 +259,7 @@ module.exports = function() {
       if (fs.existsSync(intradayPathToday)) {
         intraday_snapshot = readSnapshotFromFile(intradayPathToday, cutoffAsOf);
       }
+      let intradayDay = todayStr;
       if (!intraday_snapshot && fs.existsSync(intradayDir)) {
         try {
           const files = fs.readdirSync(intradayDir).filter(f => parseDayFromIntradayFile(f));
@@ -266,10 +267,11 @@ module.exports = function() {
           const lastDay = days.length ? days[days.length - 1] : null;
           if (lastDay) {
             const p = path.join(intradayDir, `etf_snapshot_${lastDay}.jsonl`);
-            if (fs.existsSync(p)) intraday_snapshot = readSnapshotFromFile(p, '15:00');
+            if (fs.existsSync(p)) { intraday_snapshot = readSnapshotFromFile(p, '15:00'); intradayDay = lastDay; }
           }
         } catch (e) {}
       }
+      const data_incomplete = intradayDay !== todayStr;
 
       const policyPath = path.join(__dirname, '波段策略', 'data', `policy_${todayStr}.json`);
       let policy = null;
@@ -283,7 +285,7 @@ module.exports = function() {
       }
 
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
-      res.end(JSON.stringify({ ok: true, warmup, lifecycle, market_amount, intraday_snapshot, policy, marketState }));
+      res.end(JSON.stringify({ ok: true, warmup, lifecycle, market_amount, intraday_snapshot, policy, marketState, data_incomplete }));
     } catch (e) {
       res.statusCode = 500;
       res.end(JSON.stringify({ ok: false, error: e.message }));
@@ -534,12 +536,37 @@ module.exports = function() {
       let pre_close = null;
       let name = symbol;
       let source_day = day;
+      let data_incomplete = false;
 
       if (fs.existsSync(minutePath)) {
         const lines = fs.readFileSync(minutePath, 'utf8').trim().split('\n');
         data = lines.filter(l => l).map(l => {
           try { return JSON.parse(l); } catch(e) { return null; }
         }).filter(Boolean);
+      }
+
+      if (data.length === 0) {
+        const findLastAvailableDay = (sym, baseDay) => {
+          for (let i = 1; i <= 10; i++) {
+            const d = new Date(new Date(baseDay).getTime() - i * 86400000);
+            const checkDay = d.toISOString().slice(0, 10);
+            let cp = path.join(__dirname, '..', '..', `data/etf/minute/${sym}/${checkDay}.jsonl`);
+            if (!fs.existsSync(cp)) {
+              cp = path.join(__dirname, '..', '..', `data/index/minute/${sym}/${checkDay}.jsonl`);
+            }
+            if (fs.existsSync(cp)) {
+              const lns = fs.readFileSync(cp, 'utf8').trim().split('\n').filter(Boolean);
+              const pts = lns.map(l => { try { return JSON.parse(l); } catch(e) { return null; } }).filter(Boolean);
+              if (pts.length > 0) {
+                source_day = checkDay;
+                data_incomplete = true;
+                return pts;
+              }
+            }
+          }
+          return [];
+        };
+        data = findLastAvailableDay(symbol, day);
       }
 
       // 从 daily 数据中获取严谨的昨收价 (T-1 close)
@@ -603,7 +630,7 @@ module.exports = function() {
 
       // ETF 分时数据自带 pre_close 和 pct，大盘指数的分时数据可能没有，统一在这里补充基准
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
-      res.end(JSON.stringify({ ok: true, symbol, name, day, source_day, pre_close, data }));
+      res.end(JSON.stringify({ ok: true, symbol, name, day, source_day, pre_close, data, data_incomplete }));
     } catch (e) {
       res.statusCode = 500;
       res.end(JSON.stringify({ ok: false, error: e.message }));
@@ -666,6 +693,10 @@ module.exports = function() {
         } else if (data.script === 'stage_runner.py') {
           args = ['波段策略/stage_runner.py', '--use-minute', '--output-snapshot'];
           if (data.day) args.push('--day', data.day);
+        } else if (data.script === 'm1_data_health.py') {
+          args = ['treasolo/m1_data_health.py'];
+        } else if (data.script === 'm1_container_health.py') {
+          args = ['treasolo/m1_container_health.py'];
         } else {
           res.statusCode = 400;
           return res.end(JSON.stringify({ error: 'unknown script' }));

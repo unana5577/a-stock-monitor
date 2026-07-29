@@ -1,0 +1,62 @@
+{
+  "name": "M1-Z-Health (09:00)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      },
+      "id": "schedule",
+      "name": "每天 09:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0],
+      "notes": "开盘前系统健康检查"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://a-stock-v2:8788/api/m1/run",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "script",
+              "value": "m1_container_health.py"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "health-check",
+      "name": "容器健康巡检",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [250, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const out = $input.first().json.stdout || [];\nconst text = out.join('');\nlet result = {};\ntry { result = JSON.parse(text); } catch(e) {}\n\nconst ok = result.ok;\nconst issues = result.issues || [];\nconst lines = [];\nif (ok) {\n  lines.push('✅ 系统健康检查通过');\n  lines.push('  API 8788: OK');\n  lines.push('  页面端口: OK');\n  lines.push('  磁盘空间: OK');\n} else {\n  lines.push(`⚠️ ${issues.length} 个异常`);\n  for (const i of issues) lines.push(`  ${i}`);\n}\nreturn [{ json: { summary: lines.join('\\n'), ok, issues: issues.length } }];"
+      },
+      "id": "code-summary",
+      "name": "格式化报告",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [500, 0]
+    }
+  ],
+  "connections": {
+    "每天 09:00": {
+      "main": [[{"node": "容器健康巡检", "type": "main", "index": 0}]]
+    },
+    "容器健康巡检": {
+      "main": [[{"node": "格式化报告", "type": "main", "index": 0}]]
+    }
+  }
+}

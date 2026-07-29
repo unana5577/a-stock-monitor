@@ -11,6 +11,7 @@ API_TARGET=http://a-stock-v2:8788
 PORT=8789 API_TARGET=$API_TARGET node pages/overview/server.js &
 PORT=8790 API_TARGET=$API_TARGET node pages/etf/server.js &
 PORT=8791 API_TARGET=$API_TARGET node pages/trade/server.js &
+PORT=8784 API_TARGET=$API_TARGET node pages/astro/server.js &
 
 sleep 2
 

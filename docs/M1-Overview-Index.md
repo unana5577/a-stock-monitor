@@ -35,8 +35,11 @@ data/
   ├── warmup/                  # 预热与缓存聚合
   │    └── warmup-60.json      # 提取自 index与etf的最近60天日线聚合
   │
-  └── lifecycle/               # 业务分析与计算结果
-       └── lifecycle.json      # 基于 warmup-60 计算出的各板块生命周期、均线及建议
+  ├── lifecycle/               # 业务分析与计算结果
+  │    └── lifecycle.json      # 基于 warmup-60 计算出的各板块生命周期、均线及建议
+  │
+  └── stage/                   # 波段交易助手 (M1-H)
+       └── snapshot.json       # 每5分钟更新的盘中五阶段实时快照
 ```
 
 ***
@@ -157,4 +160,17 @@ data/
 
 - **用途**：探针级工作流，负责监控系统内其他业务工作流的运行状态（如执行耗时、成功率、节点报错抛出），为后续运维排障提供日志支撑。
 - **导入 n8n 用的文件**：`runner-observability.json` / `runner-observability-intraday.json` / `runner-observability-manual.json`
+
+***
+
+## 波段交易助手专属工作流
+
+### 14. 五阶段实时快照（日线 + 分时混合）
+
+- **用途**：每 5 分钟（盘中）通过 HTTP POST 调用服务端 `POST /api/trade/run-stage-snapshot`，触发 `波段策略/stage_runner.py --use-minute --output-snapshot`。读取每只 ETF 日线 + 当日分钟线，将最新分钟价拼入日线末尾后用实时价判断五阶段（主升/启动/震荡/下跌/防守）及 MA20 挂单价，写入 `data/stage/snapshot.json` 供前端毫秒级读取。
+- **导入 n8n 用的文件**：[n8n-workflows/M1-H-Stage-Snapshot.json](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/n8n-workflows/M1-H-Stage-Snapshot.json)
+- **底层 Python 脚本**：[波段策略/stage_runner.py](file:///Users/una5577/Documents/trae_projects/a-stock-monitor/波段策略/stage_runner.py) (参数: `--use-minute --output-snapshot`)
+- **抓下来的数据存在哪**：`data/stage/snapshot.json`
+- **下游消费者**：`GET /api/trade/stage_snapshot` → 交易助手页（8783 端口）→ 表格阶段列 + 持仓实时收益 + 多档挂单价
+- **备用方案**：若未导入 n8n，`pages/trade/server.js` 已内置 `setInterval` 5 分钟定时器。
 

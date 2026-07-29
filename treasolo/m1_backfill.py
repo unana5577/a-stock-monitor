@@ -130,7 +130,7 @@ def fetch_etf_incremental(symbol: str, last_date: str) -> list[dict]:
         })
     return records
 
-def run_one(symbol: str, write: bool, missing_window_days: int, expect_end: Optional[str], apply_fix: bool = False) -> int:
+def run_one(symbol: str, write: bool, missing_window_days: int, expect_end: Optional[str], apply_fix: bool = False, expect_start: Optional[str] = None) -> int:
     is_index = symbol in INDEX_SYMBOLS
     is_etf = symbol in ETF_SYMBOLS
     
@@ -142,7 +142,7 @@ def run_one(symbol: str, write: bool, missing_window_days: int, expect_end: Opti
         out_root = PROJECT_ROOT / "data/etf/daily"
     else:
         # 如果是新增的没有配置的 ETF，自动按照前缀判断
-        if symbol.startswith("sh5") or symbol.startswith("sz1"):
+        if symbol.startswith("sh") or symbol.startswith("sz"):
             is_etf = True
             name = f"未知ETF({symbol})"
             out_root = PROJECT_ROOT / "data/etf/daily"
@@ -228,6 +228,12 @@ def run_one(symbol: str, write: bool, missing_window_days: int, expect_end: Opti
     if not write:
         return 0
 
+    if expect_start:
+        before = len(cleaned)
+        cleaned = [r for r in cleaned if r["date"] >= expect_start]
+        if before != len(cleaned):
+            print(f"  [expect-start] 过滤掉 {before - len(cleaned)} 条 {expect_start} 前的数据")
+
     symbol_dir.mkdir(parents=True, exist_ok=True)
     meta_file = symbol_dir / "daily.jsonl.meta.json"
 
@@ -256,9 +262,11 @@ def main() -> int:
     p.add_argument("--expect-end", type=str, default="")
     p.add_argument("--apply-fix", action="store_true")
     p.add_argument("--write", action="store_true")
+    p.add_argument("--expect-start", type=str, default="")
     args = p.parse_args()
 
     expect_end = args.expect_end
+    expect_start = args.expect_start
     if not expect_end:
         now = datetime.now()
         expect_end = now.strftime("%Y-%m-%d")
@@ -269,6 +277,7 @@ def main() -> int:
         missing_window_days=args.missing_window_days,
         expect_end=expect_end,
         apply_fix=args.apply_fix,
+        expect_start=expect_start,
     )
 
 

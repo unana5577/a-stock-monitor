@@ -219,3 +219,85 @@ n8n start
 - 自动重试失败的数据采集
 - 自动回填缺失数据
 - 自动重启异常服务
+
+---
+
+# 全量工作流清单
+
+> 按调用顺序排列。每个工作流独立导入 n8n 激活。
+
+| 编号 | 文件 | 作用 | 触发方式 | 频率 |
+|------|------|------|----------|------|
+| M1-A | `M1-A-Index-Minute-Fetch.json` | 大盘指数分钟线采集 | 定时 | 每分钟 |
+| M1-B | `M1-B-Minute2Daily.json` | 大盘指数分钟线→日线 | 定时 | 收盘后 |
+| M1-B-S | `M1-B-Sector-Minute-Fetch.json` | 板块分钟线采集 | 定时 | 每分钟 |
+| M1-C | `M1-C-ETF-Minute-Fetch.json` | ETF 分钟线采集 | 定时 | 每分钟 |
+| M1-D | `M1-D-ETF-Minute2Daily.json` | ETF 分钟线→日线 | 定时 | 收盘后 |
+| M1-E | `M1-E-Backfill-Universal.json` | 通用回补（指数/ETF分钟线+日线） | 手动/n8n | 按需 |
+| M1-F | `M1-F-Cleanup-Minute.json` | 清理过期分钟线文件 | 定时 | 每日 |
+| M1-G | `M1-G-Warmup-Lifecycle.json` | Warmup 缓存 + 板块生命周期 | 定时 | 收盘后 |
+| M1-H | `M1-H-Stage-Snapshot.json` | **波段交易助手：五阶段快照（日线+分时）** | 定时 | 每 5 分钟 |
+| — | `M1-AI-Intraday-Report.json` | AI 大盘日内报告 | 定时 | 盘中 |
+| — | `M1-AI-ETF-Intraday-Report.json` | AI ETF 日内报告 | 定时 | 盘中 |
+| — | `M1-Breadth-Fetch.json` | 涨跌家数采集 | 定时 | 每分钟 |
+| — | `M1-Market-Amount.json` | 市场总成交额采集 | 定时 | 每分钟 |
+
+---
+
+## M1-H-Stage-Snapshot：波段交易助手阶段快照
+
+### 用途
+
+为交易助手页提供**盘中实时**的五阶段数据（主升/启动/震荡/下跌/防守），替代原来基于昨日收盘价的滞后的阶段判断。
+
+### 数据流
+
+```
+[⏰ 定时触发] 每5分钟
+     ↓
+[🌐 HTTP POST] http://host.docker.internal:8787/api/trade/run-stage-snapshot
+     ↓
+[📄 落盘]  data/stage/snapshot.json
+     ↓
+ API GET /api/trade/stage_snapshot → 前端交易助手页 30s 轮询
+```
+
+### 节点说明
+
+| 节点 | 类型 | 说明 |
+|------|------|------|
+| 每5分钟触发 | Schedule Trigger | Cron 每 5 分钟触发一次 |
+| 生成阶段快照 | HTTP Request | POST `http://host.docker.internal:8787/api/trade/run-stage-snapshot`，服务端内部 execFile `stage_runner.py --use-minute --output-snapshot` |
+
+### --use-minute 行为
+
+- **盘中（9:30-15:00）**：读取 `data/etf/minute/{sym}/{当天}.jsonl` 最新分钟价拼入日线末尾，用实时价做阶段判断 + 计算 MA20
+- **盘后/非交易日**：分钟线为空，退化为日线最后一条数据（与 `--day today` 等价）
+
+### 下游消费者
+
+- `GET /api/trade/stage_snapshot`（优先读快照，~5ms）
+- 降级：快照不存在时 execFile `stage_runner.py`
+
+### 部署说明
+
+1. n8n 导入 `M1-H-Stage-Snapshot.json`
+2. 确认容器内 8787 服务可达（`http://host.docker.internal:8787`）
+3. 激活工作流
+4. 替代方案：代码内置 `setInterval` 定时器（`pages/trade/server.js`），无需 n8n
+
+### 备用：代码内置定时器
+
+若不使用 n8n，`pages/trade/server.js` 启动时已内置 5 分钟定时调用：
+
+```js
+setInterval(() => {
+  execFile('python3', ['波段策略/stage_runner.py', '--use-minute', '--output-snapshot'], {
+    cwd: ROOT, timeout: 20000
+  }, (err, stdout, stderr) => {
+    if (err) console.error('[stage-snapshot]', String(stderr || err.message).slice(0, 100));
+  });
+}, 5 * 60 * 1000);
+```
+
+n8n 上线后删除这段代码即可，避免重复执行。

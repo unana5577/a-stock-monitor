@@ -64,11 +64,25 @@ def get_minute_points(series, current_time, lookback_minutes=30):
         
     return current_pt, past_pt
 
+def get_previous_trading_file(today_str: str, base_dir: str) -> str | None:
+    """找最近一个交易日的文件（回退最近 10 天）"""
+    from datetime import timedelta
+    dt = datetime.strptime(today_str, "%Y-%m-%d")
+    for i in range(1, 11):
+        prev_dt = dt - timedelta(days=i)
+        prev_day = prev_dt.strftime("%Y-%m-%d")
+        if (PROJECT_ROOT / f"data/{base_dir}/{prev_day}.jsonl").exists():
+            return prev_day
+    return None
+
 def run():
     day = datetime.now().strftime("%Y-%m-%d")
     asOf = datetime.now().strftime("%H:%M")
     
     print(f"[{asOf}] 正在生成 AI 盘中聚合快照...")
+    
+    is_stale = False
+    stale_note = ""
     
     # 1. 情绪 (Breadth)
     breadth = load_jsonl_last(PROJECT_ROOT / "data/market/minute/breadth-cache.jsonl")
@@ -79,6 +93,11 @@ def run():
             "下跌家数": breadth.get("down", 0),
             "平盘家数": breadth.get("flat", 0)
         }
+        # Verify the jsonl entry is from today
+        dt_str = str(breadth.get("datetime", breadth.get("timestamp", "")))
+        if dt_str[:10] != day and dt_str[:10]:
+            is_stale = True
+            stale_note = f"breadth 数据来自 {dt_str[:10]}，今日尚未更新"
     else:
         # Fallback to the archive if breadth-cache.jsonl is cleared
         day_nodash = day.replace("-", "")
@@ -98,7 +117,7 @@ def run():
             except:
                 pass
         
-        # If archive didn't have it, fallback to market-breadth-cache
+        # Fallback to breadth-cache.json (even stale, but tagged)
         if not breadth_data:
             snap_path = PROJECT_ROOT / "data/market/breadth-cache.json"
             if snap_path.exists():
@@ -106,11 +125,22 @@ def run():
                     with open(snap_path, "r") as f:
                         snap = json.load(f)
                         if "up" in snap:
-                            breadth_data = {
-                                "上涨家数": snap.get("up", 0),
-                                "下跌家数": snap.get("down", 0),
-                                "平盘家数": snap.get("flat", 0)
-                            }
+                            cached_day = str(snap.get("updated", snap.get("timestamp", "")))[:10]
+                            if cached_day != day:
+                                breadth_data = {
+                                    "上涨家数": snap.get("up", 0),
+                                    "下跌家数": snap.get("down", 0),
+                                    "平盘家数": snap.get("flat", 0)
+                                }
+                                is_stale = True
+                                stale_note = f"breadth 数据来自 {cached_day}（上一交易日），今日尚未更新"
+                                print(f"  ⚠️ 使用 stale breadth-cache.json {cached_day} 作为兜底")
+                            else:
+                                breadth_data = {
+                                    "上涨家数": snap.get("up", 0),
+                                    "下跌家数": snap.get("down", 0),
+                                    "平盘家数": snap.get("flat", 0)
+                                }
                 except:
                     pass
         
@@ -123,7 +153,9 @@ def run():
             "当前总成交额_亿": round(curr.get("market_amount", 0) / 1e8, 2),
             "当前时间": curr.get("asOf")
         }
-        # TODO: 昨日同时刻对比需要读昨天的分时，这里暂留框架
+    else:
+        # No today's volume data — indicates pre-market / data delay
+        print(f"  今日量能数据尚未生成 (data/market/minute/amount/{day}.jsonl)")
         
     # 3. 宽基与核心 ETF 走势 (近半小时)
     targets = {
@@ -135,20 +167,30 @@ def run():
         "银行板块": ("sector", "bank")
     }
     
+    got_any_market = False
     market_data = {}
     for name, (category, code) in targets.items():
         filepath = PROJECT_ROOT / f"data/{category}/minute/{code}/{day}.jsonl"
         series = load_jsonl_all(filepath)
+        if not series:
+            # 尝试前一天的数据作为盘前参考
+            prev_day = get_previous_trading_file(day, f"{category}/minute/{code}")
+            if prev_day:
+                filepath2 = PROJECT_ROOT / f"data/{category}/minute/{code}/{prev_day}.jsonl"
+                series = load_jsonl_all(filepath2)
+                if series and not got_any_market:
+                    is_stale = True
+                    if not stale_note:
+                        stale_note = f"核心资产数据来自 {prev_day}（上一交易日），尚未开市"
         curr_pt, past_pt = get_minute_points(series, asOf, 30)
         
         if curr_pt and past_pt:
-            # 对于 index 只有 price，对于 etf/sector 有 pct
+            got_any_market = True
             curr_price = curr_pt.get("price", 0)
             past_price = past_pt.get("price", 0)
             
             total_pct = curr_pt.get("pct")
             if total_pct is None and past_pt.get("price"):
-                # 如果没有 pct (如 index)，我们用第一根 K 线近似开盘价算个大概
                 open_price = series[0].get("price", curr_price)
                 total_pct = (curr_price - open_price) / open_price * 100 if open_price else 0
                 
@@ -174,6 +216,10 @@ def run():
                 
                 filepath = PROJECT_ROOT / f"data/etf/minute/{etf_code}/{day}.jsonl"
                 series = load_jsonl_all(filepath)
+                if not series:
+                    prev_day = get_previous_trading_file(day, f"etf/minute/{etf_code}")
+                    if prev_day:
+                        series = load_jsonl_all(PROJECT_ROOT / f"data/etf/minute/{etf_code}/{prev_day}.jsonl")
                 curr_pt, past_pt = get_minute_points(series, asOf, 30)
                 
                 if curr_pt and past_pt:
@@ -194,6 +240,10 @@ def run():
     payload = {
         "asOf": asOf,
         "date": day,
+        "data_freshness": {
+            "is_stale": is_stale,
+            "note": stale_note if stale_note else "实时数据"
+        },
         "情绪_Breadth": breadth_data,
         "量能_Volume": amount_data,
         "核心资产走势": market_data,

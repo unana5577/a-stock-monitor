@@ -860,11 +860,15 @@ function readBreadthCache() {
     const txt = fs.readFileSync(file, 'utf8').trim();
     if (!txt) return null;
     const data = JSON.parse(txt);
-    // 兼容 { ok: true, data: {...} } 格式
+    let result = data;
     if (data.data && typeof data.data === 'object') {
-        return data.data;
+        result = data.data;
     }
-    return data;
+    const ts = result.updated || result.timestamp || '';
+    const cachedDay = String(ts).slice(0, 10);
+    const today = latestTradingDay();
+    if (cachedDay && cachedDay !== today) return null;
+    return result;
   } catch (e) {
     return null;
   }

@@ -17,11 +17,12 @@ const MIME = {
 
 function proxyApi(req, res) {
   const url = new URL(req.url, API_BASE);
+  const apiUrl = new URL(API_BASE);
   const headers = { ...req.headers };
   delete headers.host;
   const options = {
-    hostname: '127.0.0.1',
-    port: 8787,
+    hostname: apiUrl.hostname,
+    port: apiUrl.port || 8787,
     path: url.pathname + url.search,
     method: req.method,
     headers,

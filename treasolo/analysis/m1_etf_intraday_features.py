@@ -413,15 +413,25 @@ def structure_label(series: list[dict[str, Any]], day: str, end_hhmm: str, pct_n
 
 def support_judgement(pct_now: float, heat: str, is_persistent: bool) -> tuple[str, str]:
     if pct_now < 0:
+        if heat == "放量":
+            if pct_now <= -2:
+                return "放量重挫（出货信号）", "大幅下跌且放量，主力出货迹象明显，警惕持续走弱。"
+            if pct_now <= -1:
+                if is_persistent:
+                    return "放量下杀（出货延续）", "跌超1%且持续放量超过一小时，资金持续出逃。"
+                return "放量下探（出货警示）", "回落过程中放量换手，有资金撤出迹象，需警惕是否为出货。"
+            if is_persistent:
+                return "放量横跌（派发确认）", "持续放量但未能收回跌幅，资金在高位派发。"
+            return "分歧加大", "回落过程中放量换手，分歧加大。"
         if heat == "缩量":
+            if pct_now <= -2:
+                return "缩量阴跌（筹码松动）", "持续探底但成交清淡，筹码松动但未出现恐慌。"
             if is_persistent:
                 return "抛压有限", "成交清淡，抛压有限。"
             return "承接待确认", "回落初期，承接力度仍需确认。"
-        if heat == "放量":
-            if pct_now <= -1:
-                return "承接有力", "回落过程中放量换手，承接仍在。"
-            return "分歧加大", "回落过程中放量换手，分歧加大。"
         if is_persistent:
+            if pct_now <= -1:
+                return "弱势横盘（抛压持续）", "跌超1%后横盘运行，未见有效承接。"
             return "承接观察", "回落后横盘运行，需观察承接是否持续。"
         return "承接待确认", "回落初期，承接力度仍需确认。"
     return "方向未明", "水面附近运行，等待方向选择。"

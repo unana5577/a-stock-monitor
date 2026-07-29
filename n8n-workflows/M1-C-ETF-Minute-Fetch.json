@@ -6,12 +6,21 @@
       "name": "1分钟触发",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.1,
-      "position": [0, 0],
+      "position": [
+        0,
+        0
+      ],
       "parameters": {
         "rule": {
           "interval": [
-            { "field": "cronExpression", "expression": "* 9-11 * * 1-5" },
-            { "field": "cronExpression", "expression": "* 13-14 * * 1-5" }
+            {
+              "field": "cronExpression",
+              "expression": "* 9-11 * * 1-5"
+            },
+            {
+              "field": "cronExpression",
+              "expression": "* 13-14 * * 1-5"
+            }
           ]
         }
       }
@@ -21,9 +30,19 @@
       "name": "15:00补点触发",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.1,
-      "position": [0, 160],
+      "position": [
+        0,
+        160
+      ],
       "parameters": {
-        "rule": { "interval": [ { "field": "cronExpression", "expression": "0 15 * * 1-5" } ] }
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 15 * * 1-5"
+            }
+          ]
+        }
       }
     },
     {
@@ -31,52 +50,38 @@
       "name": "手动触发",
       "type": "n8n-nodes-base.manualTrigger",
       "typeVersion": 1,
-      "position": [0, 320]
+      "position": [
+        0,
+        320
+      ]
     },
     {
-      "id": "query-etf-auto",
-      "name": "查ETF列表(自动)",
+      "id": "fetch-list",
+      "name": "获取ETF清单(API)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
-      "position": [220, 80],
+      "position": [
+        220,
+        120
+      ],
       "parameters": {
         "method": "GET",
-        "url": "http://app:8787/api/sector/manage",
+        "url": "http://a-stock-v2:8788/api/sector/manage",
         "sendBody": false,
         "options": {}
       }
     },
     {
-      "id": "extract-auto",
-      "name": "提取代码(自动)",
+      "id": "extract-codes",
+      "name": "展开可见ETF代码",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [450, 80],
+      "position": [
+        450,
+        120
+      ],
       "parameters": {
         "jsCode": "const input = $input.first().json;\nconst etfs = input.etfs || {};\nconst codes = Object.keys(etfs).filter(c => !etfs[c].hidden);\nreturn [{ json: { symbols: codes.join(','), force: false } }];"
-      }
-    },
-    {
-      "id": "query-etf-manual",
-      "name": "查ETF列表(手动)",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.1,
-      "position": [220, 320],
-      "parameters": {
-        "method": "GET",
-        "url": "http://app:8787/api/sector/manage",
-        "sendBody": false,
-        "options": {}
-      }
-    },
-    {
-      "id": "extract-manual",
-      "name": "提取代码(手动)",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [450, 320],
-      "parameters": {
-        "jsCode": "const input = $input.first().json;\nconst etfs = input.etfs || {};\nconst codes = Object.keys(etfs).filter(c => !etfs[c].hidden);\nreturn [{ json: { symbols: codes.join(','), force: true } }];"
       }
     },
     {
@@ -84,13 +89,16 @@
       "name": "落盘ETF分时",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
-      "position": [680, 160],
+      "position": [
+        680,
+        120
+      ],
       "parameters": {
         "method": "POST",
-        "url": "http://app:8787/api/m1/run",
+        "url": "http://a-stock-v2:8788/api/m1/run",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"script\": \"m1_minute_fetch_etf.py\",\n  \"day\": \"{{ $today.toFormat('yyyy-MM-dd') }}\",\n  \"symbols\": \"{{ $json.symbols }}\",\n  \"force\": {{ $json.force ? 'true' : 'false' }}\n}",
+        "jsonBody": "={\n  \"script\": \"m1_minute_fetch_etf.py\",\n  \"day\": \"{{ $today.toFormat('yyyy-MM-dd') }}\",\n  \"symbols\": \"{{ $json.symbols }}\",\n  \"force\": false\n}",
         "options": {}
       }
     },
@@ -99,21 +107,82 @@
       "name": "输出日志",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [900, 160],
+      "position": [
+        900,
+        120
+      ],
       "parameters": {
         "jsCode": "return $input.all().map(item => {\n  let raw = item.json.stdout ? item.json.stdout.join('') : '{}';\n  let parsed = {};\n  try { parsed = JSON.parse(raw); } catch(e) {}\n  \n  let summary = `M1-C ❌ 未知错误`;\n  if (parsed.skipped && parsed.reason === 'not_trading_session') {\n    summary = `M1-C ⏭️ day=${parsed.day} asOf=${parsed.asOf}\\n跳过ETF抓取: 非交易时段`;\n  } else if (parsed.ok) {\n    summary = `M1-C ✅ day=${parsed.day} asOf=${parsed.asOf}\\n监控ETF(${parsed.symbols ? parsed.symbols.length : 0}个): ${(parsed.symbols || []).join(', ')}\\n成功落盘: ${(parsed.wrote || []).join(', ') || '无'}\\n失败/空数据: ${(parsed.skipped || []).join(', ') || '无'}`;\n  }\n  \n  return { json: { summary } };\n});"
       }
     }
   ],
   "connections": {
-    "1分钟触发": { "main": [ [ { "node": "查ETF列表(自动)", "type": "main", "index": 0 } ] ] },
-    "15:00补点触发": { "main": [ [ { "node": "查ETF列表(自动)", "type": "main", "index": 0 } ] ] },
-    "手动触发": { "main": [ [ { "node": "查ETF列表(手动)", "type": "main", "index": 0 } ] ] },
-    "查ETF列表(自动)": { "main": [ [ { "node": "提取代码(自动)", "type": "main", "index": 0 } ] ] },
-    "提取代码(自动)": { "main": [ [ { "node": "落盘ETF分时", "type": "main", "index": 0 } ] ] },
-    "查ETF列表(手动)": { "main": [ [ { "node": "提取代码(手动)", "type": "main", "index": 0 } ] ] },
-    "提取代码(手动)": { "main": [ [ { "node": "落盘ETF分时", "type": "main", "index": 0 } ] ] },
-    "落盘ETF分时": { "main": [ [ { "node": "输出日志", "type": "main", "index": 0 } ] ] }
+    "1分钟触发": {
+      "main": [
+        [
+          {
+            "node": "获取ETF清单(API)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "15:00补点触发": {
+      "main": [
+        [
+          {
+            "node": "获取ETF清单(API)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "手动触发": {
+      "main": [
+        [
+          {
+            "node": "获取ETF清单(API)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "获取ETF清单(API)": {
+      "main": [
+        [
+          {
+            "node": "展开可见ETF代码",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "展开可见ETF代码": {
+      "main": [
+        [
+          {
+            "node": "落盘ETF分时",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "落盘ETF分时": {
+      "main": [
+        [
+          {
+            "node": "输出日志",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
   },
   "settings": {
     "executionOrder": "v1"

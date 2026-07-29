@@ -19,13 +19,26 @@
       "position": [0, 250]
     },
     {
-      "id": "code",
-      "name": "要合成日线的ETF列表",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
+      "id": "fetch-list",
+      "name": "获取ETF清单(API)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
       "position": [200, 100],
       "parameters": {
-        "jsCode": "const symbols = [\n  'sh511130', 'sh511260', 'sh512400', 'sh512480', 'sh515120', \n  'sh515880', 'sh516010', 'sh516160', 'sh516510', 'sh562500', 'sh563530'\n];\nreturn symbols.map(s => ({ json: { symbol: s } }));"
+        "method": "GET",
+        "url": "http://a-stock-v2:8788/api/sector/manage",
+        "sendBody": false,
+        "options": {}
+      }
+    },
+    {
+      "id": "code",
+      "name": "展开ETF列表",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [400, 100],
+      "parameters": {
+        "jsCode": "const data = $input.item.json;\nconst etfs = data.etfs || {};\nconst symbols = Object.keys(etfs).filter(k => !etfs[k].hidden);\nreturn symbols.map(s => ({ json: { symbol: s } }));"
       }
     },
     {
@@ -33,10 +46,10 @@
       "name": "执行合成脚本",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
-      "position": [400, 100],
+      "position": [600, 100],
       "parameters": {
         "method": "POST",
-        "url": "http://host.docker.internal:8787/api/m1/run",
+        "url": "http://a-stock-v2:8788/api/m1/run",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={\n  \"script\": \"m1_minute_to_daily_etf.py\",\n  \"symbol\": \"{{ $json.symbol }}\",\n  \"day\": \"{{ $today.toFormat('yyyy-MM-dd') }}\"\n}",
@@ -48,16 +61,17 @@
       "name": "输出日志",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [600, 100],
+      "position": [800, 100],
       "parameters": {
         "jsCode": "return $input.all().map(item => {\n  let raw = item.json.stdout ? item.json.stdout.join('\\n') : '';\n  let summary = `M1-D ❌ 未知错误`;\n  if (raw.includes('成功！生成了')) {\n    const match = raw.match(/成功！生成了 (.*) 的 ETF 日线: (.*)/);\n    if (match) {\n      summary = `M1-D ✅ day=${match[1]}\\n合并ETF日线成功: ${match[2]}`;\n    }\n  } else if (raw.includes('❌')) {\n    const match = raw.match(/❌ (.*)/);\n    if (match) summary = `M1-D ❌ 失败: ${match[1]}`;\n  }\n  return { json: { summary } };\n});"
       }
     }
   ],
   "connections": {
-    "盘后触发": { "main": [ [ { "node": "要合成日线的ETF列表", "type": "main", "index": 0 } ] ] },
-    "手动触发": { "main": [ [ { "node": "要合成日线的ETF列表", "type": "main", "index": 0 } ] ] },
-    "要合成日线的ETF列表": { "main": [ [ { "node": "执行合成脚本", "type": "main", "index": 0 } ] ] },
+    "盘后触发": { "main": [ [ { "node": "获取ETF清单(API)", "type": "main", "index": 0 } ] ] },
+    "手动触发": { "main": [ [ { "node": "获取ETF清单(API)", "type": "main", "index": 0 } ] ] },
+    "获取ETF清单(API)": { "main": [ [ { "node": "展开ETF列表", "type": "main", "index": 0 } ] ] },
+    "展开ETF列表": { "main": [ [ { "node": "执行合成脚本", "type": "main", "index": 0 } ] ] },
     "执行合成脚本": { "main": [ [ { "node": "输出日志", "type": "main", "index": 0 } ] ] }
   },
   "settings": {

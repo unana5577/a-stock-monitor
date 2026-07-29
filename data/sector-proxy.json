@@ -15,7 +15,9 @@
       "30年国债ETF": "sh511130",
       "10年国债ETF": "sh511260",
       "半导体材料设备ETF": "sh562590",
-      "科创半导体设备ETF鹏华": "sh589020"
+      "科创半导体设备ETF鹏华": "sh589020",
+      "科创50ETF华夏": "sh588000",
+      "芯片ETF华夏": "sz159995"
     },
     "index": {
       "半导体": "sh000990",
@@ -27,7 +29,7 @@
       "通讯设备": "sh000997"
     }
   },
-  "updated_at": "2026-06-23T05:26:56.956Z",
+  "updated_at": "2026-07-29T18:59:52",
   "etf_meta": {
     "半导体": {
       "category": "科技",
@@ -216,6 +218,16 @@
       "sub_category": "硬件"
     },
     "科创半导体设备ETF鹏华": {
+      "category": "科技",
+      "sub_category": "硬件",
+      "hidden": false
+    },
+    "科创50ETF华夏": {
+      "category": "科技",
+      "sub_category": "硬件",
+      "hidden": false
+    },
+    "芯片ETF华夏": {
       "category": "科技",
       "sub_category": "硬件",
       "hidden": false

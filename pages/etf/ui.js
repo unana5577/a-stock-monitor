@@ -16,25 +16,10 @@ createApp({
     const etfAiUpdatedAt = ref('');
     const etfAiLoading = ref(false);
 
-    const etfSymbols = ref(['sh512400', 'sh512480', 'sh515120', 'sh515880', 'sh516010', 'sh516160', 'sh516510', 'sh562500', 'sh563530', 'sh511130', 'sh511260', 'sh562590']);
-    const symbolNames = {
-      'sh512400': '有色金属ETF', 'sh512480': '半导体ETF', 'sh515120': '创新药ETF',
-      'sh515880': '通信ETF', 'sh516010': '游戏ETF', 'sh516160': '新能源ETF',
-      'sh516510': '云计算ETF', 'sh562500': '机器人ETF', 'sh563530': '商业航天ETF',
-      'sh511130': '30年国债ETF', 'sh511260': '10年国债ETF', 'sh562590': '半导体材料设备ETF'
-    };
-    const etfCategoryMap = {
-      'sh512480': '科技', 'sh515880': '科技', 'sh516510': '科技', 'sh516010': '科技',
-      'sh563530': '科技', 'sh562500': '科技', 'sh515120': '科技',
-      'sh512400': '资源', 'sh516160': '资源',
-      'sh511130': '债券', 'sh511260': '债券', 'sh562590': '科技'
-    };
-    const etfSubCategoryMap = {
-      'sh512480': '硬件', 'sh515880': '硬件', 'sh516510': '软件', 'sh516010': '软件',
-      'sh563530': '新质生产力', 'sh562500': '新质生产力', 'sh515120': '生物科技',
-      'sh512400': '大宗周期', 'sh516160': '泛能源',
-      'sh511130': '利率债', 'sh511260': '利率债', 'sh562590': '硬件'
-    };
+    const etfSymbols = ref([]);
+    const symbolNames = {};
+    const etfCategoryMap = {};
+    const etfSubCategoryMap = {};
 
     const currentPrices = ref({});
     const minuteDataCache = ref({});
@@ -240,7 +225,6 @@ createApp({
       const chart = chartInstances['correlation'];
       const symbolsToDraw = visibleEtfSymbols.value;
       const labelToSym = {};
-      symbolsToDraw.forEach(sym => { labelToSym[symbolNames[sym] || sym] = sym; });
       const seriesData = [];
       let xAxisData = [];
       if (corrDays.value === 1) {
@@ -257,19 +241,24 @@ createApp({
             mData.data.forEach((pt, idx) => {
               if (idx < 240) { const ptPct = pt.pct !== undefined ? pt.pct : (mData.pre_close ? ((pt.price - mData.pre_close) / mData.pre_close) * 100 : 0); pcts.push(ptPct); }
             });
-            seriesData.push({ name: symbolNames[sym] || sym, type: 'line', data: pcts, smooth: true, symbol: 'none', lineStyle: { width: 2 } });
+            const name = symbolNames[sym] || sym;
+            labelToSym[name] = sym;
+            seriesData.push({ name, type: 'line', data: pcts, smooth: true, symbol: 'none', lineStyle: { width: 2 } });
           }
         });
       } else {
         if (Object.keys(warmupHistory.value).length === 0) return;
-        symbolsToDraw.forEach(sym => {
+        const drawSymbols = symbolsToDraw.length > 0 ? symbolsToDraw : Object.keys(warmupHistory.value);
+        drawSymbols.forEach(sym => {
           if (warmupHistory.value[sym]) {
             let hist = warmupHistory.value[sym];
             if (hist.length > corrDays.value) hist = hist.slice(-corrDays.value);
             if (xAxisData.length === 0) xAxisData = hist.map(h => h.date);
             const basePrice = hist[0].close;
             const pcts = hist.map(h => ((h.close - basePrice) / basePrice) * 100);
-            seriesData.push({ name: symbolNames[sym] || sym, type: 'line', data: pcts, smooth: true, symbol: 'none', lineStyle: { width: 2 } });
+            const name = symbolNames[sym] || sym;
+            labelToSym[name] = sym;
+            seriesData.push({ name, type: 'line', data: pcts, smooth: true, symbol: 'none', lineStyle: { width: 2 } });
           }
         });
       }
@@ -370,7 +359,7 @@ createApp({
       etfFormMode.value = mode;
       etfForm.error = '';
       if (mode === 'add') {
-        etfForm.name = ''; etfForm.code = ''; etfForm.category = '科技'; etfForm.sub_category = '硬件'; etfFormEditingCode.value = null;
+        etfForm.code = ''; etfForm.category = '科技'; etfForm.sub_category = '硬件'; etfFormEditingCode.value = null;
       } else if (row) {
         etfForm.name = row.name; etfForm.code = row.code; etfForm.category = row.category; etfForm.sub_category = row.sub_category; etfFormEditingCode.value = row.code;
       }
@@ -383,12 +372,12 @@ createApp({
       Object.keys(etfCategoryMap).forEach(k => delete etfCategoryMap[k]);
       Object.keys(etfSubCategoryMap).forEach(k => delete etfSubCategoryMap[k]);
       Object.keys(hiddenSymbols).forEach(k => delete hiddenSymbols[k]);
-      Object.entries(apiEtfs).forEach(([name, info]) => {
-        newSymbols.push(info.code);
-        symbolNames[info.code] = name;
-        etfCategoryMap[info.code] = info.category;
-        etfSubCategoryMap[info.code] = info.sub_category;
-        if (info.hidden) hiddenSymbols[info.code] = true;
+      Object.entries(apiEtfs).forEach(([code, info]) => {
+        newSymbols.push(code);
+        symbolNames[code] = info.api_name || code;
+        etfCategoryMap[code] = info.category || '科技';
+        etfSubCategoryMap[code] = info.sub_category || '硬件';
+        if (info.hidden) hiddenSymbols[code] = true;
       });
       etfSymbols.value = newSymbols;
     };
@@ -416,36 +405,20 @@ createApp({
       } catch (e) { console.warn('ETF配置加载失败，使用硬编码默认值'); }
     };
 
-    const triggerBackfill = async (code, name) => {
+    const closeBackfillToast = () => { backfillToast.show = false; };
+
+    const triggerBackfillRow = async (code) => {
       backfillStatus[code] = 'requesting';
-      backfillToast.name = name || symbolNames[code] || code;
+      backfillToast.name = symbolNames[code] || code;
       backfillToast.code = code;
       backfillToast.status = 'requesting';
       backfillToast.show = true;
       try {
-        await fetch(`${API_BASE}/api/m1/run`, {
+        await fetch(`${API_BASE}/api/sector/manage?action=backfill`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ script: 'm1_backfill.py', symbol: code, applyFix: true })
+          body: JSON.stringify({ code })
         });
       } catch (e) { console.warn('回补触发失败', e); }
-      try {
-        await fetch(`${API_BASE}/api/m1/run`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ script: 'm1_minute_fetch_etf.py', symbols: code, force: true })
-        });
-      } catch (e) { console.warn('分时拉取触发失败', e); }
-      try {
-        await fetch(`${API_BASE}/api/m1/run`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ script: 'm1_warmup.py' })
-        });
-      } catch (e) { console.warn('warmup触发失败', e); }
-      try {
-        await fetch(`${API_BASE}/api/m1/run`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ script: 'm1_lifecycle.py' })
-        });
-      } catch (e) { console.warn('lifecycle触发失败', e); }
       setTimeout(async () => {
         try {
           const res = await fetch(`${API_BASE}/api/m1/data/minute?symbol=${code}`);
@@ -462,15 +435,7 @@ createApp({
       }, 35000);
     };
 
-    const closeBackfillToast = () => { backfillToast.show = false; };
-
-    const triggerBackfillRow = (code) => {
-      const name = symbolNames[code] || code;
-      triggerBackfill(code, name);
-    };
-
     const submitEtfForm = async () => {
-      if (!etfForm.name.trim()) { etfForm.error = '名称不能为空'; return; }
       let code = etfForm.code.trim();
       if (!code) { etfForm.error = '代码不能为空'; return; }
       if (/^\d{6}$/.test(code)) {
@@ -479,7 +444,7 @@ createApp({
       if (!/^(sh|sz)\d{6}$/.test(code)) { etfForm.error = '代码格式错误，应为 sh/sz + 6位数字（或纯6位数字自动补前缀）'; return; }
       if (etfFormMode.value === 'add' && etfManagerRows.value.find(r => r.code === code)) { etfForm.error = '该代码已存在'; return; }
       try {
-        const body = { name: etfForm.name.trim(), code, category: etfForm.category, sub_category: etfForm.sub_category };
+        const body = { code, category: etfForm.category, sub_category: etfForm.sub_category };
         const res = await fetch(`${API_BASE}/api/sector/manage`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
         const json = await res.json();
         if (json && json.ok && json.etfs) {
@@ -488,7 +453,25 @@ createApp({
           nextTick(() => { renderCategoryBar(); renderEtfPctBar(); });
           etfFormOpen.value = false;
           etfManagerOpen.value = false;
-          triggerBackfill(code, etfForm.name.trim());
+          backfillStatus[code] = 'requesting';
+          backfillToast.name = json.api_name || symbolNames[code] || code;
+          backfillToast.code = code;
+          backfillToast.status = 'requesting';
+          backfillToast.show = true;
+          setTimeout(async () => {
+            try {
+              const r2 = await fetch(`${API_BASE}/api/m1/data/minute?symbol=${code}`);
+              const d2 = await r2.json();
+              const minuteOk = d2.ok && d2.data && d2.data.length > 0;
+              backfillStatus[code] = minuteOk ? 'done' : 'failed';
+              backfillToast.status = minuteOk ? 'done' : 'failed';
+            } catch (e) {
+              backfillStatus[code] = 'failed';
+              backfillToast.status = 'failed';
+            }
+            fetchOverview(); fetchMinuteData();
+            setTimeout(() => { backfillToast.show = false; }, 3000);
+          }, 35000);
         } else { etfForm.error = json?.error || '保存失败'; }
       } catch (e) { etfForm.error = '网络错误'; }
     };
@@ -497,7 +480,7 @@ createApp({
       const name = symbolNames[code] || code;
       if (!confirm(`确认删除 "${name}" 吗？`)) return;
       try {
-        const res = await fetch(`${API_BASE}/api/sector/manage?name=${encodeURIComponent(name)}`, { method: 'DELETE' });
+        const res = await fetch(`${API_BASE}/api/sector/manage?code=${encodeURIComponent(code)}`, { method: 'DELETE' });
         const json = await res.json();
         if (json && json.ok && json.etfs) {
           syncMapsFromApi(json.etfs);
@@ -576,8 +559,8 @@ createApp({
       }, true);
     };
 
-    onMounted(() => {
-      fetchEtfConfig();
+    onMounted(async () => {
+      await fetchEtfConfig();
       refreshEtfAi();
       fetchOverview();
       fetchMinuteData();

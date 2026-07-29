@@ -98,7 +98,7 @@
         <div class="flex justify-between items-center mb-4">
           <div class="text-[11px] font-semibold text-q-subtext uppercase tracking-widest">归一分析 (Normalized Analysis)</div>
           <div class="flex gap-2 items-center">
-            <input type="text" placeholder="输入代码/名称对比 (如 sh512880)" class="text-xs border border-gray-300 rounded px-2 py-1 w-48 focus:outline-none focus:border-q-primary">
+            <input type="text" placeholder="输入代码对比 (如 sh512480)" class="text-xs border border-gray-300 rounded px-2 py-1 w-48 focus:outline-none focus:border-q-primary">
             <div class="flex bg-gray-100 rounded p-0.5">
               <button @click="corrDays = 1; renderCorrelationChart()" :class="corrDays === 1 ? 'bg-white shadow-sm font-medium text-q-text' : 'text-gray-500 hover:text-gray-700'" class="px-2 py-0.5 text-xs rounded transition-all">当日</button>
               <button @click="corrDays = 5; renderCorrelationChart()" :class="corrDays === 5 ? 'bg-white shadow-sm font-medium text-q-text' : 'text-gray-500 hover:text-gray-700'" class="px-2 py-0.5 text-xs rounded transition-all">5日</button>
@@ -302,10 +302,9 @@
           <button @click="etfFormOpen = false" class="text-gray-400 hover:text-gray-600"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
         </div>
         <div class="px-4 py-4 space-y-3.5">
-          <div><label class="block text-[11px] font-medium text-gray-500 mb-1">ETF 名称</label><input v-model="etfForm.name" type="text" placeholder="例如：半导体材料" class="w-full border border-gray-200 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:border-q-primary transition-colors"></div>
           <div><label class="block text-[11px] font-medium text-gray-500 mb-1">ETF 代码</label><input v-model="etfForm.code" type="text" placeholder="例如：sh562590" class="w-full border border-gray-200 rounded-md px-3 py-1.5 text-sm font-mono focus:outline-none focus:border-q-primary transition-colors"></div>
-          <div><label class="block text-[11px] font-medium text-gray-500 mb-1">阵营</label><select v-model="etfForm.category" class="w-full border border-gray-200 rounded-md px-3 py-1.5 text-sm bg-white focus:outline-none focus:border-q-primary"><option value="科技">科技</option><option value="资源">资源</option></select></div>
-          <div><label class="block text-[11px] font-medium text-gray-500 mb-1">子分类</label><select v-model="etfForm.sub_category" class="w-full border border-gray-200 rounded-md px-3 py-1.5 text-sm bg-white focus:outline-none focus:border-q-primary"><template v-if="etfForm.category === '科技'"><option value="硬件">硬件</option><option value="软件">软件</option><option value="新质生产力">新质生产力</option><option value="生物科技">生物科技</option></template><template v-else><option value="大宗周期">大宗周期</option><option value="泛能源">泛能源</option></template></select></div>
+          <div><label class="block text-[11px] font-medium text-gray-500 mb-1">阵营</label><select v-model="etfForm.category" class="w-full border border-gray-200 rounded-md px-3 py-1.5 text-sm bg-white focus:outline-none focus:border-q-primary"><option value="科技">科技</option><option value="资源">资源</option><option value="债券">债券</option></select></div>
+          <div><label class="block text-[11px] font-medium text-gray-500 mb-1">子分类</label><select v-model="etfForm.sub_category" class="w-full border border-gray-200 rounded-md px-3 py-1.5 text-sm bg-white focus:outline-none focus:border-q-primary"><template v-if="etfForm.category === '科技'"><option value="硬件">硬件</option><option value="软件">软件</option><option value="新质生产力">新质生产力</option><option value="生物科技">生物科技</option></template><template v-else-if="etfForm.category === '资源'"><option value="大宗周期">大宗周期</option><option value="泛能源">泛能源</option></template><template v-else><option value="利率债">利率债</option></template></select></div>
           <div v-if="etfForm.error" class="text-[11px] text-red-600 bg-red-50 rounded px-3 py-2">{{ etfForm.error }}</div>
         </div>
         <div class="px-4 py-3 border-t border-gray-100 flex justify-end gap-2">

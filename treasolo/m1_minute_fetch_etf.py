@@ -139,8 +139,8 @@ def main() -> int:
         return 0
 
     if not symbols:
-        symbols = ["sh511130,sh511260,sh512400,sh512480,sh515120,sh515880,sh516010,sh516160,sh516510,sh562500,sh562590,sh563530"]
-        symbols = [s.strip() for s in symbols[0].split(",") if s.strip()]
+        print(json.dumps({"ok": True, "skipped": True, "reason": "empty_symbols", "day": day, "asOf": as_of}))
+        return 0
 
     try:
         import akshare as ak

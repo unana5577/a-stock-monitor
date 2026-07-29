@@ -1,0 +1,62 @@
+{
+  "name": "M1-Z-Data-Health (15:10)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      },
+      "id": "schedule",
+      "name": "每个交易日 15:10",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0],
+      "notes": "收盘后检查数据完整性"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://a-stock-v2:8788/api/m1/run",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "script",
+              "value": "m1_data_health.py"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "data-health",
+      "name": "数据健康巡检",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [250, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const out = $input.first().json.stdout || [];\nconst text = out.join('');\nlet result = {};\ntry { result = JSON.parse(text); } catch(e) {}\n\nconst ok = result.ok;\nconst count = result.issue_count || 0;\nconst checks = result.checks || {};\n\nconst lines = [];\nif (ok) {\n  lines.push('✅ 数据巡检通过');\n} else {\n  lines.push(`⚠️ 发现 ${count} 个问题`);\n}\n\nfor (const [key, issues] of Object.entries(checks)) {\n  if (issues.length > 0) {\n    for (const i of issues) lines.push(i);\n  } else {\n    lines.push(`  ${key}: OK`);\n  }\n}\n\nreturn [{ json: { summary: lines.join('\\n'), ok, issues: count } }];"
+      },
+      "id": "code-summary",
+      "name": "格式化报告",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [500, 0]
+    }
+  ],
+  "connections": {
+    "每个交易日 15:10": {
+      "main": [[{"node": "数据健康巡检", "type": "main", "index": 0}]]
+    },
+    "数据健康巡检": {
+      "main": [[{"node": "格式化报告", "type": "main", "index": 0}]]
+    }
+  }
+}
