@@ -23,17 +23,18 @@ SYMBOL_TO_NAME = {
 def load_etf_names_from_proxy():
     proxy_path = PROJECT_ROOT / "data/sector-proxy.json"
     if not proxy_path.exists():
-        return SYMBOL_TO_NAME.copy()
+        return SYMBOL_TO_NAME.copy(), {}
     try:
         with open(proxy_path, "r", encoding="utf-8") as f:
             proxy = json.load(f)
         etf_dict = (proxy.get("variants") or {}).get("etf") or {}
+        etf_meta = (proxy.get("etf_meta") or {})
         result = SYMBOL_TO_NAME.copy()
         for name, code in etf_dict.items():
             result[str(code)] = name
-        return result
+        return result, etf_meta
     except Exception:
-        return SYMBOL_TO_NAME.copy()
+        return SYMBOL_TO_NAME.copy(), {}
 
 def load_daily_amount_volume(symbol: str) -> dict:
     candidates = [
@@ -76,11 +77,16 @@ def build_lifecycle():
     day = warmup_data.get("day", "")
     
     # 从 proxy 加载 ETF 名称
-    symbol_to_name = load_etf_names_from_proxy()
+    symbol_to_name, _ = load_etf_names_from_proxy()
+    
+    # 过滤: 债券类ETF不参与生命周期分析
+    bond_symbols = {'sh511130', 'sh511260'}  # 10年/30年国债ETF
     
     # 将 history 转换为 DataFrame
     df_map = {}
     for symbol, records in history.items():
+        if symbol in bond_symbols:
+            continue
         if not records: continue
         av_map = load_daily_amount_volume(symbol)
         # 补齐缺失的列

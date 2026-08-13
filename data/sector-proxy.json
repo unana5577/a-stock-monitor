@@ -206,12 +206,12 @@
     "30年国债ETF": {
       "category": "债券",
       "sub_category": "利率债",
-      "hidden": true
+      "hidden": false
     },
     "10年国债ETF": {
       "category": "债券",
       "sub_category": "利率债",
-      "hidden": true
+      "hidden": false
     },
     "半导体材料设备ETF": {
       "category": "科技",

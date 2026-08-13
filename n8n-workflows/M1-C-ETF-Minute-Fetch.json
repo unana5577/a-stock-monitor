@@ -81,7 +81,7 @@
         120
       ],
       "parameters": {
-        "jsCode": "const input = $input.first().json;\nconst etfs = input.etfs || {};\nconst codes = Object.keys(etfs).filter(c => !etfs[c].hidden);\nreturn [{ json: { symbols: codes.join(','), force: false } }];"
+        "jsCode": "const input = $input.first().json;\nconst etfs = input.etfs || {};\nconst codes = Object.keys(etfs).filter(c => etfs[c]);\nreturn [{ json: { symbols: codes.join(','), force: false } }];"
       }
     },
     {

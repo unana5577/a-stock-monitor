@@ -747,6 +747,8 @@ def main() -> int:
     for name, symbol in etf_dict.items():
         symbol = str(symbol)
         meta = etf_meta.get(name) or {}
+        if meta.get("category") == "债券":
+            continue  # 国债/债基不参与归一分析和生命周期
         sub = meta.get("sub_category") or ""
         series_file = data_path("etf", "minute", symbol, f"{day}.jsonl")
         series = load_jsonl_all(series_file)
