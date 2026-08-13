@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>天时日历 (Glassmorphism - M1 Colors) - M1 Quant</title>
+  
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <style>
+    body {
+      background-color: #F4F4F5; /* q-bg */
+      color: #18181B; /* q-text */
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+      margin: 0;
+      padding: 0;
+      -webkit-font-smoothing: antialiased;
+    }
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); border-radius: 2px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.25); }
+    
+    [v-cloak] { display: none; }
+    
+    /* 背景氛围光 - 调暗调冷，更贴合量化界面的冷静感 */
+    .ambient-bg {
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      overflow: hidden;
+      pointer-events: none;
+    }
+    .ambient-blob-1 {
+      position: absolute;
+      top: -10%; left: -10%;
+      width: 50%; height: 50%;
+      background: radial-gradient(circle, rgba(37,99,235,0.06) 0%, rgba(255,255,255,0) 70%); /* q-primary blue */
+      filter: blur(40px);
+    }
+    .ambient-blob-2 {
+      position: absolute;
+      bottom: -10%; right: -5%;
+      width: 60%; height: 60%;
+      background: radial-gradient(circle, rgba(16,185,129,0.04) 0%, rgba(255,255,255,0) 70%); /* q-down green */
+      filter: blur(60px);
+    }
+
+    /* 毛玻璃面板基类 - 降低透明度，让白底更实，不影响阅读 */
+    .glass-panel {
+      background: rgba(255, 255, 255, 0.85);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(228, 228, 231, 0.8); /* 接近 q-border */
+      border-radius: 12px;
+      box-shadow: 0 2px 10px -1px rgba(0, 0, 0, 0.02), 0 1px 2px -1px rgba(0, 0, 0, 0.01);
+    }
+
+    /* Calendar Grid Specific */
+    .calendar-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr); /* Mon-Fri only */
+      gap: 12px;
+    }
+    .cal-day {
+      min-height: 124px;
+      background: rgba(255, 255, 255, 0.7);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(228, 228, 231, 0.6);
+      border-radius: 8px;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      cursor: pointer;
+      transition: all 0.2s ease-out;
+    }
+    .cal-day:hover {
+      background: rgba(255, 255, 255, 0.95);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px -2px rgba(37, 99, 235, 0.06); /* M1 blue shadow */
+      border-color: rgba(147, 197, 253, 0.8);
+    }
+    .cal-day.active {
+      background: rgba(239, 246, 255, 0.8); /* blue-50 */
+      border-color: rgba(37, 99, 235, 0.5); /* q-primary */
+      box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.3);
+    }
+    .cal-day.disabled {
+      background: rgba(250, 250, 250, 0.5);
+      border-color: rgba(228, 228, 231, 0.4);
+      color: #A1A1AA;
+      pointer-events: none;
+    }
+
+    /* LED 指示灯效果 - 使用 M1 涨跌色 */
+    .led-dot {
+      height: 4px;
+      border-radius: 2px;
+      opacity: 0.9;
+    }
+    .led-up { background: #EF4444; } /* q-up */
+    .led-down { background: #10B981; } /* q-down */
+  </style>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            'q-primary': '#2563EB',
+            'q-up': '#EF4444',
+            'q-down': '#10B981',
+            'q-text': '#18181B',
+            'q-subtext': '#71717A',
+            'q-border': '#E4E4E7'
+          },
+          fontFamily: {
+            mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="h-screen overflow-hidden">
+  <!-- 环境光背景 -->
+  <div class="ambient-bg">
+    <div class="ambient-blob-1"></div>
+    <div class="ambient-blob-2"></div>
+  </div>
+
+  <div id="app" v-cloak class="flex flex-col h-full relative z-10">
+    <!-- Header (毛玻璃) -->
+    <header class="h-14 bg-white/70 backdrop-blur-md border-b border-q-border/80 px-6 flex justify-between items-center shrink-0 z-20">
+      <div class="flex items-center gap-4">
+        <div class="text-sm font-bold text-q-text tracking-wide">天时实验 <span class="text-q-subtext font-normal ml-1">Astro</span></div>
+        <div class="h-4 w-px bg-gray-300/60"></div>
+        <div class="text-xs text-q-subtext flex items-center gap-2">
+          <span>命主日柱:</span>
+          <span class="font-mono bg-white/90 border border-gray-200 shadow-sm px-1.5 py-0.5 rounded text-q-text font-semibold">癸亥</span>
+          <button class="text-q-primary hover:underline transition-colors ml-1">修改</button>
+        </div>
+      </div>
+      <div class="flex items-center gap-3">
+        <button class="px-2.5 py-1 rounded border border-gray-200/80 bg-white/60 hover:bg-white/90 text-xs text-gray-600 transition-all">&lt; 上一月</button>
+        <div class="text-sm font-bold font-mono w-24 text-center tracking-tight text-q-text">2026<span class="text-gray-400 font-normal mx-0.5">/</span>07</div>
+        <button class="px-2.5 py-1 rounded border border-gray-200/80 bg-white/60 hover:bg-white/90 text-xs text-gray-600 transition-all">下一月 &gt;</button>
+      </div>
+    </header>
+
+    <main class="flex-1 overflow-hidden flex p-4 md:p-6 gap-6">
+      
+      <!-- Left: Calendar Area -->
+      <div class="flex-1 flex flex-col min-w-0 gap-4">
+        
+        <!-- Month Energy Bar (毛玻璃) -->
+        <div class="glass-panel p-4 shrink-0 flex flex-col lg:flex-row items-start lg:items-center justify-between border-l-4 border-l-orange-400 relative overflow-hidden">
+          <!-- 内部光晕减弱，避免干扰阅读 -->
+          <div class="absolute right-0 top-0 bottom-0 w-1/4 bg-gradient-to-l from-orange-50/30 to-transparent pointer-events-none"></div>
+          
+          <div class="relative z-10">
+            <div class="flex items-center gap-3">
+              <div class="text-base font-bold tracking-tight text-q-text">丙午年 <span class="text-gray-300 font-normal mx-1">|</span> 乙未月</div>
+              <span class="text-[11px] font-semibold text-orange-600 bg-orange-50/90 px-1.5 py-0.5 rounded border border-orange-100/50">火土焦织，能量极端</span>
+            </div>
+            <div class="text-[12px] text-gray-600 mt-1.5 leading-relaxed">
+              上证(戊申)受生得助偏稳；科创(丙寅)火旺焚木，冲高回落风险极高。
+            </div>
+          </div>
+          <div class="flex gap-4 relative z-10 mt-3 lg:mt-0">
+            <div class="text-center px-3 border-r border-gray-100/60 last:border-0">
+              <div class="text-[10px] text-q-subtext uppercase tracking-widest mb-1">上证 <span class="font-mono">戊申</span></div>
+              <div class="text-xs font-bold text-q-up bg-red-50/60 rounded px-1.5 py-0.5">偏多</div>
+            </div>
+            <div class="text-center px-3 border-r border-gray-100/60 last:border-0">
+              <div class="text-[10px] text-q-subtext uppercase tracking-widest mb-1">深证 <span class="font-mono">丁巳</span></div>
+              <div class="text-xs font-bold text-q-up bg-red-50/60 rounded px-1.5 py-0.5">偏多</div>
+            </div>
+            <div class="text-center px-3 border-r border-gray-100/60 last:border-0">
+              <div class="text-[10px] text-q-subtext uppercase tracking-widest mb-1">创业 <span class="font-mono">庚午</span></div>
+              <div class="text-xs font-bold text-q-down bg-green-50/60 rounded px-1.5 py-0.5">偏空</div>
+            </div>
+            <div class="text-center px-3 border-r border-gray-100/60 last:border-0">
+              <div class="text-[10px] text-q-subtext uppercase tracking-widest mb-1">科创 <span class="font-mono">丙寅</span></div>
+              <div class="text-xs font-bold text-q-down bg-green-50/60 rounded px-1.5 py-0.5">高危</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Calendar Grid Panel (毛玻璃) -->
+        <div class="glass-panel p-5 flex-1 flex flex-col min-h-0">
+          <div class="grid grid-cols-5 gap-12 mb-3 px-4 shrink-0">
+            <div class="text-[11px] font-semibold text-q-subtext text-center uppercase tracking-widest">Mon</div>
+            <div class="text-[11px] font-semibold text-q-subtext text-center uppercase tracking-widest">Tue</div>
+            <div class="text-[11px] font-semibold text-q-subtext text-center uppercase tracking-widest">Wed</div>
+            <div class="text-[11px] font-semibold text-q-subtext text-center uppercase tracking-widest">Thu</div>
+            <div class="text-[11px] font-semibold text-q-subtext text-center uppercase tracking-widest">Fri</div>
+          </div>
+          <div class="calendar-grid flex-1 overflow-y-auto pr-2 pb-2">
+            <!-- Render Mock Days -->
+            <div v-for="day in mockDays" :key="day.date" 
+                 class="cal-day group" 
+                 :class="{ 'disabled': day.disabled, 'active': selectedDay?.date === day.date }"
+                 @click="!day.disabled && selectDay(day)">
+              
+              <!-- Date Header -->
+              <div class="flex justify-between items-start">
+                <span class="text-lg font-mono font-bold tracking-tighter" :class="day.disabled ? 'text-gray-300' : 'text-q-text'">{{ day.dayNum }}</span>
+                <div class="text-right leading-tight">
+                  <div class="text-[10px] text-gray-400">{{ day.lunar }}</div>
+                  <div class="text-[10px] font-mono" :class="day.disabled ? 'text-gray-300' : 'text-gray-500 font-medium'">{{ day.ganzhi }}</div>
+                </div>
+              </div>
+
+              <!-- Badges / Icons -->
+              <div class="flex flex-wrap gap-1 mt-2 min-h-[22px]">
+                <span v-if="day.phase === 'full'" title="满月" class="text-sm grayscale opacity-80">🌕</span>
+                <span v-if="day.phase === 'new'" title="新月" class="text-sm grayscale opacity-60">🌑</span>
+                <span v-if="day.isDelivery" title="交割日" class="text-[9px] bg-purple-50/80 text-purple-600 px-1.5 py-0.5 rounded border border-purple-100/50 font-medium">交割</span>
+                <span v-if="day.riskLevel > 0" title="高危日" class="text-[11px] bg-red-50/80 text-red-500 px-1.5 py-0.5 rounded border border-red-100/50">⚠️</span>
+                <span v-if="day.personal === 'money'" title="命主进财日" class="text-[11px] bg-green-50/80 text-green-600 px-1.5 py-0.5 rounded border border-green-100/50">💰</span>
+                <span v-if="day.personal === 'danger'" title="命主克伐日" class="text-[11px] bg-gray-50/80 text-gray-600 px-1.5 py-0.5 rounded border border-gray-200/50">🌩️</span>
+              </div>
+
+              <div class="flex-1"></div>
+
+              <!-- 4-Index Indicator (Bottom) -->
+              <div v-if="!day.disabled" class="grid grid-cols-4 gap-1 mt-3 pt-2 border-t border-gray-100/60">
+                <div title="上证" class="led-dot" :class="day.preds[0] > 0 ? 'led-up' : 'led-down'"></div>
+                <div title="深证" class="led-dot" :class="day.preds[1] > 0 ? 'led-up' : 'led-down'"></div>
+                <div title="创业" class="led-dot" :class="day.preds[2] > 0 ? 'led-up' : 'led-down'"></div>
+                <div title="科创" class="led-dot" :class="day.preds[3] > 0 ? 'led-up' : 'led-down'"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: Daily Detail Panel (毛玻璃) -->
+      <div class="w-[340px] shrink-0 flex flex-col gap-4">
+        <div class="glass-panel flex-1 flex flex-col overflow-hidden" v-if="selectedDay">
+          <!-- 头部高亮区 -->
+          <div class="p-5 border-b border-gray-100/60 bg-gradient-to-b from-white/70 to-white/30">
+            <div class="flex items-baseline gap-3">
+              <span class="text-3xl font-mono font-bold text-q-text tracking-tighter">{{ selectedDay.date.slice(5).replace('-','/') }}</span>
+              <span class="text-sm text-gray-500 font-medium">{{ selectedDay.lunar }}</span>
+            </div>
+            <div class="mt-2 flex flex-wrap items-center gap-2">
+              <span class="px-2 py-0.5 bg-white border border-gray-200/60 text-q-text rounded text-xs font-mono font-medium shadow-[0_1px_2px_rgba(0,0,0,0.02)]">{{ selectedDay.ganzhi }}日</span>
+              <span v-if="selectedDay.phase === 'full'" class="px-2 py-0.5 bg-orange-50/80 border border-orange-100/60 text-[11px] text-orange-600 rounded font-medium flex items-center gap-1">🌕 满月窗口</span>
+              <span v-if="selectedDay.isDelivery" class="px-2 py-0.5 bg-purple-50/80 border border-purple-100/60 text-[11px] text-purple-600 rounded font-medium">交割日</span>
+            </div>
+          </div>
+
+          <div class="p-5 overflow-y-auto flex-1 space-y-6">
+            
+            <!-- 风险警报 -->
+            <div v-if="selectedDay.riskLevel > 0 || selectedDay.isDelivery || selectedDay.phase" class="rounded-lg bg-red-50/60 border border-red-100/60 p-3">
+              <div class="text-[11px] font-bold text-red-600 uppercase tracking-widest flex items-center gap-1.5 mb-2">
+                <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path></svg>
+                风险因子共振警报
+              </div>
+              <ul class="space-y-1.5 text-xs text-red-700 list-disc pl-4 leading-relaxed">
+                <li v-if="selectedDay.isDelivery">股指期货交割日，历史上叠加下跌趋势极易发生大波动。</li>
+                <li v-if="selectedDay.phase === 'full'">满月高点，情绪易极度亢奋后反转。</li>
+                <li v-if="selectedDay.riskLevel > 0">当日干支（{{selectedDay.ganzhi}}）为极性日，双土/火极重，流动性易枯竭。</li>
+              </ul>
+            </div>
+
+            <!-- 四盘走势解析 -->
+            <div>
+              <div class="text-[11px] font-semibold text-q-subtext uppercase tracking-widest mb-3">四盘量化推演</div>
+              <div class="space-y-2">
+                <div class="flex items-start justify-between bg-white/50 p-2.5 rounded border border-gray-100/50 shadow-[0_1px_2px_rgba(0,0,0,0.01)]">
+                  <div>
+                    <div class="text-xs font-bold text-q-text">上证 <span class="text-[10px] text-gray-400 font-mono font-normal ml-1">戊申</span></div>
+                    <div class="text-[11px] text-gray-500 mt-1">流日相生，支撑较强</div>
+                  </div>
+                  <span class="font-mono text-[13px] font-bold" :class="selectedDay.preds[0] > 0 ? 'text-q-up' : 'text-q-down'">{{ selectedDay.preds[0] > 0 ? '+1.2' : '-0.5' }}</span>
+                </div>
+                <div class="flex items-start justify-between bg-white/50 p-2.5 rounded border border-gray-100/50 shadow-[0_1px_2px_rgba(0,0,0,0.01)]">
+                  <div>
+                    <div class="text-xs font-bold text-q-text">深证 <span class="text-[10px] text-gray-400 font-mono font-normal ml-1">丁巳</span></div>
+                    <div class="text-[11px] text-gray-500 mt-1">平稳过渡，跟随大势</div>
+                  </div>
+                  <span class="font-mono text-[13px] font-bold" :class="selectedDay.preds[1] > 0 ? 'text-q-up' : 'text-q-down'">{{ selectedDay.preds[1] > 0 ? '+0.8' : '-0.8' }}</span>
+                </div>
+                <div class="flex items-start justify-between bg-white/50 p-2.5 rounded border border-gray-100/50 shadow-[0_1px_2px_rgba(0,0,0,0.01)]">
+                  <div>
+                    <div class="text-xs font-bold text-q-text">创业 <span class="text-[10px] text-gray-400 font-mono font-normal ml-1">庚午</span></div>
+                    <div class="text-[11px] text-gray-500 mt-1">受流月克制，反弹乏力</div>
+                  </div>
+                  <span class="font-mono text-[13px] font-bold" :class="selectedDay.preds[2] > 0 ? 'text-q-up' : 'text-q-down'">{{ selectedDay.preds[2] > 0 ? '+0.3' : '-1.5' }}</span>
+                </div>
+                <div class="flex items-start justify-between bg-white/50 p-2.5 rounded border border-gray-100/50 shadow-[0_1px_2px_rgba(0,0,0,0.01)] relative overflow-hidden">
+                  <div v-if="selectedDay.preds[3] < 0" class="absolute left-0 top-0 bottom-0 w-0.5 bg-q-down"></div>
+                  <div class="pl-1">
+                    <div class="text-xs font-bold text-q-text">科创 <span class="text-[10px] text-gray-400 font-mono font-normal ml-1">丙寅</span></div>
+                    <div class="text-[11px] text-gray-500 mt-1">年月日三层克伐，破位高危</div>
+                  </div>
+                  <span class="font-mono text-[13px] font-bold" :class="selectedDay.preds[3] > 0 ? 'text-q-up' : 'text-q-down'">{{ selectedDay.preds[3] > 0 ? '+0.1' : '-2.8' }}</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 命主操作建议 -->
+            <div>
+              <div class="text-[11px] font-semibold text-q-subtext uppercase tracking-widest mb-3">命主操作建议 (癸亥)</div>
+              <div class="rounded-lg bg-blue-50/60 border border-blue-100/60 p-3">
+                <div class="flex items-center gap-1.5 mb-2">
+                  <span v-if="selectedDay.personal === 'money'" class="text-sm">💰</span>
+                  <span v-if="selectedDay.personal === 'danger'" class="text-sm grayscale">🌩️</span>
+                  <span class="text-xs font-bold text-q-primary">
+                    {{ selectedDay.personal === 'money' ? '今日财星当令，宜进攻' : (selectedDay.personal === 'danger' ? '今日七杀克身，宜空仓' : '今日平稳，宜观望') }}
+                  </span>
+                </div>
+                <p class="text-[11px] text-gray-600 leading-relaxed">
+                  结合今日大盘风险，{{ selectedDay.preds[3] < 0 ? '科创板风险极高，切勿触碰半导体方向。' : '' }}建议保留现金，耐心等待下一个水木相生的日子。
+                </p>
+              </div>
+            </div>
+
+          </div>
+        </div>
+        
+        <div v-else class="glass-panel flex-1 flex flex-col items-center justify-center text-sm text-gray-400 gap-2">
+          <svg class="w-6 h-6 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+          <span class="text-xs">请在左侧选择一个交易日</span>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const { createApp, ref } = Vue;
+
+    createApp({
+      setup() {
+        // 生成 2026年7月 的模拟数据
+        const mockDays = ref([]);
+        let dayCounter = 1;
+        
+        mockDays.value.push({ date: '2026-06-29', dayNum: 29, disabled: true });
+        mockDays.value.push({ date: '2026-06-30', dayNum: 30, disabled: true });
+        
+        const ganzhiList = ['甲子','乙丑','丙寅','丁卯','戊辰','己巳','庚午','辛未','壬申','癸酉','甲戌','乙亥','丙子','丁丑','戊寅','己卯','庚辰','辛巳','壬午','癸未','甲申','乙酉','丙戌'];
+        const lunarList = ['十七','十八','十九','二十','廿一','廿二','廿三','廿四','廿五','廿六','廿七','廿八','廿九','初一','初二','初三','初四','初五','初六','初七','初八','初九','初十'];
+        
+        let gzIdx = 10; 
+        
+        for (let week = 0; week < 5; week++) {
+          for (let wd = 1; wd <= 5; wd++) {
+            if (dayCounter > 31) break;
+            
+            const isFullMoon = dayCounter === 10;
+            const isNewMoon = dayCounter === 24;
+            const isDelivery = dayCounter === 17; 
+            
+            mockDays.value.push({
+              date: `2026-07-${dayCounter.toString().padStart(2, '0')}`,
+              dayNum: dayCounter,
+              disabled: false,
+              lunar: lunarList[dayCounter % lunarList.length],
+              ganzhi: ganzhiList[(gzIdx + dayCounter) % ganzhiList.length],
+              phase: isFullMoon ? 'full' : (isNewMoon ? 'new' : null),
+              isDelivery: isDelivery,
+              riskLevel: (dayCounter === 12 || dayCounter === 17) ? 1 : 0,
+              personal: dayCounter === 8 ? 'money' : (dayCounter === 17 ? 'danger' : null),
+              preds: [
+                Math.random() > 0.3 ? 1 : -1,
+                Math.random() > 0.4 ? 1 : -1,
+                Math.random() > 0.6 ? 1 : -1,
+                Math.random() > 0.7 ? 1 : -1,
+              ]
+            });
+            dayCounter++;
+          }
+        }
+        
+        const selectedDay = ref(mockDays.value.find(d => !d.disabled && d.dayNum === 17)); 
+
+        function selectDay(day) {
+          selectedDay.value = day;
+        }
+
+        return {
+          mockDays,
+          selectedDay,
+          selectDay
+        }
+      }
+    }).mount('#app');
+  </script>
+</body>
+</html>

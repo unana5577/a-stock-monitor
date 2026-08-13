@@ -3,14 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>天时实验 - M1 Quant</title>
+  <title>天时实验-2 - M1 Quant</title>
   
   <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
   <style>
     body {
-      background-color: #F4F4F5;
-      color: #18181B;
+      background-color: #F4F4F5; /* q-bg */
+      color: #18181B; /* q-text */
       font-family: Inter, -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
       margin: 0;
       padding: 0;
@@ -18,402 +17,296 @@
     }
     ::-webkit-scrollbar { width: 4px; height: 4px; }
     ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: #D4D4D8; border-radius: 2px; }
-    ::-webkit-scrollbar-thumb:hover { background: #A1A1AA; }
-    .q-panel {
-      background: #FFFFFF;
-      border: 1px solid #E4E4E7;
-      border-radius: 6px;
-      box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.02);
-    }
+    ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); border-radius: 2px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.25); }
+    
     [v-cloak] { display: none; }
+    
+    /* 背景氛围光 - 调暗调冷，贴合量化界面 */
+    .ambient-bg {
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      overflow: hidden;
+      pointer-events: none;
+    }
+    .ambient-blob-1 {
+      position: absolute;
+      top: -10%; left: -10%;
+      width: 50%; height: 50%;
+      background: radial-gradient(circle, rgba(37,99,235,0.06) 0%, rgba(255,255,255,0) 70%);
+      filter: blur(40px);
+    }
+    .ambient-blob-2 {
+      position: absolute;
+      bottom: -10%; right: -5%;
+      width: 60%; height: 60%;
+      background: radial-gradient(circle, rgba(16,185,129,0.04) 0%, rgba(255,255,255,0) 70%);
+      filter: blur(60px);
+    }
+
+    /* 毛玻璃面板基类 */
+    .glass-panel {
+      background: rgba(255, 255, 255, 0.85);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(228, 228, 231, 0.8);
+      border-radius: 12px;
+      box-shadow: 0 2px 10px -1px rgba(0, 0, 0, 0.02), 0 1px 2px -1px rgba(0, 0, 0, 0.01);
+    }
+
+    /* Calendar Grid */
+    .calendar-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr); /* 周一~周五 */
+      gap: 12px;
+    }
+    .cal-day {
+      min-height: 124px;
+      background: rgba(255, 255, 255, 0.7);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(228, 228, 231, 0.6);
+      border-radius: 8px;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      cursor: pointer;
+      transition: all 0.2s ease-out;
+    }
+    .cal-day:hover {
+      background: rgba(255, 255, 255, 0.95);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px -2px rgba(37, 99, 235, 0.06);
+      border-color: rgba(147, 197, 253, 0.8);
+    }
+    .cal-day.active {
+      background: rgba(239, 246, 255, 0.8);
+      border-color: rgba(37, 99, 235, 0.5);
+      box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.3);
+    }
+    .cal-day.disabled {
+      background: rgba(250, 250, 250, 0.5);
+      border-color: rgba(228, 228, 231, 0.4);
+      color: #A1A1AA;
+      pointer-events: none;
+    }
+
+    /* LED 指示灯 */
+    .led-dot {
+      height: 4px;
+      border-radius: 2px;
+      opacity: 0.9;
+    }
+    .led-up { background: #EF4444; }
+    .led-down { background: #10B981; }
   </style>
-  <link rel=stylesheet href=/tailwind.css>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            'q-primary': '#2563EB',
+            'q-up': '#EF4444',
+            'q-down': '#10B981',
+            'q-text': '#18181B',
+            'q-subtext': '#71717A',
+            'q-border': '#E4E4E7'
+          },
+          fontFamily: {
+            mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
 </head>
 <body class="h-screen overflow-hidden">
-  <div id="app" v-cloak class="flex flex-col h-full">
-    <header class="h-14 bg-white border-b border-q-border px-6 flex justify-between items-center shrink-0 z-10">
-      <div class="text-sm font-bold text-q-text">天时实验 Astro</div>
-      <div class="flex items-center gap-2 text-[13px]">
-        <div class="text-[11px] text-gray-500">date: {{ astroSelectedDay || '-' }}</div>
+  <!-- 环境光背景 -->
+  <div class="ambient-bg">
+    <div class="ambient-blob-1"></div>
+    <div class="ambient-blob-2"></div>
+  </div>
+
+  <div id="app" v-cloak class="flex flex-col h-full relative z-10">
+    <!-- Header -->
+    <header class="h-14 bg-white/70 backdrop-blur-md border-b border-q-border/80 px-6 flex justify-between items-center shrink-0 z-20">
+      <div class="flex items-center gap-4">
+        <div class="text-sm font-bold text-q-text tracking-wide">天时实验-2 <span class="text-q-subtext font-normal ml-1">Astro</span></div>
       </div>
     </header>
 
-    <main class="flex-1 overflow-y-auto p-4 md:p-6">
-      <div class="max-w-[1440px] mx-auto grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
-
-        <!-- LEFT: 命主模块 / 八字 -->
-        <div class="space-y-4">
-          <div class="q-panel p-5 overflow-hidden">
-            <div class="flex items-center justify-between gap-4">
-              <div>
-                <div class="text-[11px] font-semibold text-q-subtext uppercase tracking-widest">命主模块</div>
-                <div class="mt-1 text-xs text-gray-500 leading-relaxed max-w-[70ch]">填写信息后点击提交：按真太阳时校正后推算八字，并生成两段建议。</div>
-              </div>
+    <main class="flex-1 overflow-y-auto flex flex-col p-4 md:p-6 gap-4">
+      <div class="max-w-5xl mx-auto w-full flex flex-col gap-4">
+        
+        <!-- 日期 + 月度能量 + 风险提示（合并卡片） -->
+        <div class="glass-panel p-5 shrink-0" v-if="selectedDay">
+          <div class="flex justify-between items-start">
+            <div class="flex items-baseline gap-3 flex-wrap">
+              <span class="text-3xl font-mono font-bold text-q-text tracking-tighter">{{ selectedDay.date.slice(5).replace('-', '/') }}</span>
+              <span v-if="dayDetail" class="text-lg font-semibold text-q-text">{{ dayDetail.astro.gzYear }}年 {{ dayDetail.astro.gzMonth }}月 {{ dayDetail.astro.gzDay }}日</span>
+              <span class="text-sm text-gray-500 font-medium">{{ selectedDay.lunar }}</span>
             </div>
-
-            <div class="mt-4 group relative">
-              <div class="text-xs text-gray-500">基本信息</div>
-              <div class="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div>
-                  <div class="text-[11px] text-gray-500 mb-1">性别</div>
-                  <select v-model="userGender" class="w-full border border-gray-200 rounded px-2 py-2 text-sm focus:outline-none focus:border-q-primary">
-                    <option value="">请选择</option>
-                    <option value="男">男</option>
-                    <option value="女">女</option>
-                  </select>
-                </div>
-                <div>
-                  <div class="text-[11px] text-gray-500 mb-1">出生年月日</div>
-                  <input v-model="userBirth" type="datetime-local" class="w-full border border-gray-200 rounded px-2 py-2 text-sm font-mono focus:outline-none focus:border-q-primary">
-                </div>
-                <div>
-                  <div class="flex items-center justify-between">
-                    <div class="text-[11px] text-gray-500 mb-1">出生地</div>
-                    <div v-if="placeLoading" class="text-[11px] text-gray-400 mb-1">加载中...</div>
-                  </div>
-                  <select v-model="userPlace" class="w-full border border-gray-200 rounded px-2 py-2 text-sm focus:outline-none focus:border-q-primary">
-                    <option value="">请选择</option>
-                    <optgroup v-for="g in placeGroups" :key="g.label" :label="g.label">
-                      <option v-for="o in g.options" :key="o.value" :value="o.value">{{ g.label }}-{{ o.label }}</option>
-                    </optgroup>
-                    <option value="其他">其他</option>
-                  </select>
-                </div>
-              </div>
-              <input v-if="userPlace === '其他'" v-model="userPlaceCustom" class="mt-3 w-full border border-gray-200 rounded px-2 py-2 text-sm focus:outline-none focus:border-q-primary" placeholder="请输入出生地（省-市）">
-              <div class="mt-3">
-                <div class="text-[11px] text-gray-500 mb-1">区县</div>
-                <select v-model="userArea" class="w-full border border-gray-200 rounded px-2 py-2 text-sm focus:outline-none focus:border-q-primary" :disabled="!userPlace || userPlace === '其他'">
-                  <option value="">请选择</option>
-                  <option v-for="a in placeAreas" :key="a" :value="a">{{ a }}</option>
-                </select>
-              </div>
-              <div class="mt-3 flex items-center justify-end">
-                <button @click="submitBazi()" class="px-3 py-2 rounded bg-q-primary text-white text-xs font-semibold hover:bg-blue-600 disabled:opacity-60" :disabled="baziLoading">
-                  {{ baziLoading ? '计算中...' : '提交并生成' }}
-                </button>
-              </div>
-
-              <div class="mt-4 flex items-center justify-between">
-                <div class="text-[11px] text-gray-500">系统推算八字</div>
-                <div v-if="baziLoading" class="text-[11px] text-gray-400">计算中...</div>
-                <div v-else-if="baziError" class="text-[11px] text-q-down">{{ baziError }}</div>
-              </div>
-              <div class="mt-2 min-h-[2.25rem] flex items-center text-sm font-mono text-gray-800">
-                {{ baziProfile?.bazi?.text || (baziSubmitted ? '—' : '点击提交生成') }}
-              </div>
-              <div v-if="baziProfile?.dayun?.current" class="mt-1 text-[11px] text-gray-500 font-mono">
-                当前大运：{{ baziProfile.dayun.current }}（{{ baziProfile.dayun.currentAgeRange }}） · 起运 {{ baziProfile.dayun.startAge }} 岁
-              </div>
-              <div v-if="baziProfile?.trueSolar?.enabled && baziProfile?.trueSolar?.applied && baziProfile?.trueSolar?.birthTrueSolar" class="mt-1 text-[11px] text-gray-500 font-mono">
-                真太阳时：{{ baziProfile.trueSolar.birthTrueSolar }}（偏移 {{ (baziProfile.trueSolar.offsetMinutes || 0).toFixed(1) }} 分）
-              </div>
-              <div v-else-if="baziProfile?.trueSolar?.enabled && !baziProfile?.trueSolar?.applied" class="mt-1 text-[11px] text-gray-500">
-                未能自动定位经度，已按北京时间计算；如需真太阳时请补充区县
-              </div>
+            <div class="flex items-center gap-2 shrink-0 ml-3">
+              <button @click="prevMonth" class="px-2.5 py-1 rounded border border-gray-200/80 bg-white/60 hover:bg-white/90 text-xs text-gray-600 transition-all">&lt; 上一月</button>
+              <div class="text-sm font-bold font-mono w-24 text-center tracking-tight text-q-text">{{ currentMonth.replace('-', '/') }}</div>
+              <button @click="nextMonth" class="px-2.5 py-1 rounded border border-gray-200/80 bg-white/60 hover:bg-white/90 text-xs text-gray-600 transition-all">下一月 &gt;</button>
             </div>
-
-            <div class="mt-4 pt-4 border-t border-gray-100 group relative">
-              <div class="flex items-start justify-between gap-4">
-                <div>
-                  <div class="text-xs text-gray-500">八字财务分析</div>
-                  <div class="mt-1 text-xs text-gray-500 leading-relaxed max-w-[70ch]">用于交易资金管理与风格约束的自我说明。</div>
-                </div>
-                <div class="flex items-center gap-2">
-                  <button @click="ensureFinanceAuto(true)" class="px-2.5 py-1 rounded border border-gray-200 text-gray-700 hover:bg-gray-50 text-xs disabled:opacity-60" :disabled="financeLoading || !baziProfile?.ok">
-                    {{ financeLoading ? '生成中' : '重新生成' }}
-                  </button>
-                </div>
-              </div>
-              <div class="mt-3 text-sm text-gray-800 leading-relaxed whitespace-pre-wrap min-h-[4rem]">
-                {{ financeAuto || (baziReady ? '—' : '填写信息后自动生成') }}
-              </div>
+          </div>
+          <div class="mt-2 flex flex-wrap items-center gap-2">
+            <span v-if="selectedDay.phase === 'full'" class="px-2 py-0.5 bg-orange-50/80 border border-orange-100/60 text-[11px] text-orange-600 rounded font-medium">🌕 满月</span>
+            <span v-if="selectedDay.phase === 'new'" class="px-2 py-0.5 bg-gray-50/80 border border-gray-200/60 text-[11px] text-gray-600 rounded font-medium">🌙 新月</span>
+            <span v-if="selectedDay.isDelivery" class="px-2 py-0.5 bg-purple-50/80 border border-purple-100/60 text-[11px] text-purple-600 rounded font-medium">交割日</span>
+          </div>
+          <div v-if="monthMacro && monthMacro.summary" class="mt-2 text-xs text-gray-500">月度能量：{{ monthMacro.summary }}</div>
+          <div v-if="dayDetail && dayDetail.marketOutlook" class="mt-3 pt-3 border-t border-gray-100/60">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="text-[10px] text-q-subtext uppercase tracking-widest">综合风险</span>
+              <span class="px-1.5 py-0.5 rounded bg-red-100 text-red-700 text-[11px] font-bold">L{{ dayDetail.marketOutlook.level }} {{ dayDetail.marketOutlook.label }}</span>
+              <span class="text-[10px] text-gray-400">L0安全 · L1注意 · L2谨慎 · L3危险 · L4高危</span>
             </div>
+            <div class="mt-1.5 text-xs text-gray-600">{{ dayDetail.marketOutlook.summary }}</div>
+            <ul v-if="dayDetail.riskAlerts && dayDetail.riskAlerts.length" class="mt-2 space-y-1 text-xs text-gray-600 list-disc pl-4 leading-relaxed">
+              <li v-for="(a, i) in dayDetail.riskAlerts" :key="i">{{ a }}</li>
+            </ul>
+          </div>
+        </div>
 
-            <div class="mt-4 pt-4 border-t border-gray-100 group relative">
-              <div class="flex items-start justify-between gap-4">
-                <div>
-                  <div class="text-xs text-gray-500">当日操作风险提示</div>
-                  <div class="mt-1 text-xs text-gray-500 leading-relaxed max-w-[70ch]">绑定当前选中日期，用于提醒今日是否适合进攻/防守/空仓观察。</div>
-                </div>
-                <div class="text-[10px] text-gray-400 font-mono">
-                  <div class="text-right">{{ astroSelectedDay || '-' }}</div>
-                  <div class="text-right">{{ (astroSelectedGanzhiDay ? `流日:${astroSelectedGanzhiDay}` : '') }}{{ (astroSelectedLunarDay ? ` · ${astroSelectedLunarDay}` : '') }}</div>
-                </div>
-              </div>
-              <div class="mt-2 flex items-center justify-end">
-                <button @click="ensureDailyRiskAuto(true)" class="px-2.5 py-1 rounded border border-gray-200 text-gray-700 hover:bg-gray-50 text-xs disabled:opacity-60" :disabled="dailyRiskLoading || !baziProfile?.ok || !astroSelectedDay">
-                  {{ dailyRiskLoading ? '生成中' : '重新生成' }}
-                </button>
-              </div>
-              <div class="mt-3 text-sm text-gray-800 leading-relaxed whitespace-pre-wrap min-h-[3rem]">
-                {{ dailyRiskAuto || (baziReady ? '—' : '填写信息后自动生成') }}
-              </div>
+        <!-- 命主八字 + 当日宜忌 -->
+        <div class="glass-panel p-4 shrink-0">
+          <div class="flex items-center justify-between">
+            <div class="text-[10px] text-q-subtext uppercase tracking-widest shrink-0">命主八字</div>
+            <button @click="showBaziModal = true" class="text-xs text-q-primary hover:underline">设置</button>
+          </div>
+          <div v-if="baziProfile && baziProfile.ok" class="font-mono text-sm text-q-text font-semibold mt-1">{{ baziProfile.bazi.text }}</div>
+          <div v-else class="text-xs text-gray-400 mt-1">点击「设置」输入出生信息，用于计算进财/克伐日</div>
+          <div v-if="dayDetail && dayDetail.personalAdvice" class="mt-3 pt-3 border-t border-gray-100/60 flex items-start gap-2">
+            <span class="text-lg shrink-0">{{ dayDetail.personalAdvice.type === 'money' ? '💰' : (dayDetail.personalAdvice.type === 'danger' ? '🌩️' : '⚖️') }}</span>
+            <div class="min-w-0">
+              <div class="text-sm font-bold" :class="dayDetail.personalAdvice.type === 'money' ? 'text-q-up' : (dayDetail.personalAdvice.type === 'danger' ? 'text-gray-600' : 'text-gray-500')">{{ dayDetail.personalAdvice.title }}</div>
+              <div class="text-[11px] text-gray-500 leading-relaxed mt-0.5">{{ dayDetail.personalAdvice.desc }}</div>
             </div>
           </div>
         </div>
 
-        <!-- RIGHT: 天时板块 -->
-        <div class="space-y-4">
-          <div class="q-panel p-5 overflow-hidden">
-            <div class="flex items-start justify-between gap-4">
-              <div>
-                <div class="text-[11px] font-semibold text-q-subtext uppercase tracking-widest">月度卡 (Month)</div>
-                <div class="mt-1 text-lg font-bold text-q-text tracking-tight">
-                  {{ astroMonthStr || '-' }} <span class="text-gray-400 font-normal">·</span> {{ astroMonthGanzhi || '-' }}月
+        <!-- 日历 -->
+        <div class="glass-panel p-5">
+          <div class="grid grid-cols-5 gap-12 mb-3 px-4">
+            <div class="text-[11px] font-semibold text-q-subtext text-center uppercase tracking-widest">Mon</div>
+            <div class="text-[11px] font-semibold text-q-subtext text-center uppercase tracking-widest">Tue</div>
+            <div class="text-[11px] font-semibold text-q-subtext text-center uppercase tracking-widest">Wed</div>
+            <div class="text-[11px] font-semibold text-q-subtext text-center uppercase tracking-widest">Thu</div>
+            <div class="text-[11px] font-semibold text-q-subtext text-center uppercase tracking-widest">Fri</div>
+          </div>
+          <div class="calendar-grid">
+            <div v-for="day in calendarDays" :key="day.date" 
+                 class="cal-day group" 
+                 :class="{ 'disabled': day.disabled, 'active': selectedDay?.date === day.date }"
+                 @click="!day.disabled && selectDay(day)">
+              
+              <div class="flex justify-between items-start">
+                <span class="text-lg font-mono font-bold tracking-tighter" :class="day.disabled ? 'text-gray-300' : 'text-q-text'">{{ day.dayNum }}</span>
+                <div class="text-right leading-tight">
+                  <div class="text-[10px] text-gray-400">{{ day.lunar }}</div>
+                  <div class="text-[10px] font-mono" :class="day.disabled ? 'text-gray-300' : 'text-gray-500 font-medium'">{{ day.ganzhi }}</div>
                 </div>
               </div>
-            </div>
 
-            <div class="mt-4 rounded-lg border border-gray-100 bg-gray-50/40 p-4 group relative">
-              <div class="flex items-center justify-between">
-                <div class="text-xs text-gray-500">月度预判</div>
-                <div class="text-[10px] text-gray-400 font-mono">{{ astroMonthGanzhi || '-' }}</div>
-              </div>
-              <button v-if="!editMonthOutlook" @click="editMonthOutlook = true" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity px-2 py-1 rounded border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 text-[10px]">编辑</button>
-              <div v-if="!editMonthOutlook" class="mt-2 text-sm text-gray-800 leading-relaxed whitespace-pre-wrap min-h-[3.5rem]">
-                {{ monthOutlook || '—' }}
-              </div>
-              <textarea v-else v-model="monthOutlook" rows="3" @blur="editMonthOutlook = false" class="mt-2 w-full border border-gray-200 rounded px-2 py-2 text-sm focus:outline-none focus:border-q-primary" placeholder="例如：能源走强，整体脉冲式波动"></textarea>
-            </div>
-
-            <div class="mt-4">
-              <div class="text-[11px] font-semibold text-q-subtext uppercase tracking-widest">月相轴</div>
-              <div class="mt-1 text-xs text-gray-500 leading-relaxed max-w-[70ch]">
-                <div>打开页面会自动定位当日；点击任意日期会联动本周交易表与明日模块。</div>
-                <div class="mt-1">新月/上弦月/满月/下弦月为观察窗口，用复盘与回测验证"月满则亏/月缺则赢"是否成立。</div>
+              <div v-if="!day.disabled && day.riskLevel > 0" class="mt-1.5 flex items-center gap-1">
+                <span class="text-sm">⚠️</span>
+                <span class="text-[11px] font-bold text-red-600">风险 L{{ day.riskLevel }}</span>
               </div>
 
-              <div id="astro-phase-scroll" ref="phaseScrollEl" class="mt-3 overflow-x-auto pb-2">
-                <div class="min-w-[860px] flex items-stretch gap-2">
-                  <button v-for="d in astroMonthDays" :key="d.date" :data-date="d.date"
-                    @click="selectAstroDay(d.date)"
-                    class="flex flex-col items-center justify-between w-20 shrink-0 rounded-lg border transition-all duration-200 px-2 py-2"
-                    :class="astroSelectedDay === d.date ? 'border-q-primary bg-blue-50 shadow-sm' : 'border-gray-100 bg-white hover:bg-gray-50'"
-                  >
-                    <div class="w-full flex items-center justify-between">
-                      <span class="text-[10px] font-mono text-gray-400">{{ d.date.slice(8) }}</span>
-                      <span class="text-[10px] font-mono text-gray-400">{{ d.lunarDay || '' }}</span>
-                    </div>
-                    <div class="mt-1 h-7 w-7" v-html="astroPhaseSvg(d)"></div>
-                    <div class="mt-1 text-[10px] font-mono text-gray-700">{{ d.sixtyCycleDay || '' }}</div>
-                    <div class="mt-1 text-[10px] font-mono" :class="astroPhaseRiskClass(d.phaseIndex)">{{ astroPhaseRiskText(d) }}</div>
-                  </button>
-                </div>
+              <div class="flex flex-wrap gap-x-2 gap-y-1 mt-1.5">
+                <label v-if="day.phase === 'full'" class="flex items-center gap-0.5 cursor-pointer select-none" @click.stop>
+                  <input type="checkbox" class="w-3 h-3 accent-red-500" :checked="isTagChecked(day.date, 'full')" @change="toggleTag(day.date, 'full')" @click.stop>
+                  <span class="text-[9px] text-orange-600">🌕满月</span>
+                </label>
+                <label v-if="day.phase === 'new'" class="flex items-center gap-0.5 cursor-pointer select-none" @click.stop>
+                  <input type="checkbox" class="w-3 h-3 accent-red-500" :checked="isTagChecked(day.date, 'new')" @change="toggleTag(day.date, 'new')" @click.stop>
+                  <span class="text-[9px] text-gray-600">🌙新月</span>
+                </label>
+                <label v-if="day.isDelivery" class="flex items-center gap-0.5 cursor-pointer select-none" @click.stop>
+                  <input type="checkbox" class="w-3 h-3 accent-red-500" :checked="isTagChecked(day.date, 'delivery')" @change="toggleTag(day.date, 'delivery')" @click.stop>
+                  <span class="text-[9px] text-purple-600 font-medium">交割</span>
+                </label>
+                <label v-if="day.personal === 'money'" class="flex items-center gap-0.5 cursor-pointer select-none" @click.stop>
+                  <input type="checkbox" class="w-3 h-3 accent-red-500" :checked="isTagChecked(day.date, 'money')" @change="toggleTag(day.date, 'money')" @click.stop>
+                  <span class="text-[9px] text-green-600">💰进财</span>
+                </label>
+                <label v-if="day.personal === 'danger'" class="flex items-center gap-0.5 cursor-pointer select-none" @click.stop>
+                  <input type="checkbox" class="w-3 h-3 accent-red-500" :checked="isTagChecked(day.date, 'danger')" @change="toggleTag(day.date, 'danger')" @click.stop>
+                  <span class="text-[9px] text-gray-600">🌩️克伐·易漏财</span>
+                </label>
               </div>
+
+              <div class="flex-1"></div>
             </div>
           </div>
-
-          <div class="q-panel p-5 overflow-hidden">
-            <div class="flex items-center justify-between gap-4">
-              <div>
-                <div class="text-[11px] font-semibold text-q-subtext uppercase tracking-widest">本周交易表 (Week)</div>
-                <div class="mt-1 text-xs text-gray-400 font-mono">{{ astroWeekRangeText }}</div>
-              </div>
-              <div class="text-xs text-gray-400">{{ astroWeekStatus }}</div>
-            </div>
-            <div class="mt-4 overflow-x-auto">
-              <table class="min-w-[980px] w-full text-xs">
-                <thead>
-                  <tr class="text-gray-500 border-b border-gray-100">
-                    <th class="text-left py-2 pr-3 font-medium sticky left-0 bg-white z-10">ETF</th>
-                    <th v-for="d in astroWeekTradingDays" :key="d.date" class="text-left py-2 pr-3 font-medium">
-                      <div class="font-mono text-[11px] text-gray-600">{{ d.date.slice(5) }}</div>
-                      <div class="text-[11px] text-gray-500">{{ d.sixtyCycleDay }}</div>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr class="border-b border-gray-50">
-                    <td class="py-2 pr-3 sticky left-0 bg-white z-10 text-gray-800 font-semibold">大盘</td>
-                    <td v-for="d in astroWeekTradingDays" :key="d.date" class="py-2 pr-3">
-                      <span class="text-sm" :class="astroWeekCellTextClass(d.date, '__market__')">{{ astroWeekCellTag(d.date, '__market__') }}</span>
-                    </td>
-                  </tr>
-                  <tr v-for="sym in etfSymbols" :key="sym" class="border-b border-gray-50">
-                    <td class="py-2 pr-3 sticky left-0 bg-white z-10 text-gray-800 font-medium">{{ symbolNames[sym] || sym }}</td>
-                    <td v-for="d in astroWeekTradingDays" :key="d.date" class="py-2 pr-3">
-                      <span class="text-sm" :class="astroWeekCellTextClass(d.date, sym)">{{ astroWeekCellTag(d.date, sym) }}</span>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div class="q-panel p-5">
-            <div class="flex items-center justify-between gap-4">
-              <div>
-                <div class="text-[11px] font-semibold text-q-subtext uppercase tracking-widest">明日 (Tomorrow)</div>
-                <div class="mt-1 text-sm font-semibold text-q-text">
-                  {{ astroSelectedDay || '-' }} · {{ astroSelectedPhase || '-' }} <span class="text-gray-300 mx-1">|</span> 目标日：{{ astroPredict?.astro?.horizons?.['1']?.date || '-' }}
-                </div>
-              </div>
-              <div class="flex items-center gap-2">
-                <button @click="runAstroPredict(astroSelectedDay)" class="px-2.5 py-1 rounded border border-gray-200 text-gray-700 hover:bg-gray-50 text-xs">更新预测</button>
-              </div>
-            </div>
-
-            <div class="mt-4">
-              <div class="rounded-lg border border-gray-100 bg-gray-50/40 px-4 py-3 flex items-center justify-between gap-4">
-                <div class="text-xs text-gray-500">次日大盘上涨</div>
-                <div class="flex items-center gap-2">
-                  <span class="text-sm text-gray-800 font-medium">{{ marketDirectionText('1') }}</span>
-                </div>
-              </div>
-
-              <div class="mt-3 overflow-x-auto">
-                <table class="min-w-full text-xs">
-                  <thead>
-                    <tr class="text-gray-500 border-b border-gray-100">
-                      <th class="text-left py-2 pr-3 font-medium">品种</th>
-                      <th class="text-left py-2 pr-3 font-medium">次日情况</th>
-                      <th class="text-left py-2 pr-3 font-medium">+5</th>
-                      <th class="text-left py-2 pr-3 font-medium">+15</th>
-                      <th class="text-left py-2 pr-3 font-medium">+30</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="sym in etfSymbols" :key="sym" class="border-b border-gray-50">
-                      <td class="py-2 pr-3 text-gray-800 font-medium">{{ symbolNames[sym] || sym }}</td>
-                      <td class="py-2 pr-3">
-                        <span class="text-sm text-gray-800 font-medium">{{ astroDirectionText(sym, '1') }}</span>
-                      </td>
-                      <td class="py-2 pr-3">
-                        <span class="px-2 py-0.5 rounded-full border text-[10px] font-medium" :class="astroProbTagClass(sym, '5')">{{ astroProbTag(sym, '5') }}</span>
-                      </td>
-                      <td class="py-2 pr-3">
-                        <span class="px-2 py-0.5 rounded-full border text-[10px] font-medium" :class="astroProbTagClass(sym, '15')">{{ astroProbTag(sym, '15') }}</span>
-                      </td>
-                      <td class="py-2 pr-3">
-                        <span class="px-2 py-0.5 rounded-full border text-[10px] font-medium" :class="astroProbTagClass(sym, '30')">{{ astroProbTag(sym, '30') }}</span>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <div class="mt-5 border-t border-gray-100 pt-4">
-              <div class="flex items-center justify-between mb-3">
-                <div class="text-[11px] font-semibold text-q-subtext uppercase tracking-widest">ETF 走势对比</div>
-                <div class="flex items-center gap-2">
-                  <button @click="astroHistoryWindow = 5; renderAstroHistoryChart()" class="px-2 py-1 rounded border text-[10px]" :class="astroHistoryWindow === 5 ? 'border-q-primary bg-blue-50 text-q-primary' : 'border-gray-200 text-gray-600 hover:bg-gray-50'">5日</button>
-                  <button @click="astroHistoryWindow = 15; renderAstroHistoryChart()" class="px-2 py-1 rounded border text-[10px]" :class="astroHistoryWindow === 15 ? 'border-q-primary bg-blue-50 text-q-primary' : 'border-gray-200 text-gray-600 hover:bg-gray-50'">15日</button>
-                  <button @click="astroHistoryWindow = 30; renderAstroHistoryChart()" class="px-2 py-1 rounded border text-[10px]" :class="astroHistoryWindow === 30 ? 'border-q-primary bg-blue-50 text-q-primary' : 'border-gray-200 text-gray-600 hover:bg-gray-50'">30日</button>
-                </div>
-              </div>
-              <div class="flex flex-wrap gap-2 mb-3">
-                <button v-for="sym in etfSymbols" :key="sym" @click="toggleAstroHistorySymbol(sym)" class="px-2 py-1 rounded-full border text-[10px] font-medium"
-                  :class="astroHistorySymbols.includes(sym) ? 'border-gray-800 bg-gray-900 text-white' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'">
-                  {{ (symbolNames[sym] || sym).replace('ETF', '') }}
-                </button>
-              </div>
-              <div id="chart-astro-history" class="w-full h-[260px]"></div>
-            </div>
-
-            <div class="mt-5 border-t border-gray-100 pt-4">
-              <div class="flex items-center justify-between">
-                <div class="text-[11px] font-semibold text-q-subtext uppercase tracking-widest">昨日预测复盘 (Review)</div>
-                <div class="text-xs text-gray-400 font-mono">{{ astroReviewText }}</div>
-              </div>
-              <div class="mt-3 overflow-x-auto">
-                <table class="min-w-full text-xs">
-                  <thead>
-                    <tr class="text-gray-500 border-b border-gray-100">
-                      <th class="text-left py-2 pr-3 font-medium">品种</th>
-                      <th class="text-left py-2 pr-3 font-medium">预测(+1)</th>
-                      <th class="text-left py-2 pr-3 font-medium">实际</th>
-                      <th class="text-left py-2 pr-3 font-medium">命中</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="it in astroReviewItems" :key="it.symbol" class="border-b border-gray-50">
-                      <td class="py-2 pr-3 text-gray-800 font-medium">{{ it.name || it.symbol }}</td>
-                      <td class="py-2 pr-3 font-mono" :class="it.predUp ? 'text-q-up' : 'text-q-down'">{{ it.predUp ? '看多' : '看空' }}</td>
-                      <td class="py-2 pr-3 font-mono" :class="it.actualUp ? 'text-q-up' : 'text-q-down'">{{ it.actualUp ? '上涨' : '下跌' }}</td>
-                      <td class="py-2 pr-3">
-                        <span class="px-2 py-0.5 rounded-full border text-[10px] font-semibold" :class="it.hit ? 'border-green-200 bg-green-50 text-green-700' : 'border-gray-200 bg-gray-50 text-gray-500'">{{ it.hit ? '✅' : '—' }}</span>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-
-          <div class="q-panel p-5">
-            <div class="flex items-center justify-between mb-3">
-              <div class="text-[11px] font-semibold text-q-subtext uppercase tracking-widest">手工复盘录入</div>
-              <div class="text-xs text-gray-400">{{ journalStatus }}</div>
-            </div>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <div class="text-xs text-gray-500 mb-1">日期</div>
-                <input v-model="journalDay" class="w-full border border-gray-200 rounded px-2 py-1 text-sm font-mono focus:outline-none focus:border-q-primary" placeholder="YYYY-MM-DD">
-              </div>
-              <div>
-                <div class="text-xs text-gray-500 mb-1">情绪(1-5)</div>
-                <select v-model="journalMood" class="w-full border border-gray-200 rounded px-2 py-1 text-sm focus:outline-none focus:border-q-primary">
-                  <option :value="1">1</option>
-                  <option :value="2">2</option>
-                  <option :value="3">3</option>
-                  <option :value="4">4</option>
-                  <option :value="5">5</option>
-                </select>
-              </div>
-              <div class="flex items-end">
-                <button @click="submitJournal()" class="w-full px-3 py-2 rounded bg-q-primary text-white text-sm font-medium hover:bg-blue-600 disabled:opacity-60" :disabled="journalSubmitting">
-                  提交并更新
-                </button>
-              </div>
-            </div>
-            <div class="mt-3">
-              <div class="text-xs text-gray-500 mb-1">备注</div>
-              <textarea v-model="journalNote" class="w-full border border-gray-200 rounded px-2 py-2 text-sm focus:outline-none focus:border-q-primary" rows="3" placeholder="系统性风险/冲动/执行情况等"></textarea>
-            </div>
-          </div>
-        </div>
-
-        <!-- BOTTOM: AI 聊天 -->
-        <div class="lg:col-span-2">
-          <div class="q-panel p-5 overflow-hidden">
-            <div class="flex items-center justify-between gap-4">
-              <div>
-                <div class="text-[11px] font-semibold text-q-subtext uppercase tracking-widest">AI 聊天</div>
-                <div class="mt-1 text-xs text-gray-500">在天时实验里直接提问，便于结合当日选中日期与复盘记录。</div>
-              </div>
-              <div class="flex items-center gap-2">
-                <button @click="clearChat()" class="px-2.5 py-1 rounded border border-gray-200 text-gray-700 hover:bg-gray-50 text-xs">清空</button>
-              </div>
-            </div>
-
-            <div id="chat-scroll" class="mt-4 h-[360px] overflow-y-auto rounded-lg border border-gray-100 bg-gray-50/40 p-4 space-y-3">
-              <div v-if="!chatMessages || chatMessages.length === 0" class="text-xs text-gray-400">还没有对话内容</div>
-              <div v-for="m in chatMessages" :key="m.ts" class="flex" :class="m.role === 'user' ? 'justify-end' : 'justify-start'">
-                <div class="max-w-[80%] rounded-2xl px-3 py-2 text-sm whitespace-pre-wrap"
-                  :class="m.role === 'user' ? 'bg-q-primary text-white' : 'bg-white border border-gray-100 text-gray-800'">
-                  {{ m.content }}
-                </div>
-              </div>
-            </div>
-
-            <div v-if="chatError" class="mt-3 text-xs text-q-down">{{ chatError }}</div>
-
-            <div class="mt-4 flex items-end gap-2">
-              <textarea v-model="chatInput" rows="2" class="flex-1 border border-gray-200 rounded px-3 py-2 text-sm focus:outline-none focus:border-q-primary" placeholder="输入问题，回车发送，Shift+回车换行"
-                @keydown.enter.exact.prevent="sendChat()"></textarea>
-              <button @click="sendChat()" class="px-3 py-2 rounded bg-q-primary text-white text-sm font-medium hover:bg-blue-600 disabled:opacity-60" :disabled="chatSending">
-                {{ chatSending ? '发送中' : '发送' }}
-              </button>
-            </div>
+          <!-- 图例 -->
+          <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5 mt-3 pt-3 border-t border-gray-100/60 text-[10px] text-gray-500">
+            <span class="flex items-center gap-1"><span>🌕</span>满月·中性偏涨</span>
+            <span class="flex items-center gap-1"><span>🌙</span>新月·偏跌</span>
+            <span class="flex items-center gap-1"><span class="text-purple-600">交割</span>交割日·偏跌</span>
+            <span class="flex items-center gap-1"><span>💰</span>进财日</span>
+            <span class="flex items-center gap-1"><span>🌩️</span>克伐日·易漏财</span>
           </div>
         </div>
 
       </div>
     </main>
+
+    <!-- 命主信息弹框 -->
+    <div v-if="showBaziModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" @click.self="showBaziModal = false">
+      <div class="glass-panel p-6 w-[420px] max-w-[90vw]">
+        <div class="flex items-center justify-between mb-4">
+          <div class="text-sm font-bold text-q-text">命主信息设置</div>
+          <button @click="showBaziModal = false" class="text-gray-400 hover:text-gray-600 text-lg leading-none">✕</button>
+        </div>
+        <div class="space-y-3">
+          <div>
+            <div class="text-xs text-gray-500 mb-1">性别</div>
+            <select v-model="userGender" class="w-full border border-gray-200 rounded px-2 py-2 text-sm focus:outline-none focus:border-q-primary bg-white/70">
+              <option value="">请选择</option>
+              <option value="男">男</option>
+              <option value="女">女</option>
+            </select>
+          </div>
+          <div>
+            <div class="text-xs text-gray-500 mb-1">出生年月日</div>
+            <input v-model="userBirth" type="datetime-local" class="w-full border border-gray-200 rounded px-2 py-2 text-sm font-mono focus:outline-none focus:border-q-primary bg-white/70">
+          </div>
+          <div>
+            <div class="flex items-center justify-between">
+              <div class="text-xs text-gray-500 mb-1">出生地（省-市）</div>
+              <div v-if="placeLoading" class="text-[10px] text-gray-400 mb-1">加载中...</div>
+            </div>
+            <select v-model="userPlace" class="w-full border border-gray-200 rounded px-2 py-2 text-sm focus:outline-none focus:border-q-primary bg-white/70">
+              <option value="">请选择</option>
+              <optgroup v-for="g in placeGroups" :key="g.label" :label="g.label">
+                <option v-for="o in g.options" :key="o.value" :value="o.value">{{ g.label }}-{{ o.label }}</option>
+              </optgroup>
+              <option value="其他">其他</option>
+            </select>
+            <input v-if="userPlace === '其他'" v-model="userPlaceCustom" class="mt-2 w-full border border-gray-200 rounded px-2 py-2 text-sm focus:outline-none focus:border-q-primary bg-white/70" placeholder="请输入出生地（省-市）">
+          </div>
+          <div>
+            <div class="text-xs text-gray-500 mb-1">区县</div>
+            <select v-model="userArea" class="w-full border border-gray-200 rounded px-2 py-2 text-sm focus:outline-none focus:border-q-primary bg-white/70" :disabled="!userPlace || userPlace === '其他'">
+              <option value="">请选择</option>
+              <option v-for="a in placeAreas" :key="a" :value="a">{{ a }}</option>
+            </select>
+          </div>
+          <div class="flex justify-end gap-2 pt-2">
+            <button @click="showBaziModal = false" class="px-3 py-2 rounded border border-gray-200 text-xs text-gray-600 hover:bg-gray-50">取消</button>
+            <button @click="submitBazi" class="px-3 py-2 rounded bg-q-primary text-white text-xs font-semibold hover:bg-blue-600 disabled:opacity-60" :disabled="baziLoading">{{ baziLoading ? '计算中...' : '提交' }}</button>
+          </div>
+          <div v-if="baziError" class="text-xs text-q-down">{{ baziError }}</div>
+        </div>
+      </div>
+    </div>
   </div>
+
   <script src="ui.js"></script>
 </body>
 </html>
