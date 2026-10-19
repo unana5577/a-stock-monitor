@@ -51,7 +51,7 @@ def call_bailian(prompt: str, user_data: str) -> str:
         "Content-Type": "application/json"
     }
     data = {
-        "model": "deepseek-v3",
+        "model": "deepseek-v4.1-flash",
         "messages": [
             {"role": "system", "content": prompt},
             {"role": "user", "content": user_data}

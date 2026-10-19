@@ -56,7 +56,7 @@ def run():
     }
     
     payload = {
-        "model": "deepseek-v3",
+        "model": "deepseek-v4.1-flash",
         "messages": [
             {"role": "system", "content": prompt_text},
             {"role": "user", "content": f"以下是当前盘中快照数据：\n{json.dumps(snapshot, ensure_ascii=False, indent=2)}"}

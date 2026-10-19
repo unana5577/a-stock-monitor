@@ -6,8 +6,8 @@
         "rule": {
           "interval": [
             {
-              "field": "minutes",
-              "minutesInterval": 1
+              "field": "cronExpression",
+              "expression": "0 9 * * 1-5"
             }
           ]
         }

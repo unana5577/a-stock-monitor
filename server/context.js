@@ -3052,7 +3052,7 @@ async function callBailian(prompt, data) {
   // 2. 降级使用阿里云百炼 (DashScope)
   const apiKey = process.env.DASHSCOPE_API_KEY || process.env.BAILIAN_API_KEY || '';
   if (!apiKey) throw new Error('missing_key');
-  const model = process.env.BAILIAN_MODEL || 'deepseek-v3.2';
+  const model = process.env.BAILIAN_MODEL || 'deepseek-v4.1-flash';
   const url = 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions';
   const body = {
     model,

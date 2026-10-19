@@ -1,16 +1,6 @@
 version: '3.8'
 
 services:
-  app:
-    build:
-      context: ../
-      dockerfile: deploy_configs/Dockerfile
-    container_name: a-stock-app
-    restart: unless-stopped
-    ports:
-      - "8787:8787"
-    command: ["node", "deploy_configs/proxy.js"]
-
   app_v2:
     build:
       context: ../
