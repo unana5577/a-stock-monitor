@@ -1,8 +1,9 @@
 """外盘指数分钟采集: 日经225 / 韩国KOSPI / 恒生指数
 
-数据源: 东方财富 push2 clist (Phase 0 验证: 2026-11-25 与新华社/腾讯三方数值一致)
+数据源: 东方财富 push2 (Phase 0 验证: 2026-11-25 与新华社/腾讯三方数值一致)
   - 日经225 57011.62/-2.78% KOSPI 4697.51/-6.16% HSI 21966.01/-1.14% 全部正确
   - 新浪 int_* 全球指数代码存在陈旧数据(日经差1.2万点), 已淘汰
+  - 仅用标准库 urllib, 零第三方依赖(生产容器 python3 无 requests 也能跑)
 本地代理注意: 东财必须直连, 脚本内清除 *_proxy 环境变量
 
 落盘: data/world/minute/{SYM}/{day}.jsonl  格式 {time, asOf, price, pct, pre_close}
@@ -71,6 +72,21 @@ def append_jsonl(path: Path, record: dict) -> bool:
     return True
 
 
+def _http_get_json(url: str, params: dict, timeout: int = 10) -> dict:
+    """urllib 直连版 GET(零第三方依赖, 生产容器/任意 python3 都能跑)"""
+    from urllib.parse import urlencode
+    import urllib.request
+
+    # ProxyHandler({}) 强制直连, 不读 *_proxy 环境变量
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    req = urllib.request.Request(
+        f"{url}?{urlencode(params)}",
+        headers={"Referer": "https://quote.eastmoney.com/", "User-Agent": "Mozilla/5.0"},
+    )
+    with opener.open(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8", "ignore"))
+
+
 def fetch_em_quotes() -> dict[str, dict]:
     """东财行情, 返回 {内部代码: {price, pct, chg, pre_close, ts}}
 
@@ -79,23 +95,16 @@ def fetch_em_quotes() -> dict[str, dict]:
     数值核对(2026-11-25): N225 57011.62/-2.78% 昨收58644.63 与新华社一致;
     KS11 4697.51/-6.16%; HSI 21966.01/-1.14% 昨收22219.65 与腾讯qt.gtimg一致
     """
-    import requests
-
-    sess = requests.Session()
-    sess.proxies = {"http": None, "https": None}
-    headers = {"Referer": "https://quote.eastmoney.com/", "User-Agent": "Mozilla/5.0"}
-
     out = {}
     for key, meta in WORLD_MARKETS.items():
         got = None
         # 主源: stock/get 单品
         for attempt in range(3):
             try:
-                r = sess.get("https://push2.eastmoney.com/api/qt/stock/get",
-                             params={"secid": meta["em"], "fltt": 1, "invt": 2,
-                                     "fields": "f43,f60,f86,f169,f170"},
-                             timeout=10, headers=headers)
-                d = r.json().get("data") or {}
+                d = _http_get_json("https://push2.eastmoney.com/api/qt/stock/get",
+                                   params={"secid": meta["em"], "fltt": 1, "invt": 2,
+                                           "fields": "f43,f60,f86,f169,f170"})
+                d = d.get("data") or {}
                 if d.get("f43") and d.get("f60"):
                     got = {"price": round(float(d["f43"]) / 100, 3),
                            "chg": round(float(d.get("f169") or 0) / 100, 3),
@@ -113,11 +122,10 @@ def fetch_em_quotes() -> dict[str, dict]:
     if missing:
         try:
             fs = ",".join(f"i:{WORLD_MARKETS[k]['em']}" for k in missing)
-            r = sess.get("https://push2.eastmoney.com/api/qt/clist/get",
-                         params={"np": 2, "fltt": 1, "invt": 2, "fs": fs, "pn": 1, "pz": 50,
-                                 "po": 1, "fid": "f12", "fields": "f12,f13,f14,f2,f3,f4,f18,f124"},
-                         timeout=10, headers=headers)
-            diff = (r.json().get("data") or {}).get("diff")
+            d = _http_get_json("https://push2.eastmoney.com/api/qt/clist/get",
+                               params={"np": 2, "fltt": 1, "invt": 2, "fs": fs, "pn": 1, "pz": 50,
+                                       "po": 1, "fid": "f12", "fields": "f12,f13,f14,f2,f3,f4,f18,f124"})
+            diff = (d.get("data") or {}).get("diff")
             if isinstance(diff, dict):
                 diff = list(diff.values())
             em_to_key = {m["em"]: k for k in missing for m in [WORLD_MARKETS[k]]}
