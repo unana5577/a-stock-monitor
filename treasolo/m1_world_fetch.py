@@ -4,6 +4,7 @@
   - 日经225 57011.62/-2.78% KOSPI 4697.51/-6.16% HSI 21966.01/-1.14% 全部正确
   - 新浪 int_* 全球指数代码存在陈旧数据(日经差1.2万点), 已淘汰
   - 仅用标准库 urllib, 零第三方依赖(生产容器 python3 无 requests 也能跑)
+  - 降级链: 东财 -> Yahoo(三市场全, 数值一致) -> 腾讯(恒生兜底); 输出 sources 字段可观测
 本地代理注意: 东财必须直连, 脚本内清除 *_proxy 环境变量
 
 落盘: data/world/minute/{SYM}/{day}.jsonl  格式 {time, asOf, price, pct, pre_close}
@@ -87,19 +88,134 @@ def _http_get_json(url: str, params: dict, timeout: int = 10) -> dict:
         return json.loads(resp.read().decode("utf-8", "ignore"))
 
 
-def fetch_em_quotes() -> dict[str, dict]:
+def fetch_yahoo_quotes(symbols: list[str]) -> dict[str, dict]:
+    """Yahoo v8 chart 备源(cookie 免 crumb), 三市场全有, 数值与东财一致(2026-11-25 实测)
+
+    注意: 生产服务器在境内, Yahoo 可能被墙 —— 仅作东财失败时的降级尝试
+    返回 {内部代码: {price, pct, chg, pre_close, ts}}
+    """
+    import urllib.error
+    import urllib.request
+
+    cookie = ""
+    try:
+        req = urllib.request.Request("https://fc.yahoo.com", headers={"User-Agent": "Mozilla/5.0"})
+        try:
+            urllib.request.urlopen(req, timeout=8)
+        except urllib.error.HTTPError as e:  # fc.yahoo.com 恒 404, 但会下发 cookie
+            cookie = e.headers.get("Set-Cookie", "") or ""
+    except Exception:
+        pass
+
+    out = {}
+    for sym in symbols:
+        ysym = {"N225": "^N225", "KS11": "^KS11", "HSI": "^HSI"}.get(sym)
+        if not ysym:
+            continue
+        for attempt in range(2):
+            try:
+                headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"}
+                if cookie:
+                    headers["Cookie"] = cookie
+                req = urllib.request.Request(
+                    f"https://query1.finance.yahoo.com/v8/finance/chart/{urllib.request.quote(ysym)}"
+                    "?interval=1m&range=1d", headers=headers)
+                with urllib.request.urlopen(req, timeout=12) as resp:
+                    meta = json.loads(resp.read().decode())["chart"]["result"][0]["meta"]
+                price, pre_close, ts = meta.get("regularMarketPrice"), meta.get("chartPreviousClose"), meta.get("regularMarketTime")
+                if price and pre_close and ts:
+                    out[sym] = {"price": float(price), "pre_close": float(pre_close),
+                                "chg": round(float(price) - float(pre_close), 3),
+                                "pct": round((float(price) - float(pre_close)) / float(pre_close) * 100, 4),
+                                "ts": int(ts)}
+                break
+            except Exception:
+                time.sleep(1)
+    return out
+
+
+def fetch_tencent_quotes(symbols: list[str]) -> dict[str, dict]:
+    """腾讯 qt.gtimg 兜底(仅恒生有代码), 返回格式同上"""
+    import urllib.request
+
+    out = {}
+    tmap = {"HSI": "hkHSI"}
+    syms = [s for s in symbols if s in tmap]
+    if not syms:
+        return out
+    try:
+        req = urllib.request.Request(
+            f"https://qt.gtimg.cn/q={','.join(tmap[s] for s in syms)}",
+            headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            body = resp.read().decode("gbk", "ignore")
+        for line in body.strip().splitlines():
+            if "=" not in line:
+                continue
+            code = line.split("v_")[1].split("=")[0]
+            fields = line.split("=")[1].strip('";').split("~")
+            key = {v: k for k, v in tmap.items()}.get(code)
+            if not key or len(fields) < 31:
+                continue
+            price, pre_close = float(fields[3]), float(fields[4])
+            ts = int(datetime.strptime(fields[30][:19], "%Y/%m/%d %H:%M:%S").timestamp())
+            out[key] = {"price": price, "pre_close": pre_close,
+                        "chg": round(price - pre_close, 3),
+                        "pct": round((price - pre_close) / pre_close * 100, 4), "ts": ts}
+    except Exception:
+        pass
+    return out
+
+
+def fetch_quotes(symbols: list[str]) -> tuple[dict[str, dict], dict[str, str]]:
+    """按市场定制的降级链; 返回 (行情, 各市场实际使用的源)
+
+    N225/KS11: 东财 -> Yahoo
+    HSI:       东财 -> 腾讯 -> Yahoo (腾讯昨收 22219.65 与东财/新浪一致;
+               Yahoo 恒生昨收 22383.7 偏差 164 点导致 pct -1.87% vs 真实 -1.14%, 仅作末位兜底)
+    """
+    src_map = {}
+    quotes = fetch_em_quotes(symbols)
+    src_map.update({k: "eastmoney" for k in quotes})
+
+    for k in symbols:
+        if k in quotes:
+            continue
+        if k == "HSI":
+            got = fetch_tencent_quotes([k])
+            if got:
+                src_map[k] = "tencent"
+            else:
+                got = fetch_yahoo_quotes([k])
+                src_map[k] = "yahoo"
+        else:
+            got = fetch_yahoo_quotes([k])
+            if got:
+                src_map[k] = "yahoo"
+            else:
+                got = fetch_tencent_quotes([k])
+                src_map[k] = "tencent"
+        quotes.update(got)
+    return quotes, src_map
+
+
+def fetch_em_quotes(symbols: list[str]) -> dict[str, dict]:
     """东财行情, 返回 {内部代码: {price, pct, chg, pre_close, ts}}
 
     主源: stock/get 单品接口(逐市场, 稳定)
     备源: clist 批量接口(偶发限流 RemoteDisconnected, 仅作兜底)
     数值核对(2026-11-25): N225 57011.62/-2.78% 昨收58644.63 与新华社一致;
     KS11 4697.51/-6.16%; HSI 21966.01/-1.14% 昨收22219.65 与腾讯qt.gtimg一致
+    限流自保: 市场间隔 0.5s, 失败只重试 1 次(高频重试会加重封禁)
     """
     out = {}
-    for key, meta in WORLD_MARKETS.items():
+    for key in symbols:
+        meta = WORLD_MARKETS.get(key)
+        if not meta:
+            continue
         got = None
         # 主源: stock/get 单品
-        for attempt in range(3):
+        for attempt in range(2):
             try:
                 d = _http_get_json("https://push2.eastmoney.com/api/qt/stock/get",
                                    params={"secid": meta["em"], "fltt": 1, "invt": 2,
@@ -116,9 +232,10 @@ def fetch_em_quotes() -> dict[str, dict]:
                 time.sleep(1)
         if got:
             out[key] = got
+        time.sleep(0.5)  # 市场间隔, 降低触发限流的概率
 
     # 备源: clist 批量, 补齐主源失败的市场
-    missing = [k for k in WORLD_MARKETS if k not in out]
+    missing = [k for k in symbols if k in WORLD_MARKETS and k not in out]
     if missing:
         try:
             fs = ",".join(f"i:{WORLD_MARKETS[k]['em']}" for k in missing)
@@ -168,7 +285,7 @@ def main() -> int:
         return 0
 
     try:
-        quotes = fetch_em_quotes()
+        quotes, src_map = fetch_quotes([s.strip() for s in args.symbols.split(",") if s.strip()])
     except Exception as e:
         print(json.dumps({"ok": False, "error": f"fetch_failed: {e}", "day": day, "asOf": as_of}))
         return 1
@@ -212,8 +329,8 @@ def main() -> int:
         else:
             skipped.append({"sym": sym, "reason": "dup_asOf"})
 
-    print(json.dumps({"ok": True, "day": day, "asOf": as_of, "wrote": wrote, "skipped": skipped},
-                     ensure_ascii=False))
+    print(json.dumps({"ok": True, "day": day, "asOf": as_of, "wrote": wrote, "skipped": skipped,
+                      "sources": src_map}, ensure_ascii=False))
     return 0
 
 
