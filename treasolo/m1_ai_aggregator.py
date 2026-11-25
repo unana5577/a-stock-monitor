@@ -236,6 +236,47 @@ def run():
                         "近半小时变化_pct": round(half_hour_diff, 2)
                     })
                     
+    # 3.6. 外盘走势 (日经225 / 韩国KOSPI / 恒生指数) — 供复盘解读外围影响
+    world_markets = {}
+    world_meta = {
+        "N225": ("日经225", "08:00", "14:00"),
+        "KS11": ("韩国KOSPI", "08:00", "14:30"),
+        "HSI": ("恒生指数", "09:30", "16:00"),
+    }
+    for sym, (wname, wstart, wend) in world_meta.items():
+        series = load_jsonl_all(PROJECT_ROOT / f"data/world/minute/{sym}/{day}.jsonl")
+        source_day = day
+        if not series:
+            prev_day = get_previous_trading_file(day, f"world/minute/{sym}")
+            if prev_day:
+                series = load_jsonl_all(PROJECT_ROOT / f"data/world/minute/{sym}/{prev_day}.jsonl")
+                source_day = prev_day
+        if not series:
+            continue
+        curr_pt, past_pt = get_minute_points(series, asOf, 30)
+        if not curr_pt or not curr_pt.get("price"):
+            continue
+        # 交易状态: 最新点已到/超过收盘时间 => 已收盘; 数据非当日 => 休市
+        if source_day != day:
+            wstatus = "休市(非当日数据)"
+        elif curr_pt.get("asOf", "") >= wend:
+            wstatus = "已收盘"
+        else:
+            wstatus = "交易中"
+        entry = {
+            "最新价": curr_pt.get("price"),
+            "涨跌幅_pct": round(curr_pt.get("pct", 0) or 0, 2),
+        }
+        if past_pt and past_pt.get("price"):
+            entry["近半小时变化_pct"] = round(
+                (curr_pt.get("price", 0) - past_pt.get("price", 0)) / past_pt.get("price", 1) * 100, 2)
+        entry["交易状态"] = wstatus
+        if source_day != day:
+            entry["数据日期"] = source_day
+        world_markets[wname] = entry
+    if not world_markets:
+        print(f"  今日外盘数据尚未生成 (data/world/minute/)，复盘将不含外围影响段")
+
     # 4. 组装 Payload
     payload = {
         "asOf": asOf,
@@ -247,7 +288,8 @@ def run():
         "情绪_Breadth": breadth_data,
         "量能_Volume": amount_data,
         "核心资产走势": market_data,
-        "主线板块阵营": etf_sectors
+        "主线板块阵营": etf_sectors,
+        "外盘_Global": world_markets
     }
     
     # 5. 落盘

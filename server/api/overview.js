@@ -524,7 +524,11 @@ module.exports = function() {
     }
 
     try {
+      const isWorldSymbol = ['N225', 'KS11', 'HSI'].includes(symbol);
       let minutePath = path.join(__dirname, '..', '..', `data/index/minute/${symbol}/${day}.jsonl`);
+      if (!fs.existsSync(minutePath) && isWorldSymbol) {
+        minutePath = path.join(__dirname, '..', '..', `data/world/minute/${symbol}/${day}.jsonl`);
+      }
       if (!fs.existsSync(minutePath)) {
         minutePath = path.join(__dirname, '..', '..', `data/etf/minute/${symbol}/${day}.jsonl`);
       }
@@ -553,6 +557,9 @@ module.exports = function() {
             let cp = path.join(__dirname, '..', '..', `data/etf/minute/${sym}/${checkDay}.jsonl`);
             if (!fs.existsSync(cp)) {
               cp = path.join(__dirname, '..', '..', `data/index/minute/${sym}/${checkDay}.jsonl`);
+            }
+            if (!fs.existsSync(cp) && isWorldSymbol) {
+              cp = path.join(__dirname, '..', '..', `data/world/minute/${sym}/${checkDay}.jsonl`);
             }
             if (fs.existsSync(cp)) {
               const lns = fs.readFileSync(cp, 'utf8').trim().split('\n').filter(Boolean);
@@ -615,8 +622,9 @@ module.exports = function() {
       }
       
       // 临时清洗已经落盘的脏数据 (清理 09:30 前或者 price 为 0.0 的集合竞价数据)
+      // 外盘符号(KS11 8:00开盘/N225 8:00开盘)不受 09:30 过滤限制, 仅清洗 price<=0
       if (data.length > 0) {
-          data = data.filter(pt => pt && pt.price > 0 && pt.asOf >= '09:30');
+          data = data.filter(pt => pt && pt.price > 0 && (isWorldSymbol || pt.asOf >= '09:30'));
       }
 
       // 如果数据存在，确保 pct 字段有值，如果没有，通过 pre_close 临时计算
@@ -650,6 +658,11 @@ module.exports = function() {
           if (data.day) args.push('--day', data.day);
         } else if (data.script === 'm1_minute_fetch_indices.py') {
           args = ['treasolo/m1_minute_fetch_indices.py'];
+          if (data.symbols) args.push('--symbols', data.symbols);
+          if (data.day) args.push('--day', data.day);
+          if (data.force) args.push('--force');
+        } else if (data.script === 'm1_world_fetch.py') {
+          args = ['treasolo/m1_world_fetch.py'];
           if (data.symbols) args.push('--symbols', data.symbols);
           if (data.day) args.push('--day', data.day);
           if (data.force) args.push('--force');

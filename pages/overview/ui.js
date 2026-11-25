@@ -38,6 +38,21 @@ createApp({
     });
     const etfSymbolNames = ref({});
 
+    // ── 外盘 (Global Markets) ──
+    const worldSymbols = ['N225', 'KS11', 'HSI'];
+    const worldNames = ref({
+      'N225': '日经225',
+      'KS11': '韩国KOSPI',
+      'HSI': '恒生指数'
+    });
+    // 各市场交易时段(北京时间, 用于分时x轴与交易状态判断)
+    const worldSessions = ref({
+      'N225': { start: '08:00', end: '14:00' },
+      'KS11': { start: '08:00', end: '14:30' },
+      'HSI': { start: '09:30', end: '16:00' }
+    });
+    const worldStatus = ref({});
+
     const currentPrices = ref({});
     const minuteDataCache = ref({});
     const chartsLoaded = ref({});
@@ -68,7 +83,7 @@ createApp({
       const sections = [];
       let currentTitle = '';
       let currentContent = [];
-      const validTitles = ['走势判断', '情绪定性', '阵营轮动', '资金风格', '操作建议', '盘面核心特征', '异动与风向', '交易员应对策略', '主线追踪', '资金偏好', '主线与异动', '阵营跷跷板', '跷跷板效应', '异动解读', '轮动建议', '重点异动', '轮动分析', '行情研判', '赚钱效应', '跷跷板分析', '共振分析', '轮动规律', '主线趋势'];
+      const validTitles = ['走势判断', '情绪定性', '阵营轮动', '外围影响', '资金风格', '操作建议', '盘面核心特征', '异动与风向', '交易员应对策略', '主线追踪', '资金偏好', '主线与异动', '阵营跷跷板', '跷跷板效应', '异动解读', '轮动建议', '重点异动', '轮动分析', '行情研判', '赚钱效应', '跷跷板分析', '共振分析', '轮动规律', '主线趋势'];
       for (const line of lines) {
         if (line.includes('===') || !line.trim()) continue;
         let isOldFormat = false;
@@ -401,6 +416,104 @@ createApp({
       } catch (e) { console.warn('ETF名称加载失败'); }
     };
 
+    // ── 外盘: 抓取与渲染 ──
+    const buildSessionAxis = (sym) => {
+      const [sh, sm] = worldSessions.value[sym].start.split(':').map(Number);
+      const [eh, em] = worldSessions.value[sym].end.split(':').map(Number);
+      const times = [];
+      let d = new Date();
+      d.setHours(sh, sm, 0, 0);
+      const endMin = eh * 60 + em;
+      while (d.getHours() * 60 + d.getMinutes() <= endMin) {
+        times.push(d.toTimeString().substring(0, 5));
+        d.setMinutes(d.getMinutes() + 1);
+      }
+      return times;
+    };
+
+    const getBeijingNowMinutes = () => {
+      const d = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Shanghai' }));
+      return d.getHours() * 60 + d.getMinutes();
+    };
+
+    const fetchWorldMinuteData = async () => {
+      worldSymbols.forEach(async (sym) => {
+        try {
+          const res = await fetch(`${API_BASE}/api/m1/data/minute?symbol=${sym}`);
+          const data = await res.json();
+          if (data.ok) {
+            const pre_close = data.pre_close;
+            const dataPoints = data.data || [];
+            let latestPrice = 0;
+            let latestPct = 0;
+            let latestAsOf = '';
+            if (dataPoints.length > 0) {
+              const lastPt = dataPoints[dataPoints.length - 1];
+              latestPrice = lastPt.price;
+              latestPct = lastPt.pct !== undefined ? lastPt.pct : (pre_close ? ((lastPt.price - pre_close) / pre_close) * 100 : 0);
+              latestAsOf = lastPt.asOf || '';
+            }
+            currentPrices.value[sym] = { price: latestPrice, pct: latestPct };
+
+            // 交易状态: 最新点在5分钟内 且 当前处于该市场交易时段 => 交易中
+            const [sh, sm] = worldSessions.value[sym].start.split(':').map(Number);
+            const [eh, em] = worldSessions.value[sym].end.split(':').map(Number);
+            const nowMin = getBeijingNowMinutes();
+            const [lh, lm] = (latestAsOf || '00:00').split(':').map(Number);
+            const fresh = latestAsOf && (nowMin - (lh * 60 + lm)) <= 5;
+            const inWindow = nowMin >= sh * 60 + sm && nowMin <= eh * 60 + em;
+            worldStatus.value[sym] = (fresh && inWindow) ? 'trading' : 'closed';
+
+            chartsLoaded.value[sym] = dataPoints.length > 0;
+            if (dataPoints.length > 0) {
+              nextTick(() => renderWorldChart(sym, dataPoints, pre_close));
+            }
+          }
+        } catch (err) { console.error(`Failed to fetch world minute for ${sym}:`, err); }
+      });
+    };
+
+    const renderWorldChart = (sym, dataPoints, preClose) => {
+      const el = document.getElementById(`chart-world-${sym}`);
+      if (!el) return;
+      let chart = echarts.getInstanceByDom(el);
+      if (!chart) { chart = echarts.init(el); chartInstances[sym] = chart; }
+      const times = buildSessionAxis(sym);
+      const pointMap = {};
+      dataPoints.forEach(pt => { if (pt.price > 0) pointMap[pt.asOf] = pt; });
+      const prices = [];
+      let latestPct = 0;
+      times.forEach((t) => {
+        const pt = pointMap[t];
+        if (pt) {
+          prices.push(pt.price);
+          latestPct = pt.pct !== undefined ? pt.pct : (preClose ? ((pt.price - preClose) / preClose) * 100 : 0);
+        } else {
+          prices.push(null);
+        }
+      });
+      const option = {
+        animation: false,
+        grid: { left: 0, right: 0, top: 10, bottom: 0 },
+        xAxis: { type: 'category', data: times, show: false },
+        yAxis: [{ type: 'value', min: 'dataMin', max: 'dataMax', show: false }],
+        series: [{
+          data: prices,
+          type: 'line',
+          symbol: 'none',
+          connectNulls: false,
+          lineStyle: { width: 1.5, color: latestPct >= 0 ? '#EF4444' : '#10B981' },
+          areaStyle: {
+            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+              { offset: 0, color: latestPct >= 0 ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)' },
+              { offset: 1, color: latestPct >= 0 ? 'rgba(239, 68, 68, 0)' : 'rgba(16, 185, 129, 0)' }
+            ])
+          }
+        }]
+      };
+      chart.setOption(option);
+    };
+
     onMounted(() => {
       fetchEtfNames();
       refreshOverviewAi();
@@ -408,6 +521,7 @@ createApp({
       fetchMinuteData();
       fetchBreadth();
       fetchVolumeHistory();
+      fetchWorldMinuteData();
       window.addEventListener('resize', () => {
         Object.values(chartInstances).forEach(chart => chart.resize());
       });
@@ -415,6 +529,7 @@ createApp({
         fetchOverview();
         fetchMinuteData();
         fetchBreadth();
+        fetchWorldMinuteData();
         refreshOverviewAi();
       }, 60000);
     });
@@ -429,6 +544,10 @@ createApp({
       overviewAiUpdatedAt,
       indexSymbols,
       symbolNames,
+      worldSymbols,
+      worldNames,
+      worldSessions,
+      worldStatus,
       currentPrices,
       chartsLoaded,
       formatAmount,
