@@ -65,7 +65,7 @@
       "position": [460, 80],
       "parameters": {
         "method": "POST",
-        "url": "http://app:8787/api/m1/run",
+        "url": "http://a-stock-v2:8788/api/m1/run",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={\n  \"script\": \"m1_world_fetch.py\",\n  \"symbols\": \"{{ $json.symbols }}\",\n  \"day\": \"{{ $today.toFormat('yyyy-MM-dd') }}\",\n  \"force\": {{ $json.force ? 'true' : 'false' }}\n}",
