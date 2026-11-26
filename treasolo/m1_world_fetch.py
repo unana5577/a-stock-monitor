@@ -1,16 +1,19 @@
 """外盘指数分钟采集: 日经225 / 韩国KOSPI / 恒生指数
 
-数据源: 东方财富 push2 (Phase 0 验证: 2026-11-25 与新华社/腾讯三方数值一致)
-  - 日经225 57011.62/-2.78% KOSPI 4697.51/-6.16% HSI 21966.01/-1.14% 全部正确
+数据源: 东方财富 (Phase 0 验证: 2026-11-25 与新华社/腾讯三方数值一致)
   - 新浪 int_* 全球指数代码存在陈旧数据(日经差1.2万点), 已淘汰
   - 仅用标准库 urllib, 零第三方依赖(生产容器 python3 无 requests 也能跑)
-  - 降级链: 东财 -> Yahoo(三市场全, 数值一致) -> 腾讯(恒生兜底); 输出 sources 字段可观测
-本地代理注意: 东财必须直连, 脚本内清除 *_proxy 环境变量
+
+采集模式(2026-11-26 重构): 全天分时对账
+  - 旧模式(逐分钟追加现价)的问题: 东财间歇限流 → 单分钟 no_quote → 曲线永久断点,
+    且 Yahoo 境内不可用/腾讯无日韩代码, 无兜底
+  - 新模式: 每次运行调 trends2 拉全天分钟序列, 与 jsonl 对账补齐缺失分钟,
+    单次失败/单分钟缺口下一轮自动愈合 (最终一致)
+  - 日经午休(北京时间10:30-11:30) trends 自然无 bar, 无需特殊处理
 
 落盘: data/world/minute/{SYM}/{day}.jsonl  格式 {time, asOf, price, pct, pre_close}
   - 与 data/index/minute 同构, 额外自带 pre_close/pct (API validPt 兜底直接可用)
-新鲜度: 依赖东财 f124 时间戳, >15min 未更新视为休市(海外假日/午休自动跳过)
-调度: n8n 每分钟调用, 交易时段内每市场各自判断是否写入
+调度: n8n 每分钟调用; 仅市场在交易窗口内才发起请求
 """
 
 import argparse
@@ -28,18 +31,15 @@ for _k in list(os.environ):
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-# 内部代码 -> 东财市场代码/显示名/采集窗口(北京时间分钟数, 含收盘后10分钟补点)
+# 内部代码 -> 东财市场代码/显示名/采集窗口(北京时间分钟数, 收盘后多留20分钟确保收盘bar落盘)
 WORLD_MARKETS = {
-    "N225": {"em": "100.N225", "name": "日经225", "window": (480, 850)},
-    "KS11": {"em": "100.KS11", "name": "韩国KOSPI", "window": (480, 880)},
-    "HSI": {"em": "100.HSI", "name": "恒生指数", "window": (570, 970)},
+    "N225": {"em": "100.N225", "name": "日经225", "window": (480, 860)},
+    "KS11": {"em": "100.KS11", "name": "韩国KOSPI", "window": (480, 890)},
+    "HSI": {"em": "100.HSI", "name": "恒生指数", "window": (570, 980)},
 }
-FRESHNESS_SECONDS = 15 * 60
-# 午间休市(北京时间分钟数, 左闭右开): 日经 10:30-11:30, 恒生 12:00-13:00
-LUNCH_BREAKS = {
-    "N225": [(630, 690)],
-    "HSI": [(720, 780)],
-}
+
+# 东财镜像域名(限流时轮换)
+EM_HOSTS = ["push2his.eastmoney.com", "1.push2his.eastmoney.com", "99.push2his.eastmoney.com"]
 
 
 def load_holidays() -> set[str]:
@@ -57,22 +57,6 @@ def is_weekend(now: datetime) -> bool:
     return now.weekday() >= 5
 
 
-def append_jsonl(path: Path, record: dict) -> bool:
-    if path.exists():
-        try:
-            last = path.read_text(encoding="utf-8").splitlines()[-1].strip()
-            if last:
-                obj = json.loads(last)
-                if obj.get("asOf") == record.get("asOf"):
-                    return False
-        except Exception:
-            pass
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "a", encoding="utf-8") as f:
-        f.write(json.dumps(record, ensure_ascii=False) + "\n")
-    return True
-
-
 def _http_get_json(url: str, params: dict, timeout: int = 10) -> dict:
     """urllib 直连版 GET(零第三方依赖, 生产容器/任意 python3 都能跑)"""
     from urllib.parse import urlencode
@@ -88,122 +72,7 @@ def _http_get_json(url: str, params: dict, timeout: int = 10) -> dict:
         return json.loads(resp.read().decode("utf-8", "ignore"))
 
 
-def fetch_yahoo_quotes(symbols: list[str]) -> dict[str, dict]:
-    """Yahoo v8 chart 备源(cookie 免 crumb), 三市场全有, 数值与东财一致(2026-11-25 实测)
-
-    注意: 生产服务器在境内, Yahoo 可能被墙 —— 仅作东财失败时的降级尝试
-    返回 {内部代码: {price, pct, chg, pre_close, ts}}
-    """
-    import urllib.error
-    import urllib.request
-
-    cookie = ""
-    try:
-        req = urllib.request.Request("https://fc.yahoo.com", headers={"User-Agent": "Mozilla/5.0"})
-        try:
-            urllib.request.urlopen(req, timeout=8)
-        except urllib.error.HTTPError as e:  # fc.yahoo.com 恒 404, 但会下发 cookie
-            cookie = e.headers.get("Set-Cookie", "") or ""
-    except Exception:
-        pass
-
-    out = {}
-    for sym in symbols:
-        ysym = {"N225": "^N225", "KS11": "^KS11", "HSI": "^HSI"}.get(sym)
-        if not ysym:
-            continue
-        for attempt in range(2):
-            try:
-                headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"}
-                if cookie:
-                    headers["Cookie"] = cookie
-                req = urllib.request.Request(
-                    f"https://query1.finance.yahoo.com/v8/finance/chart/{urllib.request.quote(ysym)}"
-                    "?interval=1m&range=1d", headers=headers)
-                with urllib.request.urlopen(req, timeout=12) as resp:
-                    meta = json.loads(resp.read().decode())["chart"]["result"][0]["meta"]
-                price, pre_close, ts = meta.get("regularMarketPrice"), meta.get("chartPreviousClose"), meta.get("regularMarketTime")
-                if price and pre_close and ts:
-                    out[sym] = {"price": float(price), "pre_close": float(pre_close),
-                                "chg": round(float(price) - float(pre_close), 3),
-                                "pct": round((float(price) - float(pre_close)) / float(pre_close) * 100, 4),
-                                "ts": int(ts)}
-                break
-            except Exception:
-                time.sleep(1)
-    return out
-
-
-def fetch_tencent_quotes(symbols: list[str]) -> dict[str, dict]:
-    """腾讯 qt.gtimg 兜底(仅恒生有代码), 返回格式同上"""
-    import urllib.request
-
-    out = {}
-    tmap = {"HSI": "hkHSI"}
-    syms = [s for s in symbols if s in tmap]
-    if not syms:
-        return out
-    try:
-        req = urllib.request.Request(
-            f"https://qt.gtimg.cn/q={','.join(tmap[s] for s in syms)}",
-            headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            body = resp.read().decode("gbk", "ignore")
-        for line in body.strip().splitlines():
-            if "=" not in line:
-                continue
-            code = line.split("v_")[1].split("=")[0]
-            fields = line.split("=")[1].strip('";').split("~")
-            key = {v: k for k, v in tmap.items()}.get(code)
-            if not key or len(fields) < 31:
-                continue
-            price, pre_close = float(fields[3]), float(fields[4])
-            ts = int(datetime.strptime(fields[30][:19], "%Y/%m/%d %H:%M:%S").timestamp())
-            out[key] = {"price": price, "pre_close": pre_close,
-                        "chg": round(price - pre_close, 3),
-                        "pct": round((price - pre_close) / pre_close * 100, 4), "ts": ts}
-    except Exception:
-        pass
-    return out
-
-
-def fetch_quotes(symbols: list[str]) -> tuple[dict[str, dict], dict[str, str]]:
-    """按市场定制的降级链; 返回 (行情, 各市场实际使用的源)
-
-    N225/KS11: 东财 -> Yahoo
-    HSI:       东财 -> 腾讯 -> Yahoo (腾讯昨收 22219.65 与东财/新浪一致;
-               Yahoo 恒生昨收 22383.7 偏差 164 点导致 pct -1.87% vs 真实 -1.14%, 仅作末位兜底)
-    """
-    src_map = {}
-    quotes = fetch_em_quotes(symbols)
-    src_map.update({k: "eastmoney" for k in quotes})
-
-    for k in symbols:
-        if k in quotes:
-            continue
-        if k == "HSI":
-            got = fetch_tencent_quotes([k])
-            if got:
-                src_map[k] = "tencent"
-            else:
-                got = fetch_yahoo_quotes([k])
-                src_map[k] = "yahoo"
-        else:
-            got = fetch_yahoo_quotes([k])
-            if got:
-                src_map[k] = "yahoo"
-            else:
-                got = fetch_tencent_quotes([k])
-                src_map[k] = "tencent"
-        quotes.update(got)
-    return quotes, src_map
-
-
-# 东财 push2 镜像域名(限流时轮换)
-EM_HOSTS = ["push2.eastmoney.com", "1.push2.eastmoney.com", "99.push2.eastmoney.com"]
-
-
-def _em_get(path: str, params: dict, timeout: int = 10) -> dict:
+def _em_get(path: str, params: dict, timeout: int = 12) -> dict:
     """东财 GET: 镜像域名轮换 + 递增退避(1s/2s/3s), 应对间歇性限流"""
     last_err: Exception = RuntimeError("em_unreachable")
     for attempt in range(3):
@@ -216,64 +85,95 @@ def _em_get(path: str, params: dict, timeout: int = 10) -> dict:
     raise last_err
 
 
-def fetch_em_quotes(symbols: list[str]) -> dict[str, dict]:
-    """东财行情, 返回 {内部代码: {price, pct, chg, pre_close, ts}}
+def fetch_em_trends(sym: str) -> dict | None:
+    """东财 trends2 全天分钟序列, 返回 {pre_close, date, points: [(asOf, price)]} 或 None
 
-    主源: clist 批量接口 —— 一次请求拉全部市场, 请求量降为单品模式的 1/3
-          (2026-11-26 实测: 单品逐市场模式每分钟 3 请求会触发东财间歇限流 → 曲线断点)
-    补齐: stock/get 单品接口, 仅拉 clist 失败的市场
-    数值核对(2026-11-25): N225 57011.62/-2.78% 昨收58644.63 与新华社一致;
-    KS11 4697.51/-6.16%; HSI 21966.01/-1.14% 昨收22219.65 与腾讯qt.gtimg一致
+    bar 格式: "2026-11-26 08:00,开,收,高,低,量,额,均价"  → 取第3列(close)作现价
+    午间休市时段自然无 bar; prePrice 为昨收(2026-11-26 实测与腾讯/新浪一致)
     """
-    out: dict[str, dict] = {}
-    valid = [k for k in symbols if k in WORLD_MARKETS]
+    meta = WORLD_MARKETS[sym]
+    d = _em_get("/api/qt/stock/trends2/get",
+                params={"secid": meta["em"], "fields1": "f1,f2,f3,f4,f5,f6,f7,f8",
+                        "fields2": "f51,f52,f53,f54,f55,f56,f57,f58",
+                        "iscr": 0, "ndays": 1})
+    data = d.get("data") or {}
+    bars = data.get("trends") or []
+    pre_close = data.get("prePrice") or data.get("preClose")
+    if not bars or not pre_close:
+        return None
 
-    # 主源: clist 批量(1 个请求)
-    try:
-        fs = ",".join(f"i:{WORLD_MARKETS[k]['em']}" for k in valid)
-        d = _em_get("/api/qt/clist/get",
-                    params={"np": 2, "fltt": 1, "invt": 2, "fs": fs, "pn": 1, "pz": 50,
-                            "po": 1, "fid": "f12", "fields": "f12,f13,f14,f2,f3,f4,f18,f124"})
-        diff = (d.get("data") or {}).get("diff")
-        if isinstance(diff, dict):
-            diff = list(diff.values())
-        em_to_key = {m["em"]: k for k in valid for m in [WORLD_MARKETS[k]]}
-        for it in (diff or []):
-            k = em_to_key.get(f"{it.get('f13')}.{it.get('f12')}")
-            if k and it.get("f2") and it.get("f18"):
-                out[k] = {"price": round(float(it["f2"]) / 100, 3),
-                          "chg": round(float(it["f4"]) / 100, 3),
-                          "pct": round(float(it["f3"]) / 100, 4),
-                          "pre_close": round(float(it["f18"]) / 100, 3),
-                          "ts": int(it["f124"])}
-    except Exception:
-        pass
+    points: list[tuple[str, str, float]] = []  # (date, asOf, price)
+    for bar in bars:
+        parts = bar.split(",")
+        if len(parts) < 3:
+            continue
+        date_part, time_part = parts[0].split(" ")
+        price = float(parts[2])
+        if price > 0:
+            points.append((date_part, time_part, price))
+    if not points:
+        return None
+    return {"pre_close": round(float(pre_close), 3),
+            "date": points[0][0],
+            "points": points}
 
-    # 补齐: 单品接口(仅 clist 缺失的市场, 镜像轮换)
-    for k in [k for k in valid if k not in out]:
-        meta = WORLD_MARKETS[k]
+
+def append_jsonl(path: Path, record: dict) -> bool:
+    """按 asOf 去重追加(文件末行 asOf 相同则跳过)"""
+    if path.exists():
         try:
-            d = _em_get("/api/qt/stock/get",
-                        params={"secid": meta["em"], "fltt": 1, "invt": 2,
-                                "fields": "f43,f60,f86,f169,f170"})
-            d = d.get("data") or {}
-            if d.get("f43") and d.get("f60"):
-                out[k] = {"price": round(float(d["f43"]) / 100, 3),
-                          "chg": round(float(d.get("f169") or 0) / 100, 3),
-                          "pct": round(float(d.get("f170") or 0) / 100, 4),
-                          "pre_close": round(float(d["f60"]) / 100, 3),
-                          "ts": int(d["f86"])}
+            last = path.read_text(encoding="utf-8").splitlines()[-1].strip()
+            if last:
+                obj = json.loads(last)
+                if obj.get("asOf") == record.get("asOf"):
+                    return False
         except Exception:
             pass
-        time.sleep(0.5)
-    return out
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    return True
+
+
+def reconcile_day(sym: str, day: str, trends: dict) -> dict:
+    """把 trends 全天序列与当日 jsonl 对账, 补齐缺失分钟; 返回统计"""
+    out_path = PROJECT_ROOT / f"data/world/minute/{sym}/{day}.jsonl"
+    existing: set[str] = set()
+    if out_path.exists():
+        try:
+            for line in out_path.read_text(encoding="utf-8").splitlines():
+                if line.strip():
+                    existing.add(json.loads(line).get("asOf"))
+        except Exception:
+            pass
+
+    pre_close = trends["pre_close"]
+    wrote, seen = 0, 0
+    path = out_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    for date_part, as_of, price in trends["points"]:
+        if date_part != day or as_of in existing:
+            continue
+        seen += 1
+        record = {
+            "time": f"{day}T{as_of}:00",
+            "asOf": as_of,
+            "price": price,
+            "pct": round((price - pre_close) / pre_close * 100, 4),
+            "pre_close": pre_close,
+        }
+        # 直接追加(不对账逐条去重, existing 已排除; 但末行同分钟防重仍保留)
+        if append_jsonl(path, record):
+            wrote += 1
+    return {"sym": sym, "wrote": wrote, "total_bars": len(trends["points"]),
+            "existing": len(existing), "pre_close": pre_close}
 
 
 def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--symbols", default=",".join(WORLD_MARKETS.keys()))
     p.add_argument("--day", default="")
-    p.add_argument("--force", action="store_true", help="跳过交易窗口与新鲜度校验(补数据/测试用)")
+    p.add_argument("--force", action="store_true", help="跳过交易窗口校验(补当日数据/测试用)")
     args = p.parse_args()
 
     now = datetime.now()
@@ -284,9 +184,10 @@ def main() -> int:
         return 0
 
     today_minutes = now.hour * 60 + now.minute
+    symbols = [s.strip() for s in args.symbols.split(",") if s.strip()]
 
     # 所有市场都不在采集窗口时直接跳过, 不发起网络请求
-    in_window = [s for s in [x.strip() for x in args.symbols.split(",") if x.strip()]
+    in_window = [s for s in symbols
                  if s in WORLD_MARKETS
                  and WORLD_MARKETS[s]["window"][0] <= today_minutes <= WORLD_MARKETS[s]["window"][1]]
     if not args.force and not in_window:
@@ -294,53 +195,27 @@ def main() -> int:
                           "day": day, "asOf": as_of}))
         return 0
 
-    try:
-        quotes, src_map = fetch_quotes([s.strip() for s in args.symbols.split(",") if s.strip()])
-    except Exception as e:
-        print(json.dumps({"ok": False, "error": f"fetch_failed: {e}", "day": day, "asOf": as_of}))
-        return 1
-
-    wrote, skipped = [], []
-    for sym in [s.strip() for s in args.symbols.split(",") if s.strip()]:
-        meta = WORLD_MARKETS.get(sym)
-        q = quotes.get(sym)
-        if not meta or not q or q["price"] <= 0:
-            skipped.append({"sym": sym, "reason": "no_quote"})
+    results, skipped = [], []
+    for sym in in_window:
+        try:
+            trends = fetch_em_trends(sym)
+        except Exception as e:
+            skipped.append({"sym": sym, "reason": f"fetch_failed: {type(e).__name__}"})
             continue
-
-        # 新鲜度: f124 必须 ≤15min 且是今天的行情(海外假日/午休自动跳过)
-        fresh = (now.timestamp() - q["ts"]) <= FRESHNESS_SECONDS
-        today_quote = datetime.fromtimestamp(q["ts"]).strftime("%Y-%m-%d") == day
-        if not args.force and not (fresh and today_quote):
-            skipped.append({"sym": sym, "reason": "stale_quote", "ts": q["ts"]})
+        if not trends:
+            skipped.append({"sym": sym, "reason": "no_trends"})
             continue
-
-        # 交易窗口判断(收盘后10分钟内仍补点, 确保收盘价落盘)
-        w_start, w_end = meta["window"]
-        if not args.force and not (w_start <= today_minutes <= w_end):
-            skipped.append({"sym": sym, "reason": "out_of_window"})
+        if trends["date"] != day:
+            skipped.append({"sym": sym, "reason": "stale_day", "trend_date": trends["date"]})
             continue
+        results.append(reconcile_day(sym, day, trends))
+        time.sleep(0.5)
 
-        # 午间休市: 行情冻结, 不写平线
-        if not args.force and any(s <= today_minutes < e for s, e in LUNCH_BREAKS.get(sym, [])):
-            skipped.append({"sym": sym, "reason": "lunch_break"})
-            continue
-
-        out = PROJECT_ROOT / f"data/world/minute/{sym}/{day}.jsonl"
-        record = {
-            "time": now.isoformat(),
-            "asOf": as_of,
-            "price": q["price"],
-            "pct": q["pct"],
-            "pre_close": q["pre_close"],
-        }
-        if append_jsonl(out, record):
-            wrote.append(sym)
-        else:
-            skipped.append({"sym": sym, "reason": "dup_asOf"})
-
-    print(json.dumps({"ok": True, "day": day, "asOf": as_of, "wrote": wrote, "skipped": skipped,
-                      "sources": src_map}, ensure_ascii=False))
+    total_new = sum(r["wrote"] for r in results)
+    print(json.dumps({"ok": True, "day": day, "asOf": as_of,
+                      "wrote_total": total_new,
+                      "detail": results, "skipped": skipped},
+                     ensure_ascii=False))
     return 0
 
 
