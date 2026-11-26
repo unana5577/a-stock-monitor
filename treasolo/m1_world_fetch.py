@@ -199,63 +199,73 @@ def fetch_quotes(symbols: list[str]) -> tuple[dict[str, dict], dict[str, str]]:
     return quotes, src_map
 
 
+# 东财 push2 镜像域名(限流时轮换)
+EM_HOSTS = ["push2.eastmoney.com", "1.push2.eastmoney.com", "99.push2.eastmoney.com"]
+
+
+def _em_get(path: str, params: dict, timeout: int = 10) -> dict:
+    """东财 GET: 镜像域名轮换 + 递增退避(1s/2s/3s), 应对间歇性限流"""
+    last_err: Exception = RuntimeError("em_unreachable")
+    for attempt in range(3):
+        host = EM_HOSTS[attempt % len(EM_HOSTS)]
+        try:
+            return _http_get_json(f"https://{host}{path}", params, timeout=timeout)
+        except Exception as e:  # noqa: BLE001 - 网络异常统一退避重试
+            last_err = e
+            time.sleep(1 + attempt)
+    raise last_err
+
+
 def fetch_em_quotes(symbols: list[str]) -> dict[str, dict]:
     """东财行情, 返回 {内部代码: {price, pct, chg, pre_close, ts}}
 
-    主源: stock/get 单品接口(逐市场, 稳定)
-    备源: clist 批量接口(偶发限流 RemoteDisconnected, 仅作兜底)
+    主源: clist 批量接口 —— 一次请求拉全部市场, 请求量降为单品模式的 1/3
+          (2026-11-26 实测: 单品逐市场模式每分钟 3 请求会触发东财间歇限流 → 曲线断点)
+    补齐: stock/get 单品接口, 仅拉 clist 失败的市场
     数值核对(2026-11-25): N225 57011.62/-2.78% 昨收58644.63 与新华社一致;
     KS11 4697.51/-6.16%; HSI 21966.01/-1.14% 昨收22219.65 与腾讯qt.gtimg一致
-    限流自保: 市场间隔 0.5s, 失败只重试 1 次(高频重试会加重封禁)
     """
-    out = {}
-    for key in symbols:
-        meta = WORLD_MARKETS.get(key)
-        if not meta:
-            continue
-        got = None
-        # 主源: stock/get 单品
-        for attempt in range(2):
-            try:
-                d = _http_get_json("https://push2.eastmoney.com/api/qt/stock/get",
-                                   params={"secid": meta["em"], "fltt": 1, "invt": 2,
-                                           "fields": "f43,f60,f86,f169,f170"})
-                d = d.get("data") or {}
-                if d.get("f43") and d.get("f60"):
-                    got = {"price": round(float(d["f43"]) / 100, 3),
-                           "chg": round(float(d.get("f169") or 0) / 100, 3),
-                           "pct": round(float(d.get("f170") or 0) / 100, 4),
-                           "pre_close": round(float(d["f60"]) / 100, 3),
-                           "ts": int(d["f86"])}
-                    break
-            except Exception:
-                time.sleep(1)
-        if got:
-            out[key] = got
-        time.sleep(0.5)  # 市场间隔, 降低触发限流的概率
+    out: dict[str, dict] = {}
+    valid = [k for k in symbols if k in WORLD_MARKETS]
 
-    # 备源: clist 批量, 补齐主源失败的市场
-    missing = [k for k in symbols if k in WORLD_MARKETS and k not in out]
-    if missing:
+    # 主源: clist 批量(1 个请求)
+    try:
+        fs = ",".join(f"i:{WORLD_MARKETS[k]['em']}" for k in valid)
+        d = _em_get("/api/qt/clist/get",
+                    params={"np": 2, "fltt": 1, "invt": 2, "fs": fs, "pn": 1, "pz": 50,
+                            "po": 1, "fid": "f12", "fields": "f12,f13,f14,f2,f3,f4,f18,f124"})
+        diff = (d.get("data") or {}).get("diff")
+        if isinstance(diff, dict):
+            diff = list(diff.values())
+        em_to_key = {m["em"]: k for k in valid for m in [WORLD_MARKETS[k]]}
+        for it in (diff or []):
+            k = em_to_key.get(f"{it.get('f13')}.{it.get('f12')}")
+            if k and it.get("f2") and it.get("f18"):
+                out[k] = {"price": round(float(it["f2"]) / 100, 3),
+                          "chg": round(float(it["f4"]) / 100, 3),
+                          "pct": round(float(it["f3"]) / 100, 4),
+                          "pre_close": round(float(it["f18"]) / 100, 3),
+                          "ts": int(it["f124"])}
+    except Exception:
+        pass
+
+    # 补齐: 单品接口(仅 clist 缺失的市场, 镜像轮换)
+    for k in [k for k in valid if k not in out]:
+        meta = WORLD_MARKETS[k]
         try:
-            fs = ",".join(f"i:{WORLD_MARKETS[k]['em']}" for k in missing)
-            d = _http_get_json("https://push2.eastmoney.com/api/qt/clist/get",
-                               params={"np": 2, "fltt": 1, "invt": 2, "fs": fs, "pn": 1, "pz": 50,
-                                       "po": 1, "fid": "f12", "fields": "f12,f13,f14,f2,f3,f4,f18,f124"})
-            diff = (d.get("data") or {}).get("diff")
-            if isinstance(diff, dict):
-                diff = list(diff.values())
-            em_to_key = {m["em"]: k for k in missing for m in [WORLD_MARKETS[k]]}
-            for it in (diff or []):
-                k = em_to_key.get(f"{it.get('f13')}.{it.get('f12')}")
-                if k and it.get("f2") and it.get("f18"):
-                    out[k] = {"price": round(float(it["f2"]) / 100, 3),
-                              "chg": round(float(it["f4"]) / 100, 3),
-                              "pct": round(float(it["f3"]) / 100, 4),
-                              "pre_close": round(float(it["f18"]) / 100, 3),
-                              "ts": int(it["f124"])}
+            d = _em_get("/api/qt/stock/get",
+                        params={"secid": meta["em"], "fltt": 1, "invt": 2,
+                                "fields": "f43,f60,f86,f169,f170"})
+            d = d.get("data") or {}
+            if d.get("f43") and d.get("f60"):
+                out[k] = {"price": round(float(d["f43"]) / 100, 3),
+                          "chg": round(float(d.get("f169") or 0) / 100, 3),
+                          "pct": round(float(d.get("f170") or 0) / 100, 4),
+                          "pre_close": round(float(d["f60"]) / 100, 3),
+                          "ts": int(d["f86"])}
         except Exception:
             pass
+        time.sleep(0.5)
     return out
 
 
